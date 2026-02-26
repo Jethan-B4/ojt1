@@ -5,13 +5,11 @@ import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useNavigation } from '@react-navigation/native';
 import { Link } from 'expo-router';
 import { useAuth } from '../AuthContext';
 
 export default function ReactScreen() {
   const { currentUser, handleSignOut } = useAuth();
-  const navigation = useNavigation();
 
   return (
     <ParallaxScrollView

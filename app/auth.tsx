@@ -19,7 +19,7 @@ export default function App(): JSX.Element {
   const [password, setPassword] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const { isAuthenticated, handleSignIn } = useAuth();
+  const { handleSignIn } = useAuth();
 
   // Access the router instance using the hook
   const router = useRouter();
