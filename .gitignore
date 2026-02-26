@@ -5,6 +5,7 @@ node_modules/
 
 # Expo
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
@@ -32,6 +33,9 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.*
+.envrc
 
 # typescript
 *.tsbuildinfo
@@ -41,3 +45,25 @@ app-example
 # generated native folders
 /ios
 /android
+
+# coverage reports
+coverage/
+
+# editor & IDE settings
+.vscode/
+.idea/
+
+# caches
+.cache/
+
+# logs
+*.log
+pnpm-debug.log*
+lerna-debug.log*
+
+# windows artifacts
+Thumbs.db
+ehthumbs.db
+
+# generated type helpers
+nativewind-env.d.ts
