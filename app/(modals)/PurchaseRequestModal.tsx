@@ -872,7 +872,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
         <ScrollView
           ref={scrollRef}
           className="flex-1 bg-gray-50"
-          contentContainerClassName="px-4 pt-5 pb-10"
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
