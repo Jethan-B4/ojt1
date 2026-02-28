@@ -1,15 +1,19 @@
-import { Button } from '@react-navigation/elements';
-import { useNavigation } from '@react-navigation/native';
 import { View } from 'react-native';
+import ProcurementContent from '../ProcurementContent';
+
+// // With handlers and custom data
+// <ProcurementContent
+//   records={yourRecords}
+//   onViewRecord={(r) => router.push(`/pr/${r.id}`)}
+//   onEditRecord={(r) => router.push(`/pr/${r.id}/edit`)}
+//   onCreatePress={() => router.push("/pr/new")}
+//   initialTab="purchase_request"
+// />
 
 export default function ProcurementScreen() {
-  const navigation = useNavigation();
-
   return (
-    <View className="flex-1 items-center justify-center bg-white">
-      <Button onPress={() => navigation.navigate('Dashboard' as never)}>
-        Go to Dashboard
-      </Button>
+    <View className="flex-1 bg-gray-50">
+      <ProcurementContent />
     </View>
   );
 }

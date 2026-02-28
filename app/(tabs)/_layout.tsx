@@ -2,8 +2,9 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useAuth } from '../AuthContext';
+import CanvassingModule from './CanvassingModule';
 import DashboardScreen from './dashboard';
 import ReactScreen from './index';
 import ProcurementScreen from './procurement';
@@ -28,6 +29,9 @@ export default function TabLayout() {
           backgroundColor: '#064E3B',
         },
         headerShown: true,
+        headerStyle: { height: 60 },
+        headerTitle: '',
+        drawerContentStyle: { paddingBottom: 12 },
         header: ({ navigation }) => <BrandHeader navigation={navigation} />,
       }}
       drawerContent={(props) => <CustomDrawer {...props} />}>
@@ -59,7 +63,27 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* <Drawer.Screen name="Drawer" component={CustomDrawer} /> */}
+      {/* <Drawer.Screen
+        name="Create PR"
+        component={PurchaseRequestModal}
+        options={{
+          title: 'Create Purchase Request',
+          drawerIcon: ({ color, size }) => (
+            <MaterialIcons name="create" size={size} color={color} /> 
+          ),
+        }}
+      /> */}
+      <Drawer.Screen
+        name="Canvassing"
+        component={CanvassingModule}
+        options={{
+          title: 'Canvassing',
+          drawerIcon: ({ color, size }) => (
+            <MaterialIcons name="create" size={size} color={color} /> 
+          ),
+        }}
+      />
+      {/* Logout Screen */}
       <Drawer.Screen
         name="Logout"
         component={LogoutScreen}
@@ -99,12 +123,7 @@ function BrandHeader({ navigation }: any) {
           }}>
           <MaterialIcons name="menu" size={24} color="#ffffff" />
         </Pressable>
-        <Image
-          source={require('@/assets/images/dar.png')}
-          style={{ height: 28, width: 28, borderRadius: 14, backgroundColor: '#ffffff' }}
-          contentFit="contain"
-        />
-        <View
+        {/* <View
           style={{
             flex: 1,
             flexDirection: 'row',
@@ -126,7 +145,7 @@ function BrandHeader({ navigation }: any) {
             style={{ flex: 1, fontSize: 16 }}
             returnKeyType="search"
           />
-        </View>
+        </View> */}
         <Pressable
           style={{
             height: 40,
