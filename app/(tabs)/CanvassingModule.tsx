@@ -22,6 +22,7 @@
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useRoute } from "@react-navigation/native";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
@@ -1270,7 +1271,7 @@ const Step10AAA = ({ pr, suppliers, bacMembers, onComplete }: {
 
 // ─── Root Component ───────────────────────────────────────────────────────────
 
-export default function CanvassingModule({
+export function CanvassingBAC({
   prRecord,
   onComplete,
   onBack,
@@ -1380,4 +1381,54 @@ export default function CanvassingModule({
       </ScrollView>
     </KeyboardAvoidingView>
   );
+}
+
+// Minimal read-only end-user view
+function CanvassingEndUser({
+  prRecord,
+  onBack,
+}: { prRecord?: CanvassingPR; onBack?: () => void }) {
+  const pr = prRecord ?? PLACEHOLDER_PR;
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: G.bg }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={{ backgroundColor: G.dark, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} hitSlop={10}
+              style={{ width: 32, height: 32, borderRadius: 8,
+                backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }}>
+              <MaterialIcons name="chevron-left" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+          <Text style={{ fontSize: 15, fontWeight: "800", color: "#fff" }}>Canvassing (Read-only)</Text>
+        </View>
+      </View>
+      <ScrollView style={{ flex: 1, padding: 16 }}>
+        <Card>
+          <SectionLabel>Purchase Request</SectionLabel>
+          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>PR No: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.prNo}</Text></Text>
+          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>Office: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.officeSection}</Text></Text>
+          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>Items: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.items.length}</Text></Text>
+          <Text style={{ fontSize: 12, color: G.muted }}>Status: Canvassing in progress</Text>
+        </Card>
+        <Card>
+          <SectionLabel>Notes</SectionLabel>
+          <Text style={{ fontSize: 12, color: G.muted }}>Your request is undergoing canvassing by BAC. You will see awarded supplier and total once completed.</Text>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+// Wrapper decides which screen to show based on route.params.role
+export default function CanvassingModule(props: CanvassingModuleProps) {
+  const route: any = useRoute();
+  const role = route?.params?.role ?? "bac";
+  if (role === "enduser") {
+    return <CanvassingEndUser prRecord={props.prRecord} onBack={props.onBack} />;
+  }
+  return <CanvassingBAC {...props} />;
 }
