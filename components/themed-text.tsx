@@ -1,4 +1,5 @@
 import { Text, type TextProps } from 'react-native';
+import { FONT_SANS } from './ui/typography';
 
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -34,7 +35,7 @@ export function ThemedText({
     <Text
       className={className ? `${typeClassName} ${className}` : typeClassName}
       style={[
-        { color: resolvedColor },
+        { color: resolvedColor, fontFamily: FONT_SANS },
         style,
       ]}
       {...rest}
