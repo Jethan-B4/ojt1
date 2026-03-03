@@ -1,432 +1,269 @@
 /**
  * CanvassingModule.tsx
- *
  * Phase 1 · Stage 2 — Canvass & Resolution (Steps 6–10)
  *
- * Callable from:
- *   • _layout.tsx  (Drawer.Screen as a standalone screen)
- *   • ProcurementContent.tsx  (via navigation.navigate or modal prop)
+ * Two views based on roleId:
+ *   roleId === 2  →  BAC View   — full Steps 6–10 editable workflow
+ *   roleId !== 2  →  End-User View — read-only status tracker
  *
- * Props:
- *   • prRecord  — the approved PR from ProcurementContent / Supabase
- *   • onComplete — called when AAA is fully signed (moves to Phase 2)
- *   • onBack    — optional back handler
+ * PR data flows in from PRModule via the `prRecord` prop.
+ * UI matches PRModule: NativeWind classes, emerald theme, RecordCard
+ * style cards, monospace amounts, status pills, section dividers.
  *
- * Supabase tables used:
- *   canvass_sessions      — one row per PR canvass session
- *   canvass_suppliers     — supplier quotes per session
- *   canvass_bac_members   — BAC/PARPO signatories per session
- *   canvass_division_assignments — canvasser per division per session
- *
- * All DB calls are wrapped in TODO comments — replace with real queries.
+ * Usage:
+ *   <CanvassingModule prRecord={pr} roleId={user.role_id} onBack={…} />
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useRoute } from "@react-navigation/native";
 import React, { useCallback, useRef, useState } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+  Alert, KeyboardAvoidingView, Modal, Platform,
+  ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-// ─── Supabase (uncomment when ready) ─────────────────────────────────────────
-// import { supabase } from "../lib/supabase";
+import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Shape of an approved PR passed in from ProcurementContent / Supabase */
+export interface CanvassingPRItem {
+  id: number; desc: string; stock: string;
+  unit: string; qty: number; unitCost: number;
+}
+
 export interface CanvassingPR {
-  prNo: string;
-  date: string;
-  officeSection: string;
-  responsibilityCode: string;
-  purpose: string;
-  isHighValue: boolean;
-  budgetNumber?: string | null;
-  papCode?: string | null;
+  prNo: string; date: string; officeSection: string;
+  responsibilityCode: string; purpose: string;
+  isHighValue: boolean; budgetNumber?: string | null;
   items: CanvassingPRItem[];
 }
 
-export interface CanvassingPRItem {
-  id: number;
-  desc: string;
-  stock: string;
-  unit: string;
-  qty: number;
-  unitCost: number;
-}
-
 type CanvassStage =
-  | "pr_received"      // Step 6
-  | "bac_resolution"   // Step 7
-  | "release_canvass"  // Step 8
-  | "collect_canvass"  // Step 9
-  | "aaa_preparation"; // Step 10
+  | "pr_received"       // Step 6  — BAC receives PR from PARPO
+  | "bac_resolution"    // Step 7  — Prepare BAC Resolution
+  | "release_canvass"   // Step 8  — Release to canvassers per division
+  | "collect_canvass"   // Step 9  — Collect filled-out canvass + encode quotes
+  | "aaa_preparation";  // Step 10 — Prepare & sign Abstract of Awards
 
-interface BACMember {
-  name: string;
-  designation: string;
-  signed: boolean;
-  signedAt: string;
-}
+interface BACMember   { name: string; designation: string; signed: boolean; signedAt: string; }
+interface DivAssign   { section: string; canvasser: string; releaseDate: string; returnDate: string; status: "pending"|"released"|"returned"; }
+interface SupplierQ   { id: number; name: string; address: string; contact: string; tin: string; days: string; prices: Record<number,string>; remarks: string; }
 
-interface DivisionAssignment {
-  section: string;
-  canvasserName: string;
-  releaseDate: string;
-  returnDate: string;
-  status: "pending" | "released" | "returned";
-}
-
-interface SupplierQuote {
-  id: number;
-  supplierName: string;
-  address: string;
-  contactNo: string;
-  tinNo: string;
-  deliveryDays: string;
-  unitPrices: Record<number, string>; // itemId → price string
-  remarks: string;
+export interface CanvassPayload {
+  pr_no: string; bac_no: string; resolution_no: string; mode: string;
+  aaa_no: string; awarded_supplier: string; awarded_total: number;
+  suppliers: SupplierQ[]; bac_members: BACMember[];
 }
 
 export interface CanvassingModuleProps {
-  /** Approved PR data — passed from ProcurementContent or fetched from Supabase */
-  prRecord?: CanvassingPR;
-  /** Called after AAA is fully signed — advance to Phase 2 */
-  onComplete?: (sessionData: CanvassSessionPayload) => void;
-  onBack?: () => void;
-}
-
-/** Supabase-ready payload emitted on completion */
-export interface CanvassSessionPayload {
-  pr_no: string;
-  bac_no: string;
-  resolution_no: string;
-  mode_of_procurement: string;
-  aaa_no: string;
-  awarded_supplier: string;
-  awarded_total: number;
-  suppliers: SupplierQuote[];
-  bac_members: BACMember[];
+  prRecord?:   CanvassingPR;
+  roleId?:     number;           // 2 = BAC; anything else = end-user
+  onComplete?: (payload: CanvassPayload) => void;
+  onBack?:     () => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
-const TODAY = new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
-
-const G = {
-  dark:   "#1a4d2e",
-  mid:    "#2d6a4f",
-  green:  "#52b788",
-  light:  "#d8f3dc",
-  llight: "#edfbf2",
-  gold:   "#c9a84c",
-  goldD:  "#7a5000",
-  goldL:  "#fdf5e0",
-  red:    "#c0392b",
-  redL:   "#fdecea",
-  blue:   "#2563eb",
-  blueL:  "#eff6ff",
-  border: "#e5e7eb",
-  muted:  "#6b7280",
-  bg:     "#f8faf8",
-} as const;
+const MONO   = Platform.OS === "ios" ? "Courier New" : "monospace";
+const TODAY  = new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
 
 const STAGE_ORDER: CanvassStage[] = [
-  "pr_received", "bac_resolution", "release_canvass", "collect_canvass", "aaa_preparation",
+  "pr_received","bac_resolution","release_canvass","collect_canvass","aaa_preparation",
 ];
 
 const STAGE_META: Record<CanvassStage, { step: number; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = {
-  pr_received:     { step: 6,  label: "PR Received",     icon: "inbox"           },
-  bac_resolution:  { step: 7,  label: "BAC Resolution",  icon: "gavel"           },
-  release_canvass: { step: 8,  label: "Release Canvass", icon: "send"            },
-  collect_canvass: { step: 9,  label: "Collect Canvass", icon: "assignment-return"},
-  aaa_preparation: { step: 10, label: "Prepare AAA",     icon: "emoji-events"    },
+  pr_received:     { step: 6,  label: "PR Received",    icon: "inbox"             },
+  bac_resolution:  { step: 7,  label: "Resolution",     icon: "gavel"             },
+  release_canvass: { step: 8,  label: "Release",        icon: "send"              },
+  collect_canvass: { step: 9,  label: "Collect",        icon: "assignment-return" },
+  aaa_preparation: { step: 10, label: "AAA",            icon: "emoji-events"      },
 };
 
-const MODES_OF_PROCUREMENT = [
-  "Small Value Procurement (SVP)",
-  "Competitive Bidding",
-  "Direct Contracting",
-  "Shopping",
-  "Negotiated Procurement",
+const STAGE_DESC: Record<CanvassStage, string> = {
+  pr_received:     "BAC has received your approved PR from PARPO's office.",
+  bac_resolution:  "BAC is preparing the resolution and collecting signatures.",
+  release_canvass: "Canvass sheets released to divisions. Returns due in 7 days.",
+  collect_canvass: "BAC is collecting and encoding supplier quotations.",
+  aaa_preparation: "BAC is preparing the Abstract of Awards for signature.",
+};
+
+const PROC_MODES = [
+  "Small Value Procurement (SVP)","Competitive Bidding",
+  "Direct Contracting","Shopping","Negotiated Procurement",
 ];
 
-const DIVISIONS = ["STOD","LTSP","ARBDSP","Legal","PARPO","PARAD","TDG Unit","Budget","Accounting"];
-
-// ─── Placeholder PR (used when no prRecord prop is passed) ───────────────────
-// TODO: Remove when always called with a real prRecord from ProcurementContent
-
-const PLACEHOLDER_PR: CanvassingPR = {
-  prNo: "2026-PR-0042",
-  date: "February 26, 2026",
-  officeSection: "STOD",
-  responsibilityCode: "10-001",
-  purpose: "Procurement of office supplies for Q1 operations and administrative needs of the division.",
-  isHighValue: false,
-  items: [
-    { id: 1, desc: "Bond Paper, Short (70gsm)", stock: "SP-001", unit: "ream", qty: 10, unitCost: 220 },
-    { id: 2, desc: "Ballpen, Black (0.5mm)",    stock: "SP-002", unit: "box",  qty: 5,  unitCost: 85  },
-    { id: 3, desc: "Stapler, Heavy Duty",        stock: "SP-003", unit: "pc",   qty: 2,  unitCost: 350 },
-    { id: 4, desc: "Correction Tape",            stock: "SP-004", unit: "pc",   qty: 12, unitCost: 45  },
-  ],
+const DIVISIONS  = ["STOD","LTSP","ARBDSP","Legal","PARPO","PARAD","TDG Unit","Budget","Accounting"];
+const CANVASSERS: Record<string,string> = {
+  STOD:"Yvonne M.", LTSP:"Mariel T.", ARBDSP:"Robert A.",
+  Legal:"Angel D.", PARPO:"Nessie P.", PARAD:"Viviene S.",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt      = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const prTotal  = (items: CanvassingPRItem[]) => items.reduce((s, i) => s + i.qty * i.unitCost, 0);
+const nowTime  = () => new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
 
-function prTotal(items: CanvassingPRItem[]) {
-  return items.reduce((s, i) => s + i.qty * i.unitCost, 0);
-}
+const mkDivisions  = (): DivAssign[] => DIVISIONS.map(sec => ({
+  section: sec, canvasser: CANVASSERS[sec] ?? "—", releaseDate: "", returnDate: "", status: "pending",
+}));
+const mkBACMembers = (): BACMember[] => [
+  { name: "Yvonne M.", designation: "BAC Chairperson",   signed: false, signedAt: "" },
+  { name: "Mariel T.", designation: "BAC Member",        signed: false, signedAt: "" },
+  { name: "Robert A.", designation: "BAC Member",        signed: false, signedAt: "" },
+  { name: "PARPO II",  designation: "PARPO / Approver",  signed: false, signedAt: "" },
+];
+const mkSupplier = (id: number): SupplierQ => ({
+  id, name: "", address: "", contact: "", tin: "", days: "", prices: {}, remarks: "",
+});
 
-function initDivisions(pr: CanvassingPR): DivisionAssignment[] {
-  const CANVASSERS: Record<string, string> = {
-    STOD: "Yvonne M.", LTSP: "Mariel T.", ARBDSP: "Robert A.",
-    Legal: "Angel D.", PARPO: "Nessie P.", PARAD: "Viviene S.",
-  };
-  return DIVISIONS.map((sec) => ({
-    section: sec,
-    canvasserName: CANVASSERS[sec] ?? "—",
-    releaseDate: "", returnDate: "",
-    status: "pending" as const,
-  }));
-}
+// ─── Shared UI atoms — match PRModule visual language ─────────────────────────
 
-function initBACMembers(): BACMember[] {
-  return [
-    { name: "Yvonne M.", designation: "BAC Chairperson", signed: false, signedAt: "" },
-    { name: "Mariel T.",  designation: "BAC Member",      signed: false, signedAt: "" },
-    { name: "Robert A.",  designation: "BAC Member",      signed: false, signedAt: "" },
-    { name: "PARPO II",   designation: "PARPO / Approver", signed: false, signedAt: "" },
-  ];
-}
-
-// ─── Atoms ────────────────────────────────────────────────────────────────────
-
-const SectionLabel = ({ children }: { children: string }) => (
-  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10, marginTop: 4 }}>
-    <Text style={{ fontSize: 9.5, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", color: G.muted }}>
-      {children}
-    </Text>
-    <View style={{ flex: 1, height: 1, backgroundColor: G.border }} />
+/** Uppercase label + horizontal rule — mirrors PRModule's section headers */
+const Divider = ({ label }: { label: string }) => (
+  <View className="flex-row items-center gap-2 mb-2.5 mt-1">
+    <Text className="text-[9.5px] font-bold tracking-widest uppercase text-gray-400">{label}</Text>
+    <View className="flex-1 h-px bg-gray-200" />
   </View>
 );
 
-const Card = ({ children, style }: { children: React.ReactNode; style?: object }) => (
-  <View style={{
-    backgroundColor: "#fff", borderRadius: 14, borderWidth: 1,
-    borderColor: G.border, padding: 16, marginBottom: 12,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-    ...style,
-  }}>
+/** White card — mirrors RecordCard container */
+const Card = ({ children, className, style }: { children: React.ReactNode; className?: string; style?: object }) => (
+  <View className={`bg-white rounded-3xl border border-gray-200 mb-3 overflow-hidden ${className ?? ""}`}
+    style={{ shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3, ...style }}>
     {children}
   </View>
 );
 
-const Field = ({ label, required, children }: {
-  label: string; required?: boolean; children: React.ReactNode;
-}) => (
-  <View style={{ marginBottom: 12 }}>
-    <View style={{ flexDirection: "row", gap: 3, marginBottom: 5 }}>
-      <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151" }}>{label}</Text>
-      {required && <Text style={{ fontSize: 12, fontWeight: "700", color: G.red }}>*</Text>}
+/** Form field wrapper */
+const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
+  <View className="mb-3">
+    <View className="flex-row gap-1 mb-1">
+      <Text className="text-[12px] font-semibold text-gray-700">{label}</Text>
+      {required && <Text className="text-[12px] font-bold text-red-500">*</Text>}
     </View>
     {children}
   </View>
 );
 
-const RNInput = ({ value, onChangeText, placeholder, readonly, keyboardType, multiline }: {
-  value: string; onChangeText?: (t: string) => void; placeholder?: string;
-  readonly?: boolean; keyboardType?: "default" | "numeric" | "decimal-pad"; multiline?: boolean;
+/** Styled TextInput with focus ring */
+const Input = ({ value, onChange, placeholder, readonly, numeric, multi }: {
+  value: string; onChange?: (v: string) => void; placeholder?: string;
+  readonly?: boolean; numeric?: boolean; multi?: boolean;
 }) => {
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
-      value={value} onChangeText={onChangeText} placeholder={placeholder}
+      value={value} onChangeText={onChange} placeholder={placeholder}
       placeholderTextColor="#9ca3af" editable={!readonly}
-      keyboardType={keyboardType ?? "default"} multiline={multiline}
+      keyboardType={numeric ? "decimal-pad" : "default"} multiline={multi}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      className={`rounded-xl px-3 py-2.5 text-[13px] ${readonly ? "bg-gray-50 text-gray-400" : "bg-white text-gray-900"}`}
       style={{
         borderWidth: 1.5,
-        borderColor: readonly ? G.border : focused ? G.green : G.border,
-        borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
-        fontSize: 13, color: readonly ? G.muted : "#111827",
-        backgroundColor: readonly ? G.bg : "#fff",
+        borderColor: readonly ? "#e5e7eb" : focused ? "#52b788" : "#e5e7eb",
         fontFamily: readonly ? MONO : undefined,
-        minHeight: multiline ? 72 : undefined,
-        textAlignVertical: multiline ? "top" : undefined,
+        minHeight: multi ? 72 : undefined, textAlignVertical: multi ? "top" : undefined,
       }}
     />
   );
 };
 
-type PickerSheetOption = string;
-const PickerSheet = ({ title, options, selected, onSelect, onClose }: {
-  title: string; options: PickerSheetOption[]; selected: string;
-  onSelect: (v: string) => void; onClose: () => void;
-}) => (
-  <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-    <TouchableOpacity style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }}
-      activeOpacity={1} onPress={onClose} />
-    <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
-      <View style={{ alignItems: "center", paddingVertical: 12 }}>
-        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: G.border }} />
-      </View>
-      <View style={{ flexDirection: "row", justifyContent: "space-between",
-        paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: G.border }}>
-        <Text style={{ fontSize: 15, fontWeight: "700", color: "#111" }}>{title}</Text>
-        <TouchableOpacity onPress={onClose} hitSlop={8}>
-          <Text style={{ fontSize: 13, fontWeight: "600", color: G.mid }}>Done</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
-        {options.map((opt) => (
-          <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }}
-            activeOpacity={0.7}
-            style={{ flexDirection: "row", justifyContent: "space-between",
-              alignItems: "center", paddingHorizontal: 20, paddingVertical: 14,
-              borderBottomWidth: 1, borderBottomColor: "#f9fafb",
-              backgroundColor: opt === selected ? G.llight : undefined }}>
-            <Text style={{ fontSize: 14, color: opt === selected ? G.dark : "#374151",
-              fontWeight: opt === selected ? "700" : "400" }}>
-              {opt}
-            </Text>
-            {opt === selected && (
-              <MaterialIcons name="check" size={16} color={G.green} />
-            )}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-      <View style={{ height: 24 }} />
-    </View>
-  </Modal>
-);
-
-const SelectField = ({ label, required, options, value, onSelect }: {
-  label: string; required?: boolean; options: string[];
-  value: string; onSelect: (v: string) => void;
+/** Bottom-sheet picker */
+const Picker = ({ title, options, value, onSelect }: {
+  title: string; options: string[]; value: string; onSelect: (v: string) => void;
 }) => {
   const [open, setOpen] = useState(false);
   return (
-    <Field label={label} required={required}>
+    <View>
       <TouchableOpacity onPress={() => setOpen(true)} activeOpacity={0.8}
-        style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-          borderWidth: 1.5, borderColor: G.border, borderRadius: 10,
-          paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#fff" }}>
-        <Text style={{ fontSize: 13, color: value ? "#111" : "#9ca3af", flex: 1 }}>
+        className="flex-row items-center justify-between bg-white rounded-xl px-3 py-2.5"
+        style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}>
+        <Text className={`text-[13px] flex-1 ${value ? "text-gray-900" : "text-gray-400"}`}>
           {value || "Select…"}
         </Text>
-        <MaterialIcons name="keyboard-arrow-down" size={18} color={G.muted} />
+        <MaterialIcons name="keyboard-arrow-down" size={18} color="#6b7280" />
       </TouchableOpacity>
-      {open && (
-        <PickerSheet title={label} options={options} selected={value}
-          onSelect={onSelect} onClose={() => setOpen(false)} />
-      )}
-    </Field>
-  );
-};
-
-const AlertBanner = ({ type, children }: {
-  type: "info" | "warning" | "danger"; children: React.ReactNode;
-}) => {
-  const cfg = {
-    info:    { bg: G.llight, border: G.green,  icon: "info" as const,    iconColor: G.mid  },
-    warning: { bg: G.goldL,  border: G.gold,   icon: "warning" as const, iconColor: G.goldD },
-    danger:  { bg: G.redL,   border: G.red,    icon: "error" as const,   iconColor: G.red  },
-  }[type];
-  return (
-    <View style={{ flexDirection: "row", gap: 10, backgroundColor: cfg.bg,
-      borderLeftWidth: 4, borderLeftColor: cfg.border, borderRadius: 10,
-      padding: 12, marginBottom: 14 }}>
-      <MaterialIcons name={cfg.icon} size={18} color={cfg.iconColor} style={{ marginTop: 1 }} />
-      <View style={{ flex: 1 }}>{children}</View>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity className="flex-1 bg-black/50" activeOpacity={1} onPress={() => setOpen(false)} />
+        <View className="bg-white rounded-t-3xl">
+          <View className="items-center py-3">
+            <View className="w-10 h-1 rounded-full bg-gray-300" />
+          </View>
+          <View className="flex-row justify-between items-center px-5 pb-3 border-b border-gray-100">
+            <Text className="text-[15px] font-bold text-gray-900">{title}</Text>
+            <TouchableOpacity onPress={() => setOpen(false)} hitSlop={8}>
+              <Text className="text-[13px] font-semibold text-emerald-700">Done</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
+            {options.map(opt => (
+              <TouchableOpacity key={opt} onPress={() => { onSelect(opt); setOpen(false); }}
+                activeOpacity={0.7}
+                className={`flex-row justify-between items-center px-5 py-3.5 border-b border-gray-50 ${opt === value ? "bg-emerald-50" : ""}`}>
+                <Text className={`text-[14px] ${opt === value ? "font-bold text-[#1a4d2e]" : "text-gray-700"}`}>{opt}</Text>
+                {opt === value && <MaterialIcons name="check" size={16} color="#52b788" />}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View className="h-6" />
+        </View>
+      </Modal>
     </View>
   );
 };
 
-const StepBadge = ({ step }: { step: number }) => (
-  <View style={{ backgroundColor: G.dark, borderRadius: 12, paddingHorizontal: 16,
-    paddingVertical: 10, alignItems: "center" }}>
-    <Text style={{ fontFamily: MONO, fontSize: 24, fontWeight: "700", color: "#fff", lineHeight: 28 }}>
-      {String(step).padStart(2, "0")}
-    </Text>
-    <Text style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
-      STEP
+/** Info / warning banner */
+const Banner = ({ type, text }: { type: "info"|"warning"; text: string }) => (
+  <View className={`flex-row gap-2.5 rounded-xl p-3 mb-3 ${type === "info" ? "bg-emerald-50" : "bg-amber-50"}`}
+    style={{ borderLeftWidth: 4, borderLeftColor: type === "info" ? "#52b788" : "#c9a84c" }}>
+    <MaterialIcons name={type === "info" ? "info" : "warning"} size={16}
+      color={type === "info" ? "#2d6a4f" : "#7a5000"} style={{ marginTop: 1 }} />
+    <Text className={`flex-1 text-[12.5px] leading-5 ${type === "info" ? "text-emerald-900" : "text-amber-900"}`}>
+      {text}
     </Text>
   </View>
 );
 
-const Btn = ({ label, onPress, disabled, variant = "primary" }: {
-  label: string; onPress: () => void; disabled?: boolean;
-  variant?: "primary" | "ghost" | "gold";
-}) => {
-  const styles: Record<string, object> = {
-    primary: { backgroundColor: disabled ? "#9ca3af" : G.dark },
-    ghost:   { backgroundColor: "transparent", borderWidth: 1.5, borderColor: G.border },
-    gold:    { backgroundColor: G.goldD },
-  };
-  const textStyles: Record<string, object> = {
-    primary: { color: "#fff" },
-    ghost:   { color: G.muted },
-    gold:    { color: "#fff" },
-  };
-  return (
-    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.8}
-      style={{ paddingHorizontal: 20, paddingVertical: 11, borderRadius: 10,
-        ...styles[variant] }}>
-      <Text style={{ fontSize: 13.5, fontWeight: "700", ...textStyles[variant] }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-};
-
-// ─── Stage Progress Strip ─────────────────────────────────────────────────────
-
-const StageStrip = ({ current, completed }: {
-  current: CanvassStage; completed: Set<CanvassStage>;
+/** Primary / ghost button — matches PRModule's action buttons */
+const Btn = ({ label, onPress, disabled, ghost }: {
+  label: string; onPress: () => void; disabled?: boolean; ghost?: boolean;
 }) => (
+  <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.8}
+    className={`px-5 py-2.5 rounded-xl ${ghost ? "bg-transparent border border-gray-200" : disabled ? "bg-gray-300" : "bg-[#064E3B]"}`}>
+    <Text className={`text-[13px] font-bold ${ghost ? "text-gray-400" : "text-white"}`}>{label}</Text>
+  </TouchableOpacity>
+);
+
+/** Step number badge — monospace, mirrors PRModule prNo style */
+const StepBadge = ({ step }: { step: number }) => (
+  <View className="bg-[#064E3B] rounded-xl px-3 py-2 items-center">
+    <Text className="text-[22px] font-bold text-white" style={{ fontFamily: MONO, lineHeight: 26 }}>
+      {String(step).padStart(2,"0")}
+    </Text>
+    <Text className="text-[8px] font-bold tracking-widest uppercase text-white/50 mt-0.5">STEP</Text>
+  </View>
+);
+
+/** Horizontal stage strip — shown in BAC header */
+const StageStrip = ({ current, completed }: { current: CanvassStage; completed: Set<CanvassStage> }) => (
   <ScrollView horizontal showsHorizontalScrollIndicator={false}
-    style={{ backgroundColor: G.dark }}
+    className="bg-[#064E3B]"
     contentContainerStyle={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 10, gap: 4 }}>
     {STAGE_ORDER.map((s, i) => {
-      const meta  = STAGE_META[s];
-      const done  = completed.has(s);
-      const active = s === current;
+      const meta = STAGE_META[s]; const done = completed.has(s); const active = s === current;
       return (
         <React.Fragment key={s}>
-          <View style={{ alignItems: "center", gap: 4 }}>
-            <View style={{
-              width: 28, height: 28, borderRadius: 14,
-              backgroundColor: done ? G.green : active ? "#fff" : "rgba(255,255,255,0.15)",
-              alignItems: "center", justifyContent: "center",
-            }}>
-              <MaterialIcons
-                name={done ? "check" : meta.icon}
-                size={14}
-                color={done ? G.dark : active ? G.dark : "rgba(255,255,255,0.4)"}
-              />
+          <View className="items-center gap-1">
+            <View className={`w-7 h-7 rounded-full items-center justify-center ${done ? "bg-[#52b788]" : active ? "bg-white" : "bg-white/15"}`}>
+              <MaterialIcons name={done ? "check" : meta.icon} size={13}
+                color={done ? "#1a4d2e" : active ? "#064E3B" : "rgba(255,255,255,0.4)"} />
             </View>
-            <Text style={{
-              fontSize: 9, fontWeight: "700", letterSpacing: 0.3,
-              color: active ? "#fff" : done ? G.green : "rgba(255,255,255,0.35)",
-              textAlign: "center", maxWidth: 56,
-            }}>
+            <Text className="text-[9px] font-bold text-center max-w-[54px]"
+              style={{ color: active ? "#fff" : done ? "#52b788" : "rgba(255,255,255,0.35)" }}>
               {meta.label}
             </Text>
           </View>
           {i < STAGE_ORDER.length - 1 && (
-            <View style={{ width: 20, height: 1, backgroundColor: "rgba(255,255,255,0.15)",
-              alignSelf: "center", marginTop: -10 }} />
+            <View className="w-5 h-px bg-white/15 self-center -mt-3" />
           )}
         </React.Fragment>
       );
@@ -434,188 +271,142 @@ const StageStrip = ({ current, completed }: {
   </ScrollView>
 );
 
-// ─── PR Summary Card ──────────────────────────────────────────────────────────
+/** Step title block used at the top of every BAC step */
+const StepHeader = ({ stage, title, desc }: { stage: CanvassStage; title: string; desc: string }) => (
+  <View className="flex-row justify-between items-start mb-4">
+    <View className="flex-1 pr-3">
+      <Text className="text-[10.5px] font-bold tracking-wide uppercase text-emerald-600 mb-1">
+        Stage 2 · Canvass & Resolution
+      </Text>
+      <Text className="text-[22px] font-extrabold text-[#1a4d2e] mb-1">{title}</Text>
+      <Text className="text-[13px] text-gray-500 leading-5">{desc}</Text>
+    </View>
+    <StepBadge step={STAGE_META[stage].step} />
+  </View>
+);
 
-const PRSummaryCard = ({ pr }: { pr: CanvassingPR }) => {
-  const total = prTotal(pr.items);
-  return (
-    <Card style={{ backgroundColor: G.dark, borderColor: "rgba(255,255,255,0.1)" }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+/** Dark PR summary card — mirrors RecordCard header (emerald, monospace) */
+const PRCard = ({ pr }: { pr: CanvassingPR }) => (
+  <Card className="bg-[#064E3B]">
+    <View className="px-4 pt-3.5 pb-3">
+      <View className="flex-row justify-between items-start mb-2.5">
         <View>
-          <Text style={{ fontSize: 9, fontWeight: "700", letterSpacing: 1, color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>
-            Purchase Request
-          </Text>
-          <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff", fontFamily: MONO, marginTop: 2 }}>
-            {pr.prNo}
-          </Text>
-          <Text style={{ fontSize: 11.5, color: G.green, fontWeight: "600", marginTop: 2 }}>
-            {pr.officeSection} · {pr.date}
-          </Text>
+          <Text className="text-[9px] font-bold tracking-widest uppercase text-white/40">Purchase Request</Text>
+          <Text className="text-[16px] font-bold text-white mt-0.5" style={{ fontFamily: MONO }}>{pr.prNo}</Text>
+          <Text className="text-[11.5px] font-semibold text-emerald-400 mt-0.5">{pr.officeSection} · {pr.date}</Text>
         </View>
         {pr.isHighValue && (
-          <View style={{ backgroundColor: G.goldD, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-            <Text style={{ fontSize: 9.5, fontWeight: "700", color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              High-Value
-            </Text>
+          <View className="bg-amber-800 px-2 py-1 rounded-lg">
+            <Text className="text-[9.5px] font-bold text-white uppercase tracking-wide">High-Value</Text>
           </View>
         )}
       </View>
-      {pr.items.map((item) => (
-        <View key={item.id} style={{ flexDirection: "row", justifyContent: "space-between",
-          paddingVertical: 3, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.06)" }}>
-          <Text style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", flex: 1, paddingRight: 8 }} numberOfLines={1}>
-            {item.desc}
-          </Text>
-          <Text style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontFamily: MONO }}>
-            ₱{fmt(item.qty * item.unitCost)}
-          </Text>
+      <View className="h-px bg-white/10 mb-2" />
+      {pr.items.map(item => (
+        <View key={item.id} className="flex-row justify-between py-0.5">
+          <Text className="text-[11px] text-white/50 flex-1 pr-2" numberOfLines={1}>{item.desc}</Text>
+          <Text className="text-[11px] text-white/30" style={{ fontFamily: MONO }}>₱{fmt(item.qty * item.unitCost)}</Text>
         </View>
       ))}
-      <View style={{ flexDirection: "row", justifyContent: "space-between",
-        marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.12)" }}>
-        <Text style={{ fontSize: 10, fontWeight: "600", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Total
-        </Text>
-        <Text style={{ fontSize: 14, fontWeight: "700", color: G.green, fontFamily: MONO }}>
-          ₱{fmt(total)}
-        </Text>
+      <View className="flex-row justify-between mt-2.5 pt-2.5 border-t border-white/10">
+        <Text className="text-[10px] font-semibold uppercase tracking-wide text-white/40">Total</Text>
+        <Text className="text-[14px] font-bold text-emerald-400" style={{ fontFamily: MONO }}>₱{fmt(prTotal(pr.items))}</Text>
       </View>
-    </Card>
-  );
-};
+    </View>
+  </Card>
+);
 
-// ─── Items Table ──────────────────────────────────────────────────────────────
-
+/** Items breakdown table — matches PRModule's inline item list */
 const ItemsTable = ({ items }: { items: CanvassingPRItem[] }) => (
   <Card>
-    <SectionLabel>Line Items</SectionLabel>
-    {/* Header */}
-    <View style={{ flexDirection: "row", backgroundColor: G.dark,
-      borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, marginBottom: 2 }}>
-      {["Description", "Unit", "Qty", "Unit Cost", "Total"].map((h, i) => (
-        <Text key={h} style={{
-          fontSize: 9.5, fontWeight: "700", color: "rgba(255,255,255,0.7)",
-          textTransform: "uppercase", letterSpacing: 0.5,
-          flex: i === 0 ? 2 : 1, textAlign: i > 1 ? "right" : "left",
-        }}>
-          {h}
-        </Text>
-      ))}
-    </View>
-    {items.map((item, i) => (
-      <View key={item.id} style={{ flexDirection: "row", paddingHorizontal: 10,
-        paddingVertical: 8, backgroundColor: i % 2 ? "#f9fafb" : "#fff",
-        borderRadius: 6 }}>
-        <Text style={{ flex: 2, fontSize: 12, color: "#374151" }} numberOfLines={2}>{item.desc}</Text>
-        <Text style={{ flex: 1, fontSize: 12, color: G.muted, textAlign: "left", paddingLeft: 4 }}>{item.unit}</Text>
-        <Text style={{ flex: 1, fontSize: 12, color: "#374151", textAlign: "right", fontFamily: MONO }}>{item.qty}</Text>
-        <Text style={{ flex: 1, fontSize: 12, color: "#374151", textAlign: "right", fontFamily: MONO }}>₱{fmt(item.unitCost)}</Text>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: "600", color: G.mid, textAlign: "right", fontFamily: MONO }}>
-          ₱{fmt(item.qty * item.unitCost)}
-        </Text>
+    <View className="px-4 pt-3 pb-2">
+      <Divider label="Line Items" />
+      <View className="rounded-xl overflow-hidden border border-gray-100">
+        <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
+          {["Description","Unit","Qty","Unit Cost","Total"].map((h, i) => (
+            <Text key={h} className="text-[9.5px] font-bold uppercase tracking-wide text-white/70"
+              style={{ flex: i === 0 ? 2 : 1, textAlign: i > 1 ? "right" : "left" }}>
+              {h}
+            </Text>
+          ))}
+        </View>
+        {items.map((item, i) => (
+          <View key={item.id} className={`flex-row px-2.5 py-2 ${i % 2 ? "bg-gray-50" : "bg-white"}`}
+            style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+            <Text className="flex-[2] text-[12px] text-gray-700" numberOfLines={2}>{item.desc}</Text>
+            <Text className="flex-1 text-[12px] text-gray-500">{item.unit}</Text>
+            <Text className="flex-1 text-[12px] text-gray-700 text-right" style={{ fontFamily: MONO }}>{item.qty}</Text>
+            <Text className="flex-1 text-[12px] text-gray-700 text-right" style={{ fontFamily: MONO }}>₱{fmt(item.unitCost)}</Text>
+            <Text className="flex-1 text-[12px] font-semibold text-[#2d6a4f] text-right" style={{ fontFamily: MONO }}>₱{fmt(item.qty * item.unitCost)}</Text>
+          </View>
+        ))}
       </View>
-    ))}
+    </View>
   </Card>
 );
 
-// ─── BAC Signatories ──────────────────────────────────────────────────────────
-
-const BACSignatories = ({ members, onSign, title = "Signatories" }: {
-  members: BACMember[];
-  onSign: (idx: number) => void;
-  title?: string;
+/** Signatory list with tap-to-sign — matches RecordCard action button row */
+const Signatories = ({ members, onSign, title = "Signatories" }: {
+  members: BACMember[]; onSign: (i: number) => void; title?: string;
 }) => (
   <Card>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", color: G.muted }}>
-        {title}
-      </Text>
-      <View style={{ backgroundColor: G.light, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", color: G.mid }}>
-          {members.filter((m) => m.signed).length}/{members.length} signed
-        </Text>
-      </View>
-      <View style={{ flex: 1, height: 1, backgroundColor: G.border }} />
-    </View>
-    {members.map((m, idx) => (
-      <View key={m.name} style={{
-        flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-        padding: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1.5,
-        borderColor: m.signed ? G.green : G.border,
-        backgroundColor: m.signed ? G.llight : "#fff",
-      }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{
-            width: 34, height: 34, borderRadius: 8, alignItems: "center", justifyContent: "center",
-            backgroundColor: m.signed ? G.green : "#f3f4f6",
-            borderWidth: 1.5, borderColor: m.signed ? G.green : G.border,
-          }}>
-            <Text style={{ fontSize: 13, fontWeight: "700",
-              color: m.signed ? "#fff" : G.muted }}>
-              {m.signed ? "✓" : m.name[0]}
-            </Text>
-          </View>
-          <View>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: m.signed ? G.mid : "#111" }}>
-              {m.name}
-            </Text>
-            <Text style={{ fontSize: 11, color: G.muted }}>{m.designation}</Text>
-          </View>
+    <View className="px-4 pt-3 pb-2">
+      <View className="flex-row items-center gap-2 mb-3">
+        <Text className="text-[9.5px] font-bold tracking-widest uppercase text-gray-400">{title}</Text>
+        <View className="bg-emerald-100 px-2 py-0.5 rounded-md">
+          <Text className="text-[10px] font-bold text-emerald-700">
+            {members.filter(m => m.signed).length}/{members.length} signed
+          </Text>
         </View>
-        {m.signed ? (
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 11.5, fontWeight: "600", color: G.mid }}>✅ Signed</Text>
-            <Text style={{ fontSize: 10, color: G.muted }}>at {m.signedAt}</Text>
-          </View>
-        ) : (
-          <TouchableOpacity onPress={() => onSign(idx)} activeOpacity={0.8}
-            style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
-              borderWidth: 1.5, borderColor: G.border, backgroundColor: "#fff" }}>
-            <Text style={{ fontSize: 12, fontWeight: "600", color: G.muted }}>✍️ Sign</Text>
-          </TouchableOpacity>
-        )}
+        <View className="flex-1 h-px bg-gray-200" />
       </View>
-    ))}
+      {members.map((m, idx) => (
+        <View key={m.name}
+          className={`flex-row items-center justify-between p-3 mb-2 rounded-2xl border ${m.signed ? "bg-emerald-50 border-emerald-200" : "bg-white border-gray-200"}`}>
+          <View className="flex-row items-center gap-2.5 flex-1">
+            <View className={`w-8 h-8 rounded-lg items-center justify-center border ${m.signed ? "bg-emerald-500 border-emerald-500" : "bg-gray-100 border-gray-200"}`}>
+              <Text className="text-[12px] font-bold" style={{ color: m.signed ? "#fff" : "#6b7280" }}>
+                {m.signed ? "✓" : m.name[0]}
+              </Text>
+            </View>
+            <View>
+              <Text className={`text-[13px] font-semibold ${m.signed ? "text-emerald-800" : "text-gray-800"}`}>{m.name}</Text>
+              <Text className="text-[11px] text-gray-400">{m.designation}</Text>
+            </View>
+          </View>
+          {m.signed
+            ? <View className="items-end"><Text className="text-[11.5px] font-semibold text-emerald-600">✅ Signed</Text><Text className="text-[10px] text-gray-400">at {m.signedAt}</Text></View>
+            : <TouchableOpacity onPress={() => onSign(idx)} activeOpacity={0.8} className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white"><Text className="text-[12px] font-semibold text-gray-500">✍️ Sign</Text></TouchableOpacity>
+          }
+        </View>
+      ))}
+    </View>
   </Card>
 );
 
-// ─── Division Row ─────────────────────────────────────────────────────────────
-
-const DivisionRow = ({ div, onAction }: {
-  div: DivisionAssignment;
-  onAction: () => void;
-}) => {
-  const statusCfg = {
-    pending:  { bg: "#fefce8", text: "#854d0e", label: "Pending"  },
-    released: { bg: G.light,   text: G.mid,     label: "Released" },
-    returned: { bg: G.blueL,   text: G.blue,    label: "Returned" },
+/** Division canvasser row with Release / Receive buttons */
+const DivRow = ({ div, onAction }: { div: DivAssign; onAction: () => void }) => {
+  const pill = {
+    pending:  { bg: "bg-amber-50",    text: "text-amber-700",   label: "Pending"  },
+    released: { bg: "bg-emerald-50",  text: "text-emerald-700", label: "Released" },
+    returned: { bg: "bg-blue-50",     text: "text-blue-700",    label: "Returned" },
   }[div.status];
-
   return (
-    <View style={{ flexDirection: "row", alignItems: "center",
-      padding: 10, marginBottom: 6, borderRadius: 10, borderWidth: 1.5,
-      borderColor: div.status !== "pending" ? G.green : G.border,
-      backgroundColor: div.status !== "pending" ? G.llight : "#fff",
-      gap: 8 }}>
-      <View style={{ width: 56 }}>
-        <Text style={{ fontSize: 11, fontWeight: "700", color: G.dark,
-          backgroundColor: G.light, paddingHorizontal: 6, paddingVertical: 2,
-          borderRadius: 5, textAlign: "center" }}>
-          {div.section}
-        </Text>
+    <View className={`flex-row items-center gap-2 p-2.5 mb-1.5 rounded-2xl border ${div.status !== "pending" ? "bg-emerald-50 border-emerald-200" : "bg-white border-gray-200"}`}>
+      <View className="w-16">
+        <Text className="text-[10.5px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-md text-center">{div.section}</Text>
       </View>
-      <Text style={{ flex: 1, fontSize: 12.5, color: "#374151" }}>{div.canvasserName}</Text>
-      <Text style={{ fontSize: 10.5, color: G.muted, fontFamily: MONO, width: 72 }} numberOfLines={1}>
+      <Text className="flex-1 text-[12.5px] text-gray-700">{div.canvasser}</Text>
+      <Text className="text-[10.5px] text-gray-400 w-18" style={{ fontFamily: MONO }} numberOfLines={1}>
         {div.releaseDate || div.returnDate || "—"}
       </Text>
-      <View style={{ backgroundColor: statusCfg.bg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", color: statusCfg.text }}>{statusCfg.label}</Text>
+      <View className={`px-2 py-0.5 rounded-full ${pill.bg}`}>
+        <Text className={`text-[10px] font-bold ${pill.text}`}>{pill.label}</Text>
       </View>
       {div.status !== "returned" && (
         <TouchableOpacity onPress={onAction} activeOpacity={0.8}
-          style={{ backgroundColor: div.status === "pending" ? G.green : G.blue,
-            paddingHorizontal: 10, paddingVertical: 5, borderRadius: 7 }}>
-          <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff" }}>
+          className={`px-2.5 py-1 rounded-lg ${div.status === "pending" ? "bg-emerald-600" : "bg-blue-600"}`}>
+          <Text className="text-[11px] font-bold text-white">
             {div.status === "pending" ? "📤 Release" : "📥 Receive"}
           </Text>
         </TouchableOpacity>
@@ -624,644 +415,427 @@ const DivisionRow = ({ div, onAction }: {
   );
 };
 
-// ─── Progress Bar ─────────────────────────────────────────────────────────────
-
+/** Progress bar — mirrors PRModule's stat strip proportions */
 const ProgressBar = ({ done, total, label }: { done: number; total: number; label: string }) => {
   const pct = Math.round((done / Math.max(total, 1)) * 100);
   return (
-    <View style={{ backgroundColor: G.bg, borderRadius: 12, padding: 14, marginBottom: 12,
-      flexDirection: "row", alignItems: "center", gap: 14 }}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-          <Text style={{ fontSize: 11, fontWeight: "600", color: G.muted }}>{label}</Text>
-          <Text style={{ fontSize: 11, fontWeight: "600", color: G.muted }}>{done} of {total}</Text>
+    <View className="flex-row items-center gap-3 bg-gray-50 rounded-2xl p-3 mb-3">
+      <View className="flex-1">
+        <View className="flex-row justify-between mb-1.5">
+          <Text className="text-[11px] font-semibold text-gray-500">{label}</Text>
+          <Text className="text-[11px] font-semibold text-gray-500">{done}/{total}</Text>
         </View>
-        <View style={{ height: 8, backgroundColor: G.border, borderRadius: 4, overflow: "hidden" }}>
-          <View style={{ height: "100%", width: `${pct}%` as any,
-            backgroundColor: G.green, borderRadius: 4 }} />
+        <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <View className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
         </View>
       </View>
-      <View style={{ alignItems: "center", minWidth: 44 }}>
-        <Text style={{ fontSize: 20, fontWeight: "700", color: G.dark, fontFamily: MONO }}>{pct}%</Text>
-      </View>
+      <Text className="text-[18px] font-bold text-[#1a4d2e]" style={{ fontFamily: MONO }}>{pct}%</Text>
     </View>
   );
 };
 
-// ─── Step 6: PR Received ──────────────────────────────────────────────────────
+// ─── BAC Steps ────────────────────────────────────────────────────────────────
 
-const Step6PRReceived = ({ pr, onComplete }: { pr: CanvassingPR; onComplete: () => void }) => {
-  const [bacNo,      setBacNo]      = useState("");
-  const [receivedBy, setReceivedBy] = useState("Yvonne M.");
-  const [notes,      setNotes]      = useState("");
-
-  // TODO: supabase.from("canvass_sessions").insert({ pr_no: pr.prNo, bac_no: bacNo, received_by: receivedBy, notes })
-
+const Step6 = ({ pr, onDone }: { pr: CanvassingPR; onDone: () => void }) => {
+  const [bacNo, setBacNo]     = useState("");
+  const [rcvBy, setRcvBy]     = useState("Yvonne M.");
+  const [notes, setNotes]     = useState("");
   return (
     <>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", color: G.green, marginBottom: 3 }}>
-            Stage 2 · Canvass & Resolution
-          </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: G.dark, marginBottom: 4 }}>
-            PR Received from PARPO
-          </Text>
-          <Text style={{ fontSize: 13, color: G.muted, lineHeight: 19 }}>
-            BAC receives the approved PR from PARPO&#39;s Office for preparation of the canvass sheet and BAC Resolution.
-          </Text>
-        </View>
-        <StepBadge step={6} />
-      </View>
-
-      <AlertBanner type="info">
-        <Text style={{ fontSize: 12.5, color: "#374151", lineHeight: 18 }}>
-          This PR has been <Text style={{ fontWeight: "700" }}>approved by PARPO</Text> and budget has been earmarked. Assign a BAC canvass number and acknowledge receipt to proceed.
-        </Text>
-      </AlertBanner>
-
-      <PRSummaryCard pr={pr} />
+      <StepHeader stage="pr_received" title="PR Received from PARPO"
+        desc="BAC receives the approved PR from PARPO's Office. Assign a BAC canvass number and acknowledge receipt." />
+      <Banner type="info" text="PR has been approved by PARPO and budget earmarked. Assign BAC canvass number to continue." />
+      <PRCard pr={pr} />
       <ItemsTable items={pr.items} />
-
       <Card>
-        <SectionLabel>BAC Acknowledgement</SectionLabel>
-        <Field label="BAC Canvass No." required>
-          <RNInput value={bacNo} onChangeText={setBacNo} placeholder="e.g. 2026-BAC-0042" />
-        </Field>
-        <SelectField label="Received By" required options={["Yvonne M.", "Mariel T."]}
-          value={receivedBy} onSelect={setReceivedBy} />
-        <Field label="Date Received">
-          <RNInput value={TODAY} readonly />
-        </Field>
-        <Field label="Remarks / Notes">
-          <RNInput value={notes} onChangeText={setNotes}
-            placeholder="Any observations on the received PR…" multiline />
-        </Field>
+        <View className="px-4 pt-3 pb-2">
+          <Divider label="BAC Acknowledgement" />
+          <View className="flex-row gap-2.5">
+            <View className="flex-1">
+              <Field label="BAC Canvass No." required>
+                <Input value={bacNo} onChange={setBacNo} placeholder="e.g. 2026-BAC-0042" />
+              </Field>
+            </View>
+            <View className="flex-1">
+              <Field label="Date Received"><Input value={TODAY} readonly /></Field>
+            </View>
+          </View>
+          <Field label="Received By" required>
+            <Picker title="Received By" options={["Yvonne M.","Mariel T."]} value={rcvBy} onSelect={setRcvBy} />
+          </Field>
+          <Field label="Remarks / Notes">
+            <Input value={notes} onChange={setNotes} placeholder="Any observations…" multi />
+          </Field>
+        </View>
       </Card>
-
-      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-        <Btn label="Save Draft" variant="ghost" onPress={() => {}} />
-        <Btn label="Acknowledge & Proceed →" disabled={!bacNo.trim()}
-          onPress={onComplete} />
+      <View className="flex-row justify-end gap-2.5 mt-1">
+        <Btn ghost label="Save Draft" onPress={() => {}} />
+        <Btn label="Acknowledge Receipt →" disabled={!bacNo} onPress={onDone} />
       </View>
     </>
   );
 };
 
-// ─── Step 7: BAC Resolution ───────────────────────────────────────────────────
-
-const Step7BACResolution = ({ pr, bacMembers, setBACMembers, onComplete }: {
-  pr: CanvassingPR;
-  bacMembers: BACMember[];
-  setBACMembers: React.Dispatch<React.SetStateAction<BACMember[]>>;
-  onComplete: () => void;
+const Step7 = ({ pr, members, setMembers, onDone }: {
+  pr: CanvassingPR; members: BACMember[];
+  setMembers: React.Dispatch<React.SetStateAction<BACMember[]>>; onDone: () => void;
 }) => {
-  const [resNo,      setResNo]      = useState(`${new Date().getFullYear()}-RES-${pr.prNo.slice(-4)}`);
-  const [modeOfProc, setModeOfProc] = useState("Small Value Procurement (SVP)");
-  const [basis,      setBasis]      = useState("The procurement amount is below the threshold for competitive bidding as prescribed under RA 9184 and its IRR.");
-  const allSigned = bacMembers.every((m) => m.signed);
-
-  const signMember = (idx: number) => {
-    const now = new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
-    setBACMembers((m) => m.map((mb, i) => i === idx ? { ...mb, signed: true, signedAt: now } : mb));
-    // TODO: supabase.from("canvass_bac_members").update({ signed: true, signed_at: now }).eq("name", bacMembers[idx].name)
-  };
-
+  const [resNo, setResNo]   = useState("");
+  const [mode,  setMode]    = useState("");
+  const [basis, setBasis]   = useState("");
+  const allSigned = members.every(m => m.signed);
+  const sign = (i: number) =>
+    setMembers(m => m.map((mb, idx) => idx === i ? { ...mb, signed: true, signedAt: nowTime() } : mb));
   return (
     <>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", color: G.green, marginBottom: 3 }}>
-            Stage 2 · BAC Resolution
-          </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: G.dark, marginBottom: 4 }}>BAC Resolution</Text>
-          <Text style={{ fontSize: 13, color: G.muted, lineHeight: 19 }}>
-            Prepare the BAC Resolution indicating the mode of procurement and release to all BAC members and PARPO II for signature.
-          </Text>
-        </View>
-        <StepBadge step={7} />
-      </View>
-
+      <StepHeader stage="bac_resolution" title="BAC Resolution"
+        desc="Prepare the BAC Resolution with mode of procurement and collect all required signatures." />
       <Card>
-        <SectionLabel>Resolution Details</SectionLabel>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Field label="Resolution No." required>
-              <RNInput value={resNo} onChangeText={setResNo} />
-            </Field>
+        <View className="px-4 pt-3 pb-2">
+          <Divider label="Resolution Details" />
+          <View className="flex-row gap-2.5">
+            <View className="flex-1">
+              <Field label="Resolution No." required>
+                <Input value={resNo} onChange={setResNo} placeholder="e.g. 2026-RES-001" />
+              </Field>
+            </View>
+            <View className="flex-1">
+              <Field label="PR Reference"><Input value={pr.prNo} readonly /></Field>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Field label="PR Reference">
-              <RNInput value={pr.prNo} readonly />
-            </Field>
-          </View>
+          <Field label="Mode of Procurement" required>
+            <Picker title="Mode of Procurement" options={PROC_MODES} value={mode} onSelect={setMode} />
+          </Field>
+          <Field label="Legal Basis / Justification" required>
+            <Input value={basis} onChange={setBasis} placeholder="Cite applicable law or regulation…" multi />
+          </Field>
+          <Field label="Date Prepared"><Input value={TODAY} readonly /></Field>
         </View>
-        <SelectField label="Mode of Procurement" required options={MODES_OF_PROCUREMENT}
-          value={modeOfProc} onSelect={setModeOfProc} />
-        <Field label="Date Prepared">
-          <RNInput value={TODAY} readonly />
-        </Field>
-        <Field label="Legal Basis / Justification" required>
-          <RNInput value={basis} onChangeText={setBasis} multiline />
-        </Field>
       </Card>
-
-      {!allSigned && (
-        <AlertBanner type="warning">
-          <Text style={{ fontSize: 12.5, color: "#374151" }}>
-            All BAC members and PARPO II must sign before releasing the canvass. Tap <Text style={{ fontWeight: "700" }}>Sign</Text> to simulate physical signature.
-          </Text>
-        </AlertBanner>
-      )}
-
-      <BACSignatories members={bacMembers} onSign={signMember} />
-
-      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-        <Btn label="Save Draft" variant="ghost" onPress={() => {}} />
-        <Btn label="Resolution Finalized → Release Canvass"
-          disabled={!allSigned} onPress={onComplete} />
+      {!allSigned && <Banner type="warning" text="All BAC members and PARPO II must sign before releasing the canvass." />}
+      <Signatories members={members} onSign={sign} />
+      <View className="flex-row justify-end gap-2.5 mt-1">
+        <Btn ghost label="Save Draft" onPress={() => {}} />
+        <Btn label="Resolution Finalized → Release Canvass" disabled={!allSigned || !resNo || !mode} onPress={onDone} />
       </View>
     </>
   );
 };
 
-// ─── Step 8: Release Canvass ──────────────────────────────────────────────────
-
-const Step8ReleaseCanvass = ({ divisions, setDivisions, onComplete }: {
-  divisions: DivisionAssignment[];
-  setDivisions: React.Dispatch<React.SetStateAction<DivisionAssignment[]>>;
-  onComplete: () => void;
+const Step8 = ({ divs, setDivs, onDone }: {
+  divs: DivAssign[]; setDivs: React.Dispatch<React.SetStateAction<DivAssign[]>>; onDone: () => void;
 }) => {
-  const released    = divisions.filter((d) => d.status !== "pending").length;
-  const allReleased = divisions.every((d) => d.status !== "pending");
-
-  const releaseOne = (idx: number) => {
-    setDivisions((d) => d.map((div, i) =>
-      i === idx ? { ...div, status: "released", releaseDate: TODAY } : div
-    ));
-    // TODO: supabase.from("canvass_division_assignments").update({ status: "released", release_date: TODAY }).eq("section", divisions[idx].section)
-  };
-
-  const releaseAll = () => {
-    setDivisions((d) => d.map((div) =>
-      div.status === "pending" ? { ...div, status: "released", releaseDate: TODAY } : div
-    ));
-    // TODO: supabase.from("canvass_division_assignments").update({ status: "released", release_date: TODAY }).eq("session_id", sessionId)
-  };
-
+  const released    = divs.filter(d => d.status !== "pending").length;
+  const allReleased = divs.every(d => d.status !== "pending");
+  const releaseOne  = (i: number) =>
+    setDivs(d => d.map((div, idx) => idx === i ? { ...div, status: "released", releaseDate: TODAY } : div));
+  const releaseAll  = () =>
+    setDivs(d => d.map(div => div.status === "pending" ? { ...div, status: "released", releaseDate: TODAY } : div));
   return (
     <>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", color: G.green, marginBottom: 3 }}>
-            Stage 2 · Release Canvass
-          </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: G.dark, marginBottom: 4 }}>Release Canvass to Divisions</Text>
-          <Text style={{ fontSize: 13, color: G.muted, lineHeight: 19 }}>
-            Release canvass sheets to designated canvassers per division. Must be returned within <Text style={{ fontWeight: "700" }}>7 days</Text>.
-          </Text>
-        </View>
-        <StepBadge step={8} />
-      </View>
-
-      <AlertBanner type="warning">
-        <Text style={{ fontSize: 12.5, color: "#374151" }}>
-          <Text style={{ fontWeight: "700" }}>Availability reminder:</Text> Verify canvassers are not on travel before releasing. Canvass must be returned within 7 days.
-        </Text>
-      </AlertBanner>
-
-      <ProgressBar done={released} total={divisions.length} label="Release Progress" />
-
+      <StepHeader stage="release_canvass" title="Release Canvass to Divisions"
+        desc="Release canvass sheets to designated canvassers per division. Must be returned within 7 days." />
+      <Banner type="warning" text="Availability check: Verify canvassers are not on travel before releasing." />
+      <ProgressBar done={released} total={divs.length} label="Release Progress" />
       <Card>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", color: G.muted }}>
-            Canvassers by Division
-          </Text>
-          {!allReleased && (
-            <TouchableOpacity onPress={releaseAll} activeOpacity={0.8}
-              style={{ backgroundColor: G.dark, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff" }}>Release All</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {divisions.map((div, idx) => (
-          <DivisionRow key={div.section} div={div} onAction={() => releaseOne(idx)} />
-        ))}
-      </Card>
-
-      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-        <Btn label="Save Draft" variant="ghost" onPress={() => {}} />
-        <Btn label="All Released → Await Returns" disabled={!allReleased} onPress={onComplete} />
-      </View>
-    </>
-  );
-};
-
-// ─── Step 9: Collect Canvass ──────────────────────────────────────────────────
-
-const Step9CollectCanvass = ({ pr, divisions, setDivisions, suppliers, setSuppliers, onComplete }: {
-  pr: CanvassingPR;
-  divisions: DivisionAssignment[];
-  setDivisions: React.Dispatch<React.SetStateAction<DivisionAssignment[]>>;
-  suppliers: SupplierQuote[];
-  setSuppliers: React.Dispatch<React.SetStateAction<SupplierQuote[]>>;
-  onComplete: () => void;
-}) => {
-  const nextId  = useRef(suppliers.length + 1);
-  const returned = divisions.filter((d) => d.status === "returned").length;
-  const hasQuotes = suppliers.some((sp) => sp.supplierName && Object.keys(sp.unitPrices).length > 0);
-
-  const addSupplier = () => {
-    const id = nextId.current++;
-    setSuppliers((s) => [...s, { id, supplierName: "", address: "", contactNo: "", tinNo: "", deliveryDays: "", unitPrices: {}, remarks: "" }]);
-  };
-
-  const removeSupplier = (id: number) => setSuppliers((s) => s.filter((sp) => sp.id !== id));
-
-  const updateSupplier = (id: number, field: keyof SupplierQuote, value: string) =>
-    setSuppliers((s) => s.map((sp) => sp.id === id ? { ...sp, [field]: value } : sp));
-
-  const updatePrice = (suppId: number, itemId: number, val: string) =>
-    setSuppliers((s) => s.map((sp) =>
-      sp.id === suppId ? { ...sp, unitPrices: { ...sp.unitPrices, [itemId]: val } } : sp
-    ));
-
-  const markReturned = (idx: number) => {
-    setDivisions((d) => d.map((div, i) =>
-      i === idx ? { ...div, status: "returned", returnDate: TODAY } : div
-    ));
-    // TODO: supabase.from("canvass_division_assignments").update({ status: "returned", return_date: TODAY }).eq("section", divisions[idx].section)
-  };
-
-  return (
-    <>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", color: G.green, marginBottom: 3 }}>
-            Stage 2 · Collect Canvass
-          </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: G.dark, marginBottom: 4 }}>Receive Filled-Out Canvass</Text>
-          <Text style={{ fontSize: 13, color: G.muted, lineHeight: 19 }}>
-            Collect completed canvass forms and encode supplier quotations for comparison. Must be submitted within 7 days of release.
-          </Text>
-        </View>
-        <StepBadge step={9} />
-      </View>
-
-      <ProgressBar done={returned} total={divisions.length} label="Returns Received" />
-
-      <Card>
-        <SectionLabel>Track Canvass Returns</SectionLabel>
-        {divisions.map((div, idx) => (
-          <DivisionRow key={div.section} div={div} onAction={() => markReturned(idx)} />
-        ))}
-      </Card>
-
-      {/* Supplier quotations */}
-      <Card>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", color: G.muted }}>
-            Supplier Quotations
-          </Text>
-          <View style={{ backgroundColor: G.light, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-            <Text style={{ fontSize: 10, fontWeight: "700", color: G.mid }}>
-              {suppliers.length} supplier{suppliers.length !== 1 ? "s" : ""}
-            </Text>
-          </View>
-        </View>
-
-        {suppliers.map((sp, sIdx) => (
-          <View key={sp.id} style={{ borderWidth: 1.5, borderColor: G.border,
-            borderRadius: 12, marginBottom: 12, overflow: "hidden" }}>
-            {/* Header */}
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-              padding: 12, backgroundColor: G.bg }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: G.dark,
-                  alignItems: "center", justifyContent: "center" }}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>{sIdx + 1}</Text>
-                </View>
-                <Text style={{ fontSize: 13.5, fontWeight: "600", color: "#111" }}>
-                  {sp.supplierName || `Supplier ${sIdx + 1}`}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => removeSupplier(sp.id)} hitSlop={8}
-                style={{ padding: 6, borderRadius: 6, borderWidth: 1, borderColor: G.border }}>
-                <MaterialIcons name="close" size={14} color={G.red} />
+        <View className="px-4 pt-3 pb-2">
+          <View className="flex-row justify-between items-center mb-2">
+            <Divider label="Canvassers by Division" />
+            {!allReleased && (
+              <TouchableOpacity onPress={releaseAll} activeOpacity={0.8}
+                className="bg-[#064E3B] px-3 py-1.5 rounded-xl mb-2.5">
+                <Text className="text-[11px] font-bold text-white">Release All</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Supplier info */}
-            <View style={{ padding: 14, gap: 10 }}>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 2 }}>
-                  <Field label="Supplier Name" required>
-                    <RNInput value={sp.supplierName} onChangeText={(v) => updateSupplier(sp.id, "supplierName", v)}
-                      placeholder="Business / trade name" />
-                  </Field>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Field label="TIN No.">
-                    <RNInput value={sp.tinNo} onChangeText={(v) => updateSupplier(sp.id, "tinNo", v)}
-                      placeholder="000-000-000" />
-                  </Field>
-                </View>
-              </View>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 2 }}>
-                  <Field label="Address">
-                    <RNInput value={sp.address} onChangeText={(v) => updateSupplier(sp.id, "address", v)}
-                      placeholder="Business address" />
-                  </Field>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Field label="Contact No.">
-                    <RNInput value={sp.contactNo} onChangeText={(v) => updateSupplier(sp.id, "contactNo", v)}
-                      placeholder="09XX-XXX-XXXX" />
-                  </Field>
-                </View>
-              </View>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Field label="Delivery (days)">
-                    <RNInput value={sp.deliveryDays} onChangeText={(v) => updateSupplier(sp.id, "deliveryDays", v)}
-                      placeholder="e.g. 7" keyboardType="numeric" />
-                  </Field>
-                </View>
-                <View style={{ flex: 2 }}>
-                  <Field label="Remarks">
-                    <RNInput value={sp.remarks} onChangeText={(v) => updateSupplier(sp.id, "remarks", v)}
-                      placeholder="Warranty, terms…" />
-                  </Field>
-                </View>
-              </View>
-
-              {/* Unit prices */}
-              <SectionLabel>Unit Prices Quoted (₱)</SectionLabel>
-              <View style={{ borderRadius: 8, overflow: "hidden", borderWidth: 1, borderColor: G.border }}>
-                <View style={{ flexDirection: "row", backgroundColor: G.dark,
-                  paddingHorizontal: 10, paddingVertical: 7 }}>
-                  {["Item", "Unit", "Qty", "Unit Price ₱", "Line Total"].map((h, i) => (
-                    <Text key={h} style={{ flex: i === 0 ? 2 : 1, fontSize: 9, fontWeight: "700",
-                      color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: 0.5,
-                      textAlign: i > 1 ? "right" : "left" }}>
-                      {h}
-                    </Text>
-                  ))}
-                </View>
-                {pr.items.map((item, i) => {
-                  const price = parseFloat(sp.unitPrices[item.id] || "0") || 0;
-                  return (
-                    <View key={item.id} style={{ flexDirection: "row", alignItems: "center",
-                      paddingHorizontal: 10, paddingVertical: 7,
-                      backgroundColor: i % 2 ? "#f9fafb" : "#fff",
-                      borderTopWidth: 1, borderTopColor: G.border }}>
-                      <Text style={{ flex: 2, fontSize: 11.5, color: "#374151" }} numberOfLines={1}>{item.desc}</Text>
-                      <Text style={{ flex: 1, fontSize: 11.5, color: G.muted }}>{item.unit}</Text>
-                      <Text style={{ flex: 1, fontSize: 11.5, fontFamily: MONO, textAlign: "right", color: "#374151" }}>{item.qty}</Text>
-                      <View style={{ flex: 1, alignItems: "flex-end" }}>
-                        <TextInput
-                          value={sp.unitPrices[item.id] ?? ""}
-                          onChangeText={(v) => updatePrice(sp.id, item.id, v)}
-                          keyboardType="decimal-pad" placeholder="0.00"
-                          placeholderTextColor="#9ca3af"
-                          style={{ borderWidth: 1.5, borderColor: G.border, borderRadius: 6,
-                            paddingHorizontal: 7, paddingVertical: 5,
-                            fontSize: 12, fontFamily: MONO, textAlign: "right",
-                            width: 72, color: "#111" }}
-                        />
-                      </View>
-                      <Text style={{ flex: 1, fontSize: 11.5, fontFamily: MONO, fontWeight: "600",
-                        color: price > 0 ? G.mid : "#9ca3af", textAlign: "right" }}>
-                        {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
+            )}
           </View>
-        ))}
-
-        <TouchableOpacity onPress={addSupplier} activeOpacity={0.8}
-          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center",
-            gap: 6, paddingVertical: 12, borderRadius: 10, borderWidth: 2,
-            borderColor: G.border, borderStyle: "dashed" }}>
-          <MaterialIcons name="add" size={18} color={G.mid} />
-          <Text style={{ fontSize: 13, fontWeight: "600", color: G.mid }}>Add Supplier Quote</Text>
-        </TouchableOpacity>
+          {divs.map((div, i) => <DivRow key={div.section} div={div} onAction={() => releaseOne(i)} />)}
+        </View>
       </Card>
-
-      <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-        <Btn label="Save Draft" variant="ghost" onPress={() => {}} />
-        <Btn label="Encode Complete → Prepare AAA" disabled={!hasQuotes} onPress={onComplete} />
+      <View className="flex-row justify-end gap-2.5 mt-1">
+        <Btn ghost label="Save Draft" onPress={() => {}} />
+        <Btn label="All Released → Await Returns" disabled={!allReleased} onPress={onDone} />
       </View>
     </>
   );
 };
 
-// ─── Step 10: Abstract of Awards ──────────────────────────────────────────────
-
-const Step10AAA = ({ pr, suppliers, bacMembers, onComplete }: {
+const Step9 = ({ pr, divs, setDivs, suppliers, setSuppliers, onDone }: {
   pr: CanvassingPR;
-  suppliers: SupplierQuote[];
-  bacMembers: BACMember[];
-  onComplete: (awarded: { supplierName: string; total: number }) => void;
+  divs: DivAssign[]; setDivs: React.Dispatch<React.SetStateAction<DivAssign[]>>;
+  suppliers: SupplierQ[]; setSuppliers: React.Dispatch<React.SetStateAction<SupplierQ[]>>;
+  onDone: () => void;
 }) => {
-  const [aaaNo,       setAAANo]       = useState(`${new Date().getFullYear()}-AAA-${pr.prNo.slice(-4)}`);
-  const [aaaMembers,  setAAAMembers]  = useState<BACMember[]>(() =>
-    bacMembers.map((m) => ({ ...m, signed: false, signedAt: "" }))
-  );
-  const allSigned = aaaMembers.every((m) => m.signed);
-
-  // Compute lowest per item
-  const lowestForItem = (itemId: number) => {
-    let best: { sp: SupplierQuote; price: number } | null = null;
-    for (const sp of suppliers) {
-      const p = parseFloat(sp.unitPrices[itemId] || "0") || 0;
-      if (p > 0 && (!best || p < best.price)) best = { sp, price: p };
-    }
-    return best;
-  };
-
-  // Grand total per supplier
-  const supplierTotals = suppliers.map((sp) => ({
-    sp,
-    total: pr.items.reduce((s, item) => {
-      const p = parseFloat(sp.unitPrices[item.id] || "0") || 0;
-      return s + p * item.qty;
-    }, 0),
-  }));
-
-  const lowestSupplier = supplierTotals.reduce(
-    (best, cur) => cur.total > 0 && (!best || cur.total < best.total) ? cur : best,
-    null as (typeof supplierTotals[0]) | null
-  );
-
-  const signMember = (idx: number) => {
-    const now = new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
-    setAAAMembers((m) => m.map((mb, i) => i === idx ? { ...mb, signed: true, signedAt: now } : mb));
-    // TODO: supabase.from("canvass_bac_members").update({ aaa_signed: true, aaa_signed_at: now })
-  };
+  const nextId     = useRef(suppliers.length + 1);
+  const returned   = divs.filter(d => d.status === "returned").length;
+  const hasQuotes  = suppliers.some(sp => sp.name && Object.keys(sp.prices).length > 0);
+  const addSup     = () => setSuppliers(s => [...s, mkSupplier(nextId.current++)]);
+  const removeSup  = (id: number) => setSuppliers(s => s.filter(sp => sp.id !== id));
+  const updateSup  = (id: number, f: keyof SupplierQ, v: string) =>
+    setSuppliers(s => s.map(sp => sp.id === id ? { ...sp, [f]: v } : sp));
+  const updatePrice = (suppId: number, itemId: number, v: string) =>
+    setSuppliers(s => s.map(sp => sp.id === suppId ? { ...sp, prices: { ...sp.prices, [itemId]: v } } : sp));
+  const markRet = (i: number) =>
+    setDivs(d => d.map((div, idx) => idx === i ? { ...div, status: "returned", returnDate: TODAY } : div));
 
   return (
     <>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", color: G.green, marginBottom: 3 }}>
-            Stage 2 · Abstract of Awards
-          </Text>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: G.dark, marginBottom: 4 }}>Abstract of Awards</Text>
-          <Text style={{ fontSize: 13, color: G.muted, lineHeight: 19 }}>
-            Summarize all supplier quotations. The lowest compliant bidder is recommended. Release to BAC members and PARPO II for signature.
-          </Text>
-        </View>
-        <StepBadge step={10} />
-      </View>
+      <StepHeader stage="collect_canvass" title="Receive Filled-Out Canvass"
+        desc="Collect completed canvass forms and encode supplier quotations. Due within 7 days of release." />
+      <ProgressBar done={returned} total={divs.length} label="Returns Received" />
 
+      {/* Track returns */}
       <Card>
-        <SectionLabel>AAA Details</SectionLabel>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Field label="AAA No.">
-              <RNInput value={aaaNo} onChangeText={setAAANo} />
-            </Field>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Field label="PR Reference">
-              <RNInput value={pr.prNo} readonly />
-            </Field>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Field label="Date Prepared">
-              <RNInput value={TODAY} readonly />
-            </Field>
-          </View>
+        <View className="px-4 pt-3 pb-2">
+          <Divider label="Track Canvass Returns" />
+          {divs.map((div, i) => <DivRow key={div.section} div={div} onAction={() => markRet(i)} />)}
         </View>
       </Card>
 
-      {/* Comparison table */}
+      {/* Supplier quotes */}
       <Card>
-        <SectionLabel>Canvass Price Comparison</SectionLabel>
-        <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View>
-            {/* Table header */}
-            <View style={{ flexDirection: "row", backgroundColor: G.dark,
-              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}>
-              {["Item", "Unit", "Qty",
-                ...suppliers.map((sp, i) => sp.supplierName || `Supplier ${i + 1}`),
-                "Lowest ₱", "Awarded To",
-              ].map((h, i) => (
-                <Text key={`h-${i}`} style={{
-                  fontSize: 9.5, fontWeight: "700", color: "rgba(255,255,255,0.75)",
-                  textTransform: "uppercase", letterSpacing: 0.5,
-                  width: i < 3 ? (i === 0 ? 140 : 50) : 100,
-                  textAlign: i > 1 ? "right" : "left",
-                }}>
-                  {h}
-                </Text>
-              ))}
+        <View className="px-4 pt-3 pb-2">
+          <View className="flex-row items-center gap-2 mb-2.5">
+            <Divider label="Supplier Quotations" />
+            <View className="bg-emerald-100 px-2 py-0.5 rounded-md mb-2.5">
+              <Text className="text-[10px] font-bold text-emerald-700">
+                {suppliers.length} supplier{suppliers.length !== 1 ? "s" : ""}
+              </Text>
             </View>
+          </View>
 
-            {pr.items.map((item, i) => {
-              const best     = lowestForItem(item.id);
-              const bestSupp = best?.sp;
-              return (
-                <View key={item.id} style={{ flexDirection: "row", alignItems: "center",
-                  paddingHorizontal: 10, paddingVertical: 9,
-                  backgroundColor: best ? (i % 2 ? G.llight : "#f0fdf8") : (i % 2 ? "#f9fafb" : "#fff"),
-                  borderTopWidth: 1, borderTopColor: G.border }}>
-                  <Text style={{ width: 140, fontSize: 12, color: "#374151" }} numberOfLines={2}>{item.desc}</Text>
-                  <Text style={{ width: 50, fontSize: 12, color: G.muted }}>{item.unit}</Text>
-                  <Text style={{ width: 50, fontSize: 12, fontFamily: MONO, textAlign: "right" }}>{item.qty}</Text>
-                  {suppliers.map((sp) => {
-                    const p       = parseFloat(sp.unitPrices[item.id] || "0") || 0;
-                    const isLowest = bestSupp?.id === sp.id;
-                    return (
-                      <Text key={sp.id} style={{ width: 100, fontSize: 12, fontFamily: MONO,
-                        textAlign: "right", fontWeight: isLowest ? "700" : "400",
-                        color: isLowest ? G.mid : "#374151" }}>
-                        {p > 0 ? `₱${fmt(p)}` : "—"}
+          {suppliers.map((sp, sIdx) => (
+            <View key={sp.id} className="border border-gray-200 rounded-2xl mb-3 overflow-hidden">
+              {/* Supplier header */}
+              <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
+                <View className="flex-row items-center gap-2">
+                  <View className="w-6 h-6 rounded-lg bg-[#064E3B] items-center justify-center">
+                    <Text className="text-[12px] font-bold text-white">{sIdx + 1}</Text>
+                  </View>
+                  <Text className="text-[13.5px] font-semibold text-gray-800">
+                    {sp.name || `Supplier ${sIdx + 1}`}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => removeSup(sp.id)} hitSlop={8}
+                  className="p-1.5 rounded-lg border border-gray-200">
+                  <MaterialIcons name="close" size={13} color="#c0392b" />
+                </TouchableOpacity>
+              </View>
+
+              <View className="p-3 gap-2.5">
+                <View className="flex-row gap-2.5">
+                  <View className="flex-[2]">
+                    <Field label="Supplier Name" required>
+                      <Input value={sp.name} onChange={v => updateSup(sp.id, "name", v)} placeholder="Business / trade name" />
+                    </Field>
+                  </View>
+                  <View className="flex-1">
+                    <Field label="TIN No.">
+                      <Input value={sp.tin} onChange={v => updateSup(sp.id, "tin", v)} placeholder="000-000-000" />
+                    </Field>
+                  </View>
+                </View>
+                <View className="flex-row gap-2.5">
+                  <View className="flex-[2]">
+                    <Field label="Address">
+                      <Input value={sp.address} onChange={v => updateSup(sp.id, "address", v)} placeholder="Business address" />
+                    </Field>
+                  </View>
+                  <View className="flex-1">
+                    <Field label="Contact No.">
+                      <Input value={sp.contact} onChange={v => updateSup(sp.id, "contact", v)} placeholder="09XX-XXX-XXXX" />
+                    </Field>
+                  </View>
+                </View>
+                <View className="flex-row gap-2.5">
+                  <View className="flex-1">
+                    <Field label="Delivery (days)">
+                      <Input value={sp.days} onChange={v => updateSup(sp.id, "days", v)} placeholder="e.g. 7" numeric />
+                    </Field>
+                  </View>
+                  <View className="flex-[2]">
+                    <Field label="Remarks">
+                      <Input value={sp.remarks} onChange={v => updateSup(sp.id, "remarks", v)} placeholder="Warranty, terms…" />
+                    </Field>
+                  </View>
+                </View>
+
+                {/* Per-item unit prices */}
+                <Divider label="Unit Prices Quoted (₱)" />
+                <View className="rounded-xl overflow-hidden border border-gray-100">
+                  <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
+                    {["Item","Unit","Qty","Unit Price ₱","Line Total"].map((h, i) => (
+                      <Text key={h} className="text-[9px] font-bold uppercase tracking-wide text-white/70"
+                        style={{ flex: i === 0 ? 2 : 1, textAlign: i > 1 ? "right" : "left" }}>
+                        {h}
                       </Text>
+                    ))}
+                  </View>
+                  {pr.items.map((item, i) => {
+                    const price = parseFloat(sp.prices[item.id] || "0") || 0;
+                    return (
+                      <View key={item.id} className={`flex-row items-center px-2.5 py-1.5 ${i % 2 ? "bg-gray-50" : "bg-white"}`}
+                        style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+                        <Text className="flex-[2] text-[11.5px] text-gray-700" numberOfLines={1}>{item.desc}</Text>
+                        <Text className="flex-1 text-[11.5px] text-gray-400">{item.unit}</Text>
+                        <Text className="flex-1 text-[11.5px] text-right text-gray-700" style={{ fontFamily: MONO }}>{item.qty}</Text>
+                        <View className="flex-1 items-end">
+                          <TextInput
+                            value={sp.prices[item.id] ?? ""}
+                            onChangeText={v => updatePrice(sp.id, item.id, v)}
+                            keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#9ca3af"
+                            style={{ borderWidth: 1.5, borderColor: "#e5e7eb", borderRadius: 6,
+                              paddingHorizontal: 6, paddingVertical: 4,
+                              fontSize: 12, fontFamily: MONO, textAlign: "right", width: 70, color: "#111" }}
+                          />
+                        </View>
+                        <Text className="flex-1 text-[11.5px] font-semibold text-right"
+                          style={{ fontFamily: MONO, color: price > 0 ? "#2d6a4f" : "#9ca3af" }}>
+                          {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
+                        </Text>
+                      </View>
                     );
                   })}
-                  <Text style={{ width: 100, fontSize: 12, fontFamily: MONO, fontWeight: "700",
-                    color: G.mid, textAlign: "right" }}>
-                    {best ? `₱${fmt(best.price)}` : "—"}
-                  </Text>
-                  <Text style={{ width: 100, fontSize: 12, fontWeight: "600",
-                    color: G.dark, textAlign: "right" }}>
-                    {bestSupp?.supplierName || "—"}
-                  </Text>
                 </View>
-              );
-            })}
-
-            {/* Totals row */}
-            <View style={{ flexDirection: "row", alignItems: "center",
-              paddingHorizontal: 10, paddingVertical: 10, backgroundColor: "#f3f4f6",
-              borderTopWidth: 2, borderTopColor: G.border }}>
-              <Text style={{ width: 240, fontSize: 11, fontWeight: "700", color: G.muted,
-                textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Grand Total
-              </Text>
-              {supplierTotals.map(({ sp, total }) => (
-                <Text key={sp.id} style={{ width: 100, fontSize: 13, fontFamily: MONO,
-                  fontWeight: "700", textAlign: "right", color: "#374151" }}>
-                  {total > 0 ? `₱${fmt(total)}` : "—"}
-                </Text>
-              ))}
-              <Text style={{ width: 100, fontSize: 13, fontFamily: MONO,
-                fontWeight: "700", textAlign: "right", color: G.mid }}>
-                {lowestSupplier ? `₱${fmt(lowestSupplier.total)}` : "—"}
-              </Text>
-              <Text style={{ width: 100, fontSize: 12, fontWeight: "700",
-                color: G.dark, textAlign: "right" }}>
-                {lowestSupplier?.sp.supplierName || "—"}
-              </Text>
+              </View>
             </View>
-          </View>
-        </ScrollView>
+          ))}
 
-        {lowestSupplier && (
-          <View style={{ flexDirection: "row", gap: 10, backgroundColor: G.llight,
-            borderLeftWidth: 4, borderLeftColor: G.green, borderRadius: 10,
-            padding: 12, marginTop: 12 }}>
-            <Text style={{ fontSize: 18 }}>🏆</Text>
-            <Text style={{ flex: 1, fontSize: 13, color: "#374151", lineHeight: 19 }}>
-              Recommended awardee: <Text style={{ fontWeight: "700" }}>{lowestSupplier.sp.supplierName}</Text> with a total of <Text style={{ fontWeight: "700", color: G.mid }}>₱{fmt(lowestSupplier.total)}</Text> — lowest among all submitted quotations.
-            </Text>
-          </View>
-        )}
-      </Card>
-
-      <BACSignatories members={aaaMembers} onSign={signMember} title="AAA Signatories" />
-
-      {allSigned && lowestSupplier && (
-        <View style={{ backgroundColor: G.dark, borderRadius: 14, padding: 20, marginBottom: 12 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", letterSpacing: 1,
-            textTransform: "uppercase", color: G.green, marginBottom: 4 }}>
-            Canvassing Complete ✓
-          </Text>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: "#fff", marginBottom: 4 }}>
-            Proceed to Phase 2 – Evaluation
-          </Text>
-          <Text style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", lineHeight: 18, marginBottom: 16 }}>
-            AAA signed by all parties. Forward to Supply Section with PR, canvass sheets, BAC Resolution, and supplier proposals.
-          </Text>
-          <TouchableOpacity onPress={() => onComplete({ supplierName: lowestSupplier.sp.supplierName, total: lowestSupplier.total })} activeOpacity={0.8}
-            style={{ backgroundColor: G.green, paddingVertical: 12, paddingHorizontal: 20,
-              borderRadius: 10, alignSelf: "flex-end" }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: G.dark }}>
-              Forward to Supply Section →
-            </Text>
+          <TouchableOpacity onPress={addSup} activeOpacity={0.8}
+            className="flex-row items-center justify-center gap-1.5 py-3 rounded-2xl"
+            style={{ borderWidth: 2, borderStyle: "dashed", borderColor: "#d1d5db" }}>
+            <MaterialIcons name="add" size={18} color="#2d6a4f" />
+            <Text className="text-[13px] font-semibold text-[#2d6a4f]">Add Supplier Quote</Text>
           </TouchableOpacity>
         </View>
-      )}
+      </Card>
 
-      {!allSigned && (
-        <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-          <Btn label="Save Draft" variant="ghost" onPress={() => {}} />
+      <View className="flex-row justify-end gap-2.5 mt-1">
+        <Btn ghost label="Save Draft" onPress={() => {}} />
+        <Btn label="Encode Complete → Prepare AAA" disabled={!hasQuotes} onPress={onDone} />
+      </View>
+    </>
+  );
+};
+
+const Step10 = ({ pr, suppliers, members, onDone }: {
+  pr: CanvassingPR; suppliers: SupplierQ[];
+  members: BACMember[];
+  onDone: (awarded: { name: string; total: number }) => void;
+}) => {
+  const [aaaNo,    setAAANo]    = useState(`${new Date().getFullYear()}-AAA-${pr.prNo.slice(-4)}`);
+  const [aaaMembs, setAAAMembs] = useState<BACMember[]>(() => members.map(m => ({ ...m, signed: false, signedAt: "" })));
+  const allSigned = aaaMembs.every(m => m.signed);
+  const sign = (i: number) =>
+    setAAAMembs(m => m.map((mb, idx) => idx === i ? { ...mb, signed: true, signedAt: nowTime() } : mb));
+
+  const supTotals = suppliers.map(sp => ({
+    sp, total: pr.items.reduce((s, item) => s + (parseFloat(sp.prices[item.id] || "0") || 0) * item.qty, 0),
+  }));
+  const lowest = supTotals.reduce(
+    (best, cur) => cur.total > 0 && (!best || cur.total < best.total) ? cur : best,
+    null as typeof supTotals[0] | null,
+  );
+
+  return (
+    <>
+      <StepHeader stage="aaa_preparation" title="Abstract of Awards"
+        desc="Summarize all quotations. The lowest compliant bidder is recommended for award." />
+
+      {/* AAA header */}
+      <Card>
+        <View className="px-4 pt-3 pb-2">
+          <Divider label="AAA Details" />
+          <View className="flex-row gap-2.5">
+            <View className="flex-1"><Field label="AAA No."><Input value={aaaNo} onChange={setAAANo} /></Field></View>
+            <View className="flex-1"><Field label="PR Reference"><Input value={pr.prNo} readonly /></Field></View>
+            <View className="flex-1"><Field label="Date Prepared"><Input value={TODAY} readonly /></Field></View>
+          </View>
+        </View>
+      </Card>
+
+      {/* Price comparison */}
+      <Card>
+        <View className="px-4 pt-3 pb-2">
+          <Divider label="Canvass Price Comparison" />
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View>
+              {/* Header */}
+              <View className="flex-row bg-[#064E3B] rounded-xl px-2.5 py-2">
+                {["Item","Unit","Qty",...suppliers.map((s,i) => s.name || `Supplier ${i+1}`),"Lowest ₱","Awarded To"].map((h, i) => (
+                  <Text key={`h-${i}`} className="text-[9.5px] font-bold uppercase tracking-wide text-white/75"
+                    style={{ width: i < 3 ? (i === 0 ? 140 : 48) : 100, textAlign: i > 1 ? "right" : "left" }}>
+                    {h}
+                  </Text>
+                ))}
+              </View>
+              {/* Rows */}
+              {pr.items.map((item, ri) => {
+                const prices  = suppliers.map(sp => parseFloat(sp.prices[item.id] || "0") || 0);
+                const low     = prices.length ? Math.min(...prices.filter(p => p > 0)) : 0;
+                const winner  = suppliers.find(sp => parseFloat(sp.prices[item.id] || "0") === low);
+                return (
+                  <View key={item.id} className={`flex-row px-2.5 py-2 ${ri % 2 ? "bg-gray-50" : "bg-white"}`}
+                    style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6"}}>
+                    <Text style={{ width: 140 }} className="text-[12px] text-gray-700" numberOfLines={2}>{item.desc}</Text>
+                    <Text style={{ width: 48 }} className="text-[12px] text-gray-400">{item.unit}</Text>
+                    <Text style={{ width: 48 }} className="text-[12px] text-right text-gray-700">{item.qty}</Text>
+                    {prices.map((p, pi) => (
+                      <Text key={pi} style={{ width: 100, fontFamily: MONO }}
+                        className={`text-[12px] text-right ${p === low && p > 0 ? "font-bold text-emerald-700" : "text-gray-700"}`}>
+                        {p > 0 ? `₱${fmt(p)}` : "—"}
+                      </Text>
+                    ))}
+                    <Text style={{ width: 100, fontFamily: MONO }} className="text-[12px] font-bold text-emerald-700 text-right">
+                      {low > 0 ? `₱${fmt(low)}` : "—"}
+                    </Text>
+                    <Text style={{ width: 100 }} className="text-[11px] font-semibold text-[#1a4d2e]" numberOfLines={1}>
+                      {winner?.name || "—"}
+                    </Text>
+                  </View>
+                );
+              })}
+              {/* Grand totals */}
+              <View className="flex-row px-2.5 py-2.5 bg-emerald-50" style={{ borderTopWidth: 2, borderTopColor: "#52b788" }}>
+                <Text style={{ width: 236 }} className="text-[11px] font-bold uppercase tracking-wide text-[#1a4d2e]">Grand Total</Text>
+                {supTotals.map(({ sp, total }) => (
+                  <Text key={sp.id} style={{ width: 100, fontFamily: MONO }}
+                    className={`text-[13px] font-bold text-right ${lowest?.sp.id === sp.id ? "text-emerald-700" : "text-gray-700"}`}>
+                    {total > 0 ? `₱${fmt(total)}` : "—"}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          {lowest && (
+            <View className="flex-row items-center gap-2.5 mt-3.5 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+              <Text className="text-[18px]">🏆</Text>
+              <Text className="flex-1 text-[13px] text-gray-700 leading-5">
+                Recommended awardee: <Text className="font-bold">{lowest.sp.name}</Text>
+                {" "}— total of <Text className="font-bold text-emerald-700">₱{fmt(lowest.total)}</Text>
+              </Text>
+            </View>
+          )}
+        </View>
+      </Card>
+
+      <Signatories members={aaaMembs} onSign={sign} title="AAA Signatories" />
+
+      {allSigned && lowest ? (
+        <View className="bg-[#064E3B] rounded-3xl p-5 mb-3">
+          <Text className="text-[10px] font-bold tracking-widest uppercase text-emerald-400 mb-1">Canvassing Complete ✓</Text>
+          <Text className="text-[20px] font-extrabold text-white mb-1">Proceed to Phase 2 – Evaluation</Text>
+          <Text className="text-[12.5px] text-white/60 leading-5 mb-4">
+            AAA signed. Forward to Supply Section with PR, canvass sheets, BAC Resolution, and proposals.
+          </Text>
+          <TouchableOpacity onPress={() => onDone({ name: lowest.sp.name, total: lowest.total })}
+            activeOpacity={0.8} className="bg-emerald-400 self-end px-5 py-3 rounded-xl">
+            <Text className="text-[14px] font-bold text-[#1a4d2e]">Forward to Supply Section →</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View className="flex-row justify-end gap-2.5 mt-1">
+          <Btn ghost label="Save Draft" onPress={() => {}} />
           <Btn label="Awaiting Signatures…" disabled onPress={() => {}} />
         </View>
       )}
@@ -1269,166 +843,227 @@ const Step10AAA = ({ pr, suppliers, bacMembers, onComplete }: {
   );
 };
 
-// ─── Root Component ───────────────────────────────────────────────────────────
+// ─── BAC View (roleId === 2) ──────────────────────────────────────────────────
 
-export function CanvassingBAC({
-  prRecord,
-  onComplete,
-  onBack,
-}: CanvassingModuleProps) {
-  const pr = prRecord ?? PLACEHOLDER_PR;
+function BACView({ pr, onComplete, onBack }: {
+  pr: CanvassingPR;
+  onComplete?: CanvassingModuleProps["onComplete"];
+  onBack?: () => void;
+}) {
+  const [stage,   setStage]   = useState<CanvassStage>("pr_received");
+  const [done,    setDone]    = useState<Set<CanvassStage>>(new Set());
+  const [members, setMembers] = useState<BACMember[]>(mkBACMembers);
+  const [divs,    setDivs]    = useState<DivAssign[]>(mkDivisions);
+  const [supps,   setSupps]   = useState<SupplierQ[]>([mkSupplier(1)]);
+  const sessionRef = useRef<Partial<CanvassPayload>>({ pr_no: pr.prNo });
 
-  const [stage,     setStage]     = useState<CanvassStage>("pr_received");
-  const [completed, setCompleted] = useState<Set<CanvassStage>>(new Set());
-  const [bacMembers,  setBACMembers]  = useState<BACMember[]>(initBACMembers);
-  const [divisions,   setDivisions]   = useState<DivisionAssignment[]>(() => initDivisions(pr));
-  const [suppliers,   setSuppliers]   = useState<SupplierQuote[]>([
-    { id: 1, supplierName: "", address: "", contactNo: "", tinNo: "", deliveryDays: "", unitPrices: {}, remarks: "" },
-  ]);
-
-  // Session-level data accumulated across steps
-  const sessionRef = useRef<Partial<CanvassSessionPayload>>({ pr_no: pr.prNo });
-
-  const completeStage = useCallback((current: CanvassStage) => {
-    setCompleted((s) => new Set([...s, current]));
+  const advance = useCallback((current: CanvassStage) => {
+    setDone(s => new Set([...s, current]));
     const idx = STAGE_ORDER.indexOf(current);
     if (idx < STAGE_ORDER.length - 1) setStage(STAGE_ORDER[idx + 1]);
   }, []);
 
-  const handleFinalComplete = useCallback((awarded: { supplierName: string; total: number }) => {
-    const payload: CanvassSessionPayload = {
-      pr_no:               pr.prNo,
-      bac_no:              sessionRef.current.bac_no      ?? "",
-      resolution_no:       sessionRef.current.resolution_no ?? "",
-      mode_of_procurement: sessionRef.current.mode_of_procurement ?? "",
-      aaa_no:              sessionRef.current.aaa_no      ?? "",
-      awarded_supplier:    awarded.supplierName,
-      awarded_total:       awarded.total,
-      suppliers,
-      bac_members:         bacMembers,
+  const handleComplete = useCallback((awarded: { name: string; total: number }) => {
+    const payload: CanvassPayload = {
+      pr_no: pr.prNo, bac_no: sessionRef.current.bac_no ?? "",
+      resolution_no: sessionRef.current.resolution_no ?? "", mode: sessionRef.current.mode ?? "",
+      aaa_no: sessionRef.current.aaa_no ?? "", awarded_supplier: awarded.name,
+      awarded_total: awarded.total, suppliers: supps, bac_members: members,
     };
-
-    // TODO: supabase.from("canvass_sessions").update(payload).eq("pr_no", pr.prNo)
-
-    completeStage("aaa_preparation");
+    // TODO: supabase.from("canvass_sessions").upsert(payload)
+    advance("aaa_preparation");
     onComplete?.(payload);
-    Alert.alert("✅ Canvassing Complete", `Forwarded to Supply Section.\nAwarded to: ${awarded.supplierName}\nTotal: ₱${fmt(awarded.total)}`);
-  }, [pr.prNo, suppliers, bacMembers, completeStage, onComplete]);
+    Alert.alert("✅ Canvassing Complete", `Awarded: ${awarded.name}\nTotal: ₱${fmt(awarded.total)}`);
+  }, [pr.prNo, supps, members, advance, onComplete]);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: G.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      {/* Top bar */}
-      <View style={{ backgroundColor: G.dark, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 0 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+    <KeyboardAvoidingView className="flex-1 bg-gray-50"
+      behavior={Platform.OS === "ios" ? "padding" : "height"}>
+
+      {/* ── Header ── */}
+      <View className="bg-[#064E3B] px-4 pt-3">
+        <View className="flex-row items-center justify-between mb-2.5">
+          <View className="flex-row items-center gap-2">
             {onBack && (
               <TouchableOpacity onPress={onBack} hitSlop={10}
-                style={{ width: 32, height: 32, borderRadius: 8,
-                  backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }}>
+                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
                 <MaterialIcons name="chevron-left" size={20} color="#fff" />
               </TouchableOpacity>
             )}
             <View>
-              <Text style={{ fontSize: 9.5, color: "rgba(255,255,255,0.45)", fontWeight: "600",
-                textTransform: "uppercase", letterSpacing: 0.8 }}>
-                Procurement › Purchase Request ›
+              <Text className="text-[9.5px] font-semibold tracking-widest uppercase text-white/40">
+                DAR · Procurement › Canvassing
               </Text>
-              <Text style={{ fontSize: 15, fontWeight: "800", color: "#fff" }}>Canvassing</Text>
+              <Text className="text-[15px] font-extrabold text-white">Canvassing · BAC</Text>
             </View>
           </View>
-          <View style={{ backgroundColor: G.llight, paddingHorizontal: 10, paddingVertical: 5,
-            borderRadius: 8, borderWidth: 1, borderColor: G.gold }}>
-            <Text style={{ fontSize: 10.5, fontWeight: "700", color: G.goldD }}>
-              ⏱ 7-day window
+          {/* 7-day deadline chip — mirrors PRModule's StatusPill */}
+          <View className="bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
+            <Text className="text-[10.5px] font-bold text-amber-800">⏱ 7-day window</Text>
+          </View>
+        </View>
+        <StageStrip current={stage} completed={done} />
+      </View>
+
+      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {stage === "pr_received"    && <Step6  pr={pr} onDone={() => advance("pr_received")} />}
+        {stage === "bac_resolution" && <Step7  pr={pr} members={members} setMembers={setMembers} onDone={() => advance("bac_resolution")} />}
+        {stage === "release_canvass"&& <Step8  divs={divs} setDivs={setDivs} onDone={() => advance("release_canvass")} />}
+        {stage === "collect_canvass"&& <Step9  pr={pr} divs={divs} setDivs={setDivs} suppliers={supps} setSuppliers={setSupps} onDone={() => advance("collect_canvass")} />}
+        {stage === "aaa_preparation"&& <Step10 pr={pr} suppliers={supps} members={members} onDone={handleComplete} />}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+// ─── End-User View (roleId !== 2) ────────────────────────────────────────────
+
+function EndUserView({ pr, onBack }: { pr: CanvassingPR; onBack?: () => void }) {
+  // TODO: replace with real fetch → supabase.from("canvass_sessions").select("stage").eq("pr_no", pr.prNo)
+  const currentStage: CanvassStage = "release_canvass";
+  const currentIdx = STAGE_ORDER.indexOf(currentStage);
+
+  return (
+    <View className="flex-1 bg-gray-50">
+
+      {/* ── Header — identical structure to PRModule's header ── */}
+      <View className="bg-[#064E3B] px-4 pt-3.5 pb-4">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            {onBack && (
+              <TouchableOpacity onPress={onBack} hitSlop={10}
+                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
+                <MaterialIcons name="chevron-left" size={20} color="#fff" />
+              </TouchableOpacity>
+            )}
+            <View>
+              <Text className="text-[9.5px] font-semibold tracking-widest uppercase text-white/40">
+                DAR · Procurement › Canvassing
+              </Text>
+              <Text className="text-[15px] font-extrabold text-white">Canvassing Status</Text>
+            </View>
+          </View>
+          {/* PR No. chip — mirrors SearchBar's "Create" button style */}
+          <View className="bg-white/15 px-2.5 py-1 rounded-xl">
+            <Text className="text-[10.5px] font-bold text-white/80" style={{ fontFamily: MONO }}>
+              {pr.prNo}
             </Text>
           </View>
         </View>
-
-        {/* Stage strip */}
-        <StageStrip current={stage} completed={completed} />
       </View>
 
-      {/* Scrollable content */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {stage === "pr_received" && (
-          <Step6PRReceived pr={pr} onComplete={() => completeStage("pr_received")} />
-        )}
-        {stage === "bac_resolution" && (
-          <Step7BACResolution pr={pr} bacMembers={bacMembers}
-            setBACMembers={setBACMembers} onComplete={() => completeStage("bac_resolution")} />
-        )}
-        {stage === "release_canvass" && (
-          <Step8ReleaseCanvass divisions={divisions}
-            setDivisions={setDivisions} onComplete={() => completeStage("release_canvass")} />
-        )}
-        {stage === "collect_canvass" && (
-          <Step9CollectCanvass pr={pr} divisions={divisions} setDivisions={setDivisions}
-            suppliers={suppliers} setSuppliers={setSuppliers}
-            onComplete={() => completeStage("collect_canvass")} />
-        )}
-        {stage === "aaa_preparation" && (
-          <Step10AAA pr={pr} suppliers={suppliers}
-            bacMembers={bacMembers} onComplete={handleFinalComplete} />
-        )}
+      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}>
+
+        {/* ── PR summary — mirrors RecordCard ── */}
+        <Card>
+          <View className="px-4 pt-3.5 pb-2">
+            <View className="flex-row justify-between items-start">
+              <View className="flex-1">
+                <Text className="text-[10px] font-bold tracking-widest uppercase text-gray-400 mb-1">Purchase Request</Text>
+                <Text className="text-[15px] font-extrabold text-[#1a4d2e]" style={{ fontFamily: MONO }}>{pr.prNo}</Text>
+                <Text className="text-[12px] text-gray-400 mt-0.5">{pr.officeSection} · {pr.date}</Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-[10px] font-bold tracking-widest uppercase text-gray-400 mb-1">Total</Text>
+                <Text className="text-[15px] font-extrabold text-[#064E3B]" style={{ fontFamily: MONO }}>₱{fmt(prTotal(pr.items))}</Text>
+                <Text className="text-[11px] text-gray-400 mt-0.5">{pr.items.length} item{pr.items.length !== 1 ? "s" : ""}</Text>
+              </View>
+            </View>
+            <View className="h-px bg-gray-100 my-2.5" />
+            <Text className="text-[12px] text-gray-500 leading-5">{pr.purpose}</Text>
+          </View>
+        </Card>
+
+        {/* ── Current stage highlight — mirrors RecordCard status section ── */}
+        <Card className="bg-[#064E3B]">
+          <View className="px-4 pt-3.5 pb-3">
+            <Text className="text-[10px] font-bold tracking-widest uppercase text-white/50 mb-1.5">Current Stage</Text>
+            <Text className="text-[17px] font-extrabold text-white mb-1">
+              Step {STAGE_META[currentStage].step} · {STAGE_META[currentStage].label}
+            </Text>
+            <Text className="text-[13px] text-white/60 leading-5">{STAGE_DESC[currentStage]}</Text>
+          </View>
+        </Card>
+
+        {/* ── Stage timeline — mirrors SubTabRow / FilterChips progression ── */}
+        <Card>
+          <View className="px-4 pt-3 pb-2">
+            <Divider label="Stage Timeline" />
+            {STAGE_ORDER.map((s, i) => {
+              const meta   = STAGE_META[s];
+              const isDone = i < currentIdx;
+              const active = i === currentIdx;
+              return (
+                <View key={s} className="flex-row items-start mb-3">
+                  {/* Icon + connector line */}
+                  <View className="items-center w-9">
+                    <View className={`w-7 h-7 rounded-full items-center justify-center ${isDone ? "bg-emerald-500" : active ? "bg-[#064E3B]" : "bg-gray-200"}`}>
+                      <MaterialIcons
+                        name={isDone ? "check" : meta.icon}
+                        size={13}
+                        color={isDone || active ? "#fff" : "#9ca3af"}
+                      />
+                    </View>
+                    {i < STAGE_ORDER.length - 1 && (
+                      <View className={`w-0.5 h-6 mt-0.5 ${isDone ? "bg-emerald-500" : "bg-gray-200"}`} />
+                    )}
+                  </View>
+                  {/* Text */}
+                  <View className="flex-1 pl-2.5 pt-1">
+                    <Text className={`text-[12.5px] font-bold ${isDone ? "text-emerald-700" : active ? "text-[#1a4d2e]" : "text-gray-400"}`}>
+                      Step {meta.step} · {meta.label}
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5 leading-4">{STAGE_DESC[s]}</Text>
+                  </View>
+                  {/* Status pill — identical to PRModule's StatusPill */}
+                  <View className={`px-2 py-0.5 rounded-full self-start mt-1 ${isDone ? "bg-emerald-100" : active ? "bg-blue-100" : "bg-gray-100"}`}>
+                    <Text className={`text-[10px] font-bold ${isDone ? "text-emerald-700" : active ? "text-blue-700" : "text-gray-400"}`}>
+                      {isDone ? "Done" : active ? "In Progress" : "Pending"}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </Card>
+
+        <ItemsTable items={pr.items} />
+
+        <Banner type="info"
+          text="Your PR is being processed by BAC. The awarded supplier and final amount will appear once the Abstract of Awards is fully signed." />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
-// Minimal read-only end-user view
-function CanvassingEndUser({
-  prRecord,
-  onBack,
-}: { prRecord?: CanvassingPR; onBack?: () => void }) {
+// ─── Default placeholder PR (used when no prRecord is passed) ────────────────
+
+const PLACEHOLDER_PR: CanvassingPR = {
+  prNo: "2026-PR-0001", date: TODAY,
+  officeSection: "STOD", responsibilityCode: "10-001",
+  purpose: "Procurement of office supplies for Q1 operations.",
+  isHighValue: false,
+  items: [
+    { id: 1, desc: "Bond Paper, Short (70gsm)", stock: "SP-001", unit: "ream", qty: 10, unitCost: 220 },
+    { id: 2, desc: "Ballpen, Black (0.5mm)",    stock: "SP-002", unit: "box",  qty: 5,  unitCost: 85  },
+  ],
+};
+
+// ─── Root export — role switch ────────────────────────────────────────────────
+
+/**
+ * roleId === 2  →  BACView   (full Steps 6–10 editable workflow)
+ * roleId !== 2  →  EndUserView  (read-only tracker with stage timeline)
+ *
+ * prRecord flows in from PRModule. Falls back to PLACEHOLDER_PR in isolation.
+ */
+export default function CanvassingModule({ prRecord, roleId, onComplete, onBack }: CanvassingModuleProps) {
+  const { currentUser } = useAuth();
+  const effectiveRoleId = roleId ?? currentUser?.role_id ?? 0;
   const pr = prRecord ?? PLACEHOLDER_PR;
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: G.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <View style={{ backgroundColor: G.dark, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          {onBack && (
-            <TouchableOpacity onPress={onBack} hitSlop={10}
-              style={{ width: 32, height: 32, borderRadius: 8,
-                backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }}>
-              <MaterialIcons name="chevron-left" size={20} color="#fff" />
-            </TouchableOpacity>
-          )}
-          <Text style={{ fontSize: 15, fontWeight: "800", color: "#fff" }}>Canvassing (Read-only)</Text>
-        </View>
-      </View>
-      <ScrollView style={{ flex: 1, padding: 16 }}>
-        <Card>
-          <SectionLabel>Purchase Request</SectionLabel>
-          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>PR No: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.prNo}</Text></Text>
-          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>Office: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.officeSection}</Text></Text>
-          <Text style={{ fontSize: 12, color: G.muted, marginBottom: 6 }}>Items: <Text style={{ fontWeight: "700", color: G.dark }}>{pr.items.length}</Text></Text>
-          <Text style={{ fontSize: 12, color: G.muted }}>Status: Canvassing in progress</Text>
-        </Card>
-        <Card>
-          <SectionLabel>Notes</SectionLabel>
-          <Text style={{ fontSize: 12, color: G.muted }}>Your request is undergoing canvassing by BAC. You will see awarded supplier and total once completed.</Text>
-        </Card>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
-
-// Wrapper decides which screen to show based on route.params.role
-export default function CanvassingModule(props: CanvassingModuleProps) {
-  const route: any = useRoute();
-  const role = route?.params?.role ?? "bac";
-  if (role === "enduser") {
-    return <CanvassingEndUser prRecord={props.prRecord} onBack={props.onBack} />;
-  }
-  return <CanvassingBAC {...props} />;
+  return effectiveRoleId === 2
+    ? <BACView     pr={pr} onComplete={onComplete} onBack={onBack} />
+    : <EndUserView pr={pr} onBack={onBack} />;
 }
