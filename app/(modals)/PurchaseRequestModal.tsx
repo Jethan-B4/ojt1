@@ -64,9 +64,9 @@ const TODAY_DISPLAY = new Date().toLocaleDateString("en-PH", {
 });
 
 const CLR = {
-  green900: "#1a4d2e", green700: "#2d6a4f", green400: "#52b788",
-  amber900: "#7a5000", amber800: "#4a3200",
-  gold: "#c9a84c", gold50: "#fdf5e0",
+  brand900: "#064E3B", brand700: "#047857", brand500: "#10B981",
+  brand100: "#A7F3D0", brand50: "#ECFDF5",
+  hv900: "#022c22", hv700: "#065F46", hv50: "#D1FAE5",
 } as const;
 
 interface FormState {
@@ -122,7 +122,7 @@ function SectionLabel({ children, tag }: { children: string; tag?: string }) {
   return (
     <View className="flex-row items-center gap-2 mb-3 mt-1">
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">{children}</Text>
-      {tag && <Text className="text-[9.5px] font-bold uppercase tracking-wide text-amber-600">{tag}</Text>}
+      {tag && <Text className="text-[9.5px] font-bold uppercase tracking-wide text-emerald-500">{tag}</Text>}
       <View className="flex-1 h-px bg-gray-200" />
     </View>
   );
@@ -243,7 +243,7 @@ function ItemRow({ item, onUpdate, onRemove }: {
 function TotalBar({ total, isHighValue }: { total: number; isHighValue: boolean }) {
   return (
     <View className="rounded-2xl px-4 py-3.5 flex-row items-center justify-between"
-      style={{ backgroundColor: isHighValue ? CLR.amber800 : CLR.green900 }}>
+      style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
       <Text className="text-[11px] font-bold uppercase tracking-widest text-white/60">Total Cost</Text>
       <View className="flex-row items-baseline gap-1">
         <Text className="text-[13px] font-medium text-white/50">₱</Text>
@@ -276,19 +276,19 @@ function HighValueSection({ visible, justUnlocked, form, setField }: {
       overflow:  "hidden",
     }}>
       <View className="flex-row items-center gap-2 mb-4 mt-2">
-        <View className="flex-1 h-px" style={{ backgroundColor: CLR.gold }} />
-        <Text className="text-[9.5px] font-bold uppercase tracking-widest" style={{ color: CLR.gold }}>
+        <View className="flex-1 h-px" style={{ backgroundColor: CLR.brand500 }} />
+        <Text className="text-[9.5px] font-bold uppercase tracking-widest" style={{ color: CLR.brand500 }}>
           High-Value Fields
         </Text>
-        <View className="flex-1 h-px" style={{ backgroundColor: CLR.gold }} />
+        <View className="flex-1 h-px" style={{ backgroundColor: CLR.brand500 }} />
       </View>
 
       {justUnlocked && (
         <View className="flex-row items-start gap-3 rounded-2xl p-3.5 mb-4 border-l-4"
-          style={{ backgroundColor: "#fff8e6", borderLeftColor: CLR.gold }}>
+          style={{ backgroundColor: "#ECFDF5", borderLeftColor: CLR.brand500 }}>
           <Text className="text-base mt-0.5">⚠️</Text>
           <View className="flex-1">
-            <Text className="text-[12.5px] font-bold text-amber-800">Total crossed ₱10,000</Text>
+            <Text className="text-[12.5px] font-bold text-emerald-900">Total crossed ₱10,000</Text>
             <Text className="text-[11.5px] text-gray-600 mt-0.5 leading-[18px]">
               Complete the Budget & Proposal fields below before submitting.
             </Text>
@@ -297,10 +297,10 @@ function HighValueSection({ visible, justUnlocked, form, setField }: {
       )}
 
       <View className="flex-row items-center gap-3 rounded-2xl p-4 mb-4 border"
-        style={{ backgroundColor: CLR.gold50, borderColor: "#e8d08a" }}>
+        style={{ backgroundColor: CLR.hv50, borderColor: "#047857" }}>
         <Text className="text-2xl">🏛️</Text>
         <View className="flex-1">
-          <Text className="text-[13px] font-bold" style={{ color: CLR.amber900 }}>
+          <Text className="text-[13px] font-bold" style={{ color: CLR.hv700 }}>
             High-Value Procurement Unlocked
           </Text>
           <Text className="text-[11.5px] text-gray-500 mt-0.5 leading-[17px]">
@@ -351,9 +351,9 @@ function NextFlow({ isHighValue }: { isHighValue: boolean }) {
     : ["You Submit PR",  "Div. Head", "BAC",       "Budget", "PARPO"];
   return (
     <View className="rounded-2xl px-4 py-4 mt-5 border"
-      style={{ backgroundColor: isHighValue ? "#fff8e6" : "#edfbf2", borderColor: isHighValue ? "#e8d08a" : "#b7e4c7" }}>
+      style={{ backgroundColor: isHighValue ? "#ECFDF5" : "#ECFDF5", borderColor: isHighValue ? "#047857" : "#047857" }}>
       <Text className="text-[10px] font-bold uppercase tracking-widest mb-3"
-        style={{ color: isHighValue ? CLR.amber900 : CLR.green700 }}>
+        style={{ color: isHighValue ? CLR.hv700 : CLR.brand700 }}>
         What happens after you submit?
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -362,15 +362,15 @@ function NextFlow({ isHighValue }: { isHighValue: boolean }) {
             <React.Fragment key={step}>
               <View className="px-3 py-1.5 rounded-full border"
                 style={i === 0
-                  ? { backgroundColor: isHighValue ? CLR.amber800 : CLR.green900, borderColor: "transparent" }
-                  : { backgroundColor: "rgba(255,255,255,0.7)", borderColor: isHighValue ? "rgba(201,168,76,0.35)" : "rgba(82,183,136,0.35)" }}>
+                  ? { backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900, borderColor: "transparent" }
+                  : { backgroundColor: "rgba(255,255,255,0.7)", borderColor: isHighValue ? "rgba(16,185,129,0.35)" : "rgba(16,185,129,0.35)" }}>
                 <Text className="text-[11px] font-semibold"
-                  style={{ color: i === 0 ? "#fff" : isHighValue ? CLR.amber900 : CLR.green900 }}>
+                  style={{ color: i === 0 ? "#fff" : isHighValue ? CLR.hv700 : CLR.brand900 }}>
                   {step}
                 </Text>
               </View>
               {i < steps.length - 1 && (
-                <Text className="text-[12px]" style={{ color: isHighValue ? CLR.gold : CLR.green400 }}>→</Text>
+                <Text className="text-[12px]" style={{ color: isHighValue ? CLR.brand500 : CLR.brand500 }}>→</Text>
               )}
             </React.Fragment>
           ))}
@@ -390,7 +390,7 @@ function ModalHeader({ isHighValue, prNo, onClose }: {
     : ["PR Details",  "Div.Head", "BAC",      "Budget", "PARPO"];
 
   return (
-    <View className="px-5 pt-5 pb-4" style={{ backgroundColor: isHighValue ? CLR.amber800 : CLR.green900 }}>
+    <View className="px-5 pt-5 pb-4" style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
       <View className="flex-row items-start justify-between mb-4">
         <View className="flex-row items-center gap-3">
           <View className="w-10 h-10 rounded-xl items-center justify-center bg-white/10">
@@ -409,11 +409,11 @@ function ModalHeader({ isHighValue, prNo, onClose }: {
 
       <View className="flex-row items-center justify-between mb-4">
         <View className="flex-row items-center gap-2 px-3 py-1.5 rounded-full"
-          style={{ backgroundColor: isHighValue ? "rgba(201,168,76,0.3)" : "rgba(82,183,136,0.25)" }}>
+          style={{ backgroundColor: isHighValue ? "rgba(16,185,129,0.3)" : "rgba(16,185,129,0.25)" }}>
           <View className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: isHighValue ? "#fde68a" : "#a7f3c4" }} />
+            style={{ backgroundColor: isHighValue ? "#A7F3D0" : "#a7f3c4" }} />
           <Text className="text-[10.5px] font-bold uppercase tracking-wide"
-            style={{ color: isHighValue ? "#fde68a" : "#a7f3c4" }}>
+            style={{ color: isHighValue ? "#A7F3D0" : "#a7f3c4" }}>
             {isHighValue ? "High-Value · > ₱10,000" : "Standard · ≤ ₱10,000"}
           </Text>
         </View>
@@ -537,7 +537,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
             <Text className="flex-1 text-[12.5px] text-gray-700 leading-[19px]">
               Initiates <Text className="font-bold text-gray-800">Stage 1</Text> of procurement.
               Routes to Division Head → BAC → Budget → PARPO.
-              {isHighValue && <Text className="font-bold text-amber-700"> High-value fields are now required.</Text>}
+              {isHighValue && <Text className="font-bold text-emerald-800"> High-value fields are now required.</Text>}
             </Text>
           </View>
 
@@ -603,7 +603,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
             </TouchableOpacity>
             <TouchableOpacity onPress={handleSubmit} disabled={!isValid} activeOpacity={0.8}
               className={`px-5 py-2.5 rounded-xl ${!isValid ? "opacity-40" : ""}`}
-              style={{ backgroundColor: isHighValue ? CLR.amber800 : CLR.green900 }}>
+              style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
               <Text className="text-[13.5px] font-bold text-white">
                 {isHighValue ? "Submit High-Value PR" : "Create PR"}
               </Text>
