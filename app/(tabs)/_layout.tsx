@@ -1,3 +1,4 @@
+/* eslint-disable import/namespace, import/no-named-as-default, import/no-named-as-default-member */
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import {
   createDrawerNavigator,

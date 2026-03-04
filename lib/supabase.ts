@@ -109,6 +109,22 @@ export async function fetchPurchaseRequests(): Promise<PRRow[]> {
   return data;
 }
 
+// Fetch PR header and items by header id
+export async function fetchPRWithItemsById(prId: string): Promise<{ header: PRRow; items: PRItemRow[] }> {
+  let headerResp = await supabase.from("purchase_requests").select("*").eq("id", prId).single();
+  if (headerResp.error) {
+    headerResp = await supabase.from("purchase_requests").select("*").eq("pr_id", prId).single();
+  }
+  if (headerResp.error || !headerResp.data) throw headerResp.error ?? new Error("PR not found");
+  const header = headerResp.data as PRRow;
+  const { data: items, error: iErr } = await supabase
+    .from("purchase_request_items")
+    .select("id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id")
+    .eq("pr_id", (header as any).id ?? (header as any).pr_id);
+  if (iErr) throw iErr;
+  return { header, items };
+}
+
 // ─── Generate next sequential PR number: YYYY-PR-XXXX ─────────────────────────
 
 export async function generatePRNumber(): Promise<string> {

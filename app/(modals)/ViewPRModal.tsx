@@ -24,20 +24,13 @@ import {
   Text, TouchableOpacity, View,
 } from "react-native";
 import WebView from "react-native-webview";
-// import { supabase } from "../../lib/supabase";
+import { fetchPRWithItemsById } from "../../lib/supabase";
+import { PRDisplay, PRLineItem, toLineItemDisplay, toPRDisplay } from "../../types/model";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PRRecord {
-  id: string; prNo: string; itemDescription: string;
-  officeSection: string; quantity: number; totalCost: number;
-  date: string; status: string; elapsedTime: string;
-}
-
-interface LineItem {
-  stock_no: string; unit: string; description: string;
-  quantity: number; unit_price: number; subtotal: number;
-}
+type PRRecord = PRDisplay;
+type LineItem = PRLineItem;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -64,7 +57,7 @@ function buildPRHtml(record: PRRecord, items: LineItem[]): string {
         </tr>`)
       .join("")
     : `<tr><td colspan="6" style="text-align:center;color:#999;padding:16px 8px;">
-         ${record.itemDescription}
+         ${record.purpose}
        </td></tr>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -145,7 +138,7 @@ function buildPRHtml(record: PRRecord, items: LineItem[]): string {
 
 <div class="mrow" style="margin-bottom:16px">
   <span class="ml">Purpose:</span>
-  <span class="mv" style="flex:1;padding-left:4px">${record.itemDescription}</span>
+  <span class="mv" style="flex:1;padding-left:4px">${record.purpose}</span>
 </div>
 
 <div class="sigs">
@@ -174,6 +167,7 @@ interface ViewPRModalProps {
 
 export default function ViewPRModal({ visible, record, onClose }: ViewPRModalProps) {
   const [tab,     setTab]     = useState<"details" | "pdf">("details");
+  const [header,  setHeader]  = useState<PRRecord | null>(null);
   const [items,   setItems]   = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(false);
   const webRef = useRef<WebView>(null);
@@ -183,34 +177,26 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
     if (!visible || !record) return;
     setTab("details");
     setLoading(true);
-    try {
-      // Local fallback data while backend wiring is disabled
-      const qty = Math.max(1, Number(record.quantity || 1));
-      const unitPrice = qty > 0 ? Number(record.totalCost || 0) / qty : Number(record.totalCost || 0);
-      const localItems: LineItem[] = [
-        {
-          stock_no: "",
-          unit: "",
-          description: record.itemDescription,
-          quantity: qty,
-          unit_price: unitPrice,
-          subtotal: Number(record.totalCost || 0),
-        },
-      ];
-      setItems(localItems);
-    } catch (e: any) {
-      const message = e?.message ?? "Unknown error while preparing PR items";
-      Alert.alert("Items load failed", message);
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
+    fetchPRWithItemsById(record.id)
+      .then(({ header, items }) => {
+        setHeader(toPRDisplay(header));
+        setItems(items.map(toLineItemDisplay));
+      })
+      .catch((e: any) => {
+        const message = e?.message ?? "Failed to load PR from database";
+        Alert.alert("Load failed", message);
+        // Fallback to passed-in record so the user still sees something
+        setHeader(record);
+        setItems([]);
+      })
+      .finally(() => setLoading(false));
   }, [visible, record]);
 
   if (!record) return null;
 
-  const html        = buildPRHtml(record, items);
-  const statusColor = STATUS_COLOR[record.status] ?? "#6b7280";
+  const hdr         = header ?? record;
+  const html        = buildPRHtml(hdr, items);
+  const statusColor = STATUS_COLOR[hdr.status] ?? "#6b7280";
 
   const handlePrint = async () => {
     try { await Print.printAsync({ html }); } catch {}
@@ -244,15 +230,15 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
                 Purchase Request
               </Text>
               <Text className="text-[18px] font-black text-white" style={{ fontFamily: MONO }}>
-                {record.prNo}
+                {hdr.prNo}
               </Text>
               <Text className="text-[11.5px] text-white/60 mt-0.5">
-                {record.officeSection} · {record.date}
+                {hdr.officeSection} · {hdr.date}
               </Text>
             </View>
             <View className="flex-row items-center gap-2">
               <View className="px-3 py-1.5 rounded-full" style={{ backgroundColor: statusColor + "40" }}>
-                <Text className="text-[11px] font-bold text-white capitalize">{record.status}</Text>
+                <Text className="text-[11px] font-bold text-white capitalize">{hdr.status}</Text>
               </View>
               <TouchableOpacity onPress={onClose} hitSlop={10}
                 className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
@@ -297,7 +283,7 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
             <Text className="text-[13px] text-gray-400">Loading PR details…</Text>
           </View>
         ) : tab === "details" ? (
-          <DetailsView record={record} items={items} />
+          <DetailsView record={hdr} items={items} />
         ) : (
           <WebView ref={webRef} source={{ html }} style={{ flex: 1 }}
             originWhitelist={["*"]} showsVerticalScrollIndicator={false} />
@@ -326,7 +312,6 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
         <InfoRow label="Status"     value={record.status}
           valueStyle={{ color: statusColor, fontWeight: "700", textTransform: "capitalize" }} />
         <InfoRow label="Total Cost" value={`₱${fmt(record.totalCost)}`} mono />
-        <InfoRow label="Elapsed"    value={record.elapsedTime} last />
       </View>
 
       {/* Items */}
@@ -339,7 +324,7 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
         </View>
         {items.length === 0 ? (
           <View className="px-4 py-5 items-center">
-            <Text className="text-[12.5px] text-gray-400 text-center">{record.itemDescription}</Text>
+            <Text className="text-[12.5px] text-gray-400 text-center">{record.purpose}</Text>
           </View>
         ) : items.map((item, i) => (
           <View key={i} className={`px-4 py-3 border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>

@@ -6,7 +6,7 @@
  *
  * ─── 1. Import ─────────────────────────────────────────────
  */
-import { PRRecord } from "@/app/ProcurementContent";
+import type { PRDisplay } from "@/types/model";
 import type { CanvassingPR } from "../app/(tabs)/CanvassingModule";
 
 /**
@@ -41,19 +41,21 @@ import type { CanvassingPR } from "../app/(tabs)/CanvassingModule";
  *     .select("*")
  *     .eq("pr_id", record.id);
  */
+type PRRecord = PRDisplay & { itemDescription?: string; quantity: number };
+
 function toCanvassingPR(record: PRRecord): CanvassingPR {
   return {
     prNo:               record.prNo,
     date:               record.date,
     officeSection:      record.officeSection,
-    responsibilityCode: "",                          // TODO: add to PRRecord if needed
-    purpose:            record.itemDescription,
+    responsibilityCode: "",                          // TODO: add to PR header if needed
+    purpose:            record.itemDescription ?? record.purpose,
     isHighValue:        record.totalCost >= 10_000,
     items: [
       // TODO: replace with real items from purchase_request_items
       {
         id:       1,
-        desc:     record.itemDescription,
+        desc:     record.itemDescription ?? record.purpose,
         stock:    "",
         unit:     "lot",
         qty:      record.quantity,
@@ -107,4 +109,3 @@ function handleStartCanvassing(record: PRRecord, navigation: any) {
 // }, [route?.params?.canvassPayload]);
 
 export { };
-

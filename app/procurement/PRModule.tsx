@@ -1,9 +1,10 @@
+import { toPRDisplay } from "@/types/model";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/EditPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import EditPRModal, { type PREditRecord, type PREditPayload } from "../(modals)/EditPRModal";
 import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -11,11 +12,7 @@ import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PR
 type SubTab   = "pr" | "canvass" | "abstract_of_awards";
 type PRStatus = "approved" | "pending" | "overdue" | "processing" | "draft";
 
-interface PRRecord {
-  id: string; prNo: string; itemDescription: string;
-  officeSection: string; quantity: number; totalCost: number;
-  date: string; status: PRStatus; elapsedTime: string;
-}
+type PRRecord = ReturnType<typeof toPRDisplay> & { itemDescription: string; quantity: number; elapsedTime: string };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -41,20 +38,16 @@ const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2,
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function rowToRecord(row: PRRow, itemCount = 0): PRRecord {
+  const base = toPRDisplay(row);
   const created = row.created_at ? new Date(row.created_at) : new Date();
   const diffMs  = Date.now() - created.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
   const elapsed = diffMin < 60 ? `${diffMin} min` : diffMin < 1440 ? `${Math.floor(diffMin / 60)} hr` : `${Math.floor(diffMin / 1440)} days`;
   return {
-    id:              row.id ?? String(Date.now()),
-    prNo:            row.pr_no,
-    itemDescription: `${row.office_section} procurement request`,
-    officeSection:   row.office_section,
-    quantity:        itemCount,
-    totalCost:       row.total_cost,
-    date:            created.toLocaleDateString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric" }),
-    status:          row.status as PRStatus,
-    elapsedTime:     elapsed,
+    ...base,
+    itemDescription: base.purpose,
+    quantity: itemCount,
+    elapsedTime: elapsed,
   };
 }
 
@@ -262,12 +255,19 @@ export default function PRModule() {
     } catch (e: any) {
       const message = e.message ?? "Insert failed";
       setRecords((prev) => [{
-        id: `local-${Date.now()}`, prNo: payload.pr.pr_no,
-        itemDescription: `${payload.pr.office_section} procurement request`,
-        officeSection: payload.pr.office_section, quantity: payload.items.length,
-        totalCost: payload.pr.total_cost, date: new Date().toLocaleDateString("en-PH"),
-        status: "pending", elapsedTime: "just now",
-      }, ...prev]);
+        id: `local-${Date.now()}`,
+        prNo: payload.pr.pr_no,
+        // Mirror display fields exactly
+        officeSection: payload.pr.office_section,
+        purpose: payload.pr.purpose,
+        totalCost: payload.pr.total_cost,
+        status: "pending",
+        date: new Date().toLocaleDateString("en-PH"),
+        // Extra display-only fields
+        itemDescription: payload.pr.purpose,
+        quantity: payload.items.length,
+        elapsedTime: "just now",
+      } as PRRecord, ...prev]);
       setPage(1);
       Alert.alert("Saved locally", `Could not reach the server. Record will sync when online. ${message}`);
     } finally { setSaving(false); }
