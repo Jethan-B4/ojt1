@@ -2,8 +2,8 @@ import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
-import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 import ViewPRModal from "../(modals)/ViewPRModal"; // ← new
+import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -250,11 +250,12 @@ export default function PRModule() {
 
   const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
     setSaving(true);
-    try {
+      try {
       const saved = await insertPurchaseRequest(payload.pr, payload.items);
       setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
       setPage(1);
-    } catch {
+    } catch (e: any) {
+      const message = e.message ?? "Insert failed";
       setRecords((prev) => [{
         id: `local-${Date.now()}`, prNo: payload.pr.pr_no,
         itemDescription: `${payload.pr.office_section} procurement request`,
@@ -263,8 +264,18 @@ export default function PRModule() {
         status: "pending", elapsedTime: "just now",
       }, ...prev]);
       setPage(1);
-      Alert.alert("Saved locally", "Could not reach the server. Record will sync when online.");
+      Alert.alert("Saved locally", `Could not reach the server. Record will sync when online. ${message}`);
     } finally { setSaving(false); }
+    // Modal already inserted to DB. Optimistically add to list and refresh later.
+    // setRecords((prev) => [{
+    //   id: `local-${Date.now()}`, prNo: payload.pr.pr_no,
+    //   itemDescription: `${payload.pr.office_section} procurement request`,
+    //   officeSection: payload.pr.office_section, quantity: payload.items.length,
+    //   totalCost: payload.pr.total_cost, date: new Date().toLocaleDateString("en-PH"),
+    //   status: "pending", elapsedTime: "just now",
+    // }, ...prev]);
+    // setPage(1);
+    // setSaving(false);
   }, []);
 
   const filtered   = records.filter((r) => {

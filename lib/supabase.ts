@@ -43,7 +43,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * ── Required Supabase tables ─────────────────────────────────────────────────
  *
  *  purchase_requests
- *  ┌─ id              uuid        PK  default gen_random_uuid()
+ *  ┌─ pr_id              uuid        PK  default gen_random_uuid()
  *  ├─ pr_no           text        UNIQUE NOT NULL
  *  ├─ office_section  text        NOT NULL
  *  ├─ resp_code       text
@@ -57,8 +57,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  └─ created_at      timestamptz default now()
  *
  *  purchase_request_items
- *  ┌─ id           uuid    PK  default gen_random_uuid()
- *  ├─ pr_id        uuid    NOT NULL references purchase_requests(id) on delete cascade
+ *  ┌─ pr_item_id           uuid    PK  default gen_random_uuid()
+ *  ├─ pr_id        uuid    NOT NULL references purchase_requests(pr_id) on delete cascade
  *  ├─ description  text    NOT NULL
  *  ├─ stock_no     text
  *  ├─ unit         text
@@ -70,7 +70,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
 export interface PRRow {
-  id?: string;
+  id: string;
   pr_no: string;
   office_section: string;
   resp_code: string;
@@ -85,7 +85,7 @@ export interface PRRow {
 }
 
 export interface PRItemRow {
-  id?: string;
+  id: string;
   pr_id: string;
   description: string;
   stock_no: string;
@@ -131,18 +131,34 @@ export async function insertPurchaseRequest(
   pr: Omit<PRRow, "id" | "created_at">,
   items: Omit<PRItemRow, "id" | "pr_id">[]
 ): Promise<PRRow> {
+  // Build payload with only defined, non-empty fields to avoid 400 from unknown/invalid values
+  const base: Record<string, any> = {
+    pr_no: pr.pr_no,
+    office_section: pr.office_section,
+    purpose: pr.purpose,
+    total_cost: pr.total_cost,
+    is_high_value: pr.is_high_value,
+    status: pr.status,
+  };
+  if (pr.resp_code)       base.resp_code = pr.resp_code;
+  if (pr.budget_number)   base.budget_number = pr.budget_number;
+  if (pr.pap_code)        base.pap_code = pr.pap_code;
+  if (pr.proposal_file)   base.proposal_file = pr.proposal_file;
+
   const { data, error } = await supabase
     .from("purchase_requests")
-    .insert(pr)
+    .insert(base)
     .select()
     .single();
 
   if (error) throw error;
 
   if (items.length > 0) {
+    const parentId = (data as any).id ?? (data as any).pr_id;
+    if (!parentId) throw new Error("Insert succeeded but no primary key was returned for purchase_requests");
     const { error: itemsError } = await supabase
       .from("purchase_request_items")
-      .insert(items.map((item) => ({ ...item, pr_id: data.id })));
+      .insert(items.map((item) => ({ ...item, pr_id: parentId })));
 
     if (itemsError) throw itemsError;
   }
