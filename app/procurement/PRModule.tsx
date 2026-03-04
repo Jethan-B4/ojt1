@@ -2,7 +2,8 @@ import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
-import ViewPRModal from "../(modals)/ViewPRModal"; // ← new
+import ViewPRModal from "../(modals)/ViewPRModal";
+import EditPRModal, { type PREditRecord, type PREditPayload } from "../(modals)/EditPRModal";
 import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -217,6 +218,10 @@ export default function PRModule() {
   const [viewRecord,  setViewRecord]  = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
 
+  // Edit PR modal state
+  const [editRecord,  setEditRecord]  = useState<PREditRecord | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
+
   // More / actions sheet state
   const [moreRecord,  setMoreRecord]  = useState<PRRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
@@ -278,6 +283,20 @@ export default function PRModule() {
     // setSaving(false);
   }, []);
 
+
+  const handlePRSave = useCallback((payload: PREditPayload) => {
+    setRecords((prev) => prev.map((r) =>
+      r.id !== payload.id ? r : {
+        ...r,
+        officeSection: payload.officeSection,
+        totalCost: payload.totalCost,
+        quantity: payload.items.length,
+        itemDescription: `${payload.officeSection} procurement request`,
+      }
+    ));
+    // TODO: persist via supabase updatePurchaseRequest(payload)
+  }, []);
+
   const filtered   = records.filter((r) => {
     const q = searchQuery.toLowerCase();
     return (!q || r.prNo.toLowerCase().includes(q) || r.itemDescription.toLowerCase().includes(q) || r.officeSection.toLowerCase().includes(q))
@@ -301,7 +320,7 @@ export default function PRModule() {
           : paged.map((record, idx) => (
               <RecordCard key={record.id} record={record} isEven={idx % 2 === 0}
                 onView={(r) => { setViewRecord(r); setViewVisible(true); }}
-                onEdit={(r) => { setMoreRecord(r); setMoreVisible(true); }}
+                onEdit={(r) => { setEditRecord({ id: r.id, prNo: r.prNo, officeSection: r.officeSection, purpose: r.itemDescription }); setEditVisible(true); }}
                 onMore={(r) => { setMoreRecord(r); setMoreVisible(true); }} />
             ))}
       </ScrollView>
@@ -352,6 +371,15 @@ export default function PRModule() {
           </View>
         </View>
       </Modal>
+
+
+      {/* Edit PR modal */}
+      <EditPRModal
+        visible={editVisible}
+        record={editRecord}
+        onClose={() => { setEditVisible(false); setEditRecord(null); }}
+        onSave={handlePRSave}
+      />
 
       {/* Create PR modal */}
       {prModalOpen && (

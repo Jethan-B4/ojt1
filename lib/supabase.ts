@@ -165,3 +165,49 @@ export async function insertPurchaseRequest(
 
   return data;
 }
+
+// ─── Update PR header + replace line items ────────────────────────────────────
+
+export async function updatePurchaseRequest(
+  id: string,
+  pr: Partial<Omit<PRRow, "id" | "pr_no" | "created_at">>,
+  items: Omit<PRItemRow, "id" | "pr_id">[]
+): Promise<PRRow> {
+  // Build update payload — only include defined, non-empty fields
+  const patch: Record<string, any> = {};
+  if (pr.office_section !== undefined) patch.office_section = pr.office_section;
+  if (pr.resp_code      !== undefined) patch.resp_code      = pr.resp_code;
+  if (pr.purpose        !== undefined) patch.purpose        = pr.purpose;
+  if (pr.total_cost     !== undefined) patch.total_cost     = pr.total_cost;
+  if (pr.is_high_value  !== undefined) patch.is_high_value  = pr.is_high_value;
+  if (pr.budget_number  !== undefined) patch.budget_number  = pr.budget_number  || null;
+  if (pr.pap_code       !== undefined) patch.pap_code       = pr.pap_code       || null;
+  if (pr.proposal_file  !== undefined) patch.proposal_file  = pr.proposal_file  || null;
+
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .update(patch)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Replace all existing items for this PR, then re-insert the updated set
+  const { error: deleteError } = await supabase
+    .from("purchase_request_items")
+    .delete()
+    .eq("pr_id", id);
+
+  if (deleteError) throw deleteError;
+
+  if (items.length > 0) {
+    const { error: insertError } = await supabase
+      .from("purchase_request_items")
+      .insert(items.map((item) => ({ ...item, pr_id: id })));
+
+    if (insertError) throw insertError;
+  }
+
+  return data;
+}
