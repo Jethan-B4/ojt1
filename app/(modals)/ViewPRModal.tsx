@@ -29,7 +29,16 @@ import { PRDisplay, PRLineItem, toLineItemDisplay, toPRDisplay } from "../../typ
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PRRecord = PRDisplay;
+// PRDisplay extended with optional Appendix 60 fields used by PRPreview
+type PRRecord = PRDisplay & {
+  entityName?: string;
+  fundCluster?: string;
+  respCode?: string;
+  reqName?: string;
+  appName?: string;
+  reqDesig?: string;
+  appDesig?: string;
+};
 type LineItem = PRLineItem;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -42,121 +51,139 @@ const STATUS_COLOR: Record<string, string> = {
   processing: "#2563eb", draft: "#6b7280",
 };
 
-// ─── Appendix 60 HTML builder ─────────────────────────────────────────────────
+// ─── Appendix 60 HTML builder (matches PRPreview.tsx / official template) ───────
 
 function buildPRHtml(record: PRRecord, items: LineItem[]): string {
-  const rows = items.length > 0
-    ? items.map((it) => `
-        <tr>
-          <td>${it.stock_no || "—"}</td>
-          <td>${it.unit || "—"}</td>
-          <td>${it.description}</td>
-          <td class="r">${it.quantity}</td>
-          <td class="r">&#8369;${fmt(it.unit_price)}</td>
-          <td class="r">&#8369;${fmt(it.subtotal)}</td>
-        </tr>`)
-      .join("")
-    : `<tr><td colspan="6" style="text-align:center;color:#999;padding:16px 8px;">
-         ${record.purpose}
-       </td></tr>`;
+  const fmtNum = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+  // Pad to at least 30 rows like PRPreview does
+  const padded = [...items];
+  while (padded.length < 30) padded.push({ description: "", stock_no: "", unit: "", quantity: 0, unit_price: 0, subtotal: 0 } as any);
+
+  const rows = padded.map((it) => {
+    const total = it.quantity && it.unit_price ? it.quantity * it.unit_price : 0;
+    return `<tr>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif;overflow:hidden;word-wrap:break-word;white-space:normal;height:16px">${it.stock_no || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif;overflow:hidden;word-wrap:break-word;white-space:normal">${it.unit || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 4px;text-align:left;font-family:'Times New Roman',serif;overflow:hidden;word-wrap:break-word;white-space:normal">${it.description || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${it.quantity || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${it.unit_price ? fmtNum(it.unit_price) : ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${total > 0 ? fmtNum(total) : ""}</td>
+    </tr>`;
+  }).join("");
+
+  const totalCost = items.reduce((s, i) => s + (i.subtotal || 0), 0);
+  const today = record.date || new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:28px 32px;background:#fff}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;
-       border-bottom:2px solid #064E3B;padding-bottom:10px;margin-bottom:14px}
-  .hdr-c{text-align:center}
-  .hdr-c .app{font-size:9px;color:#888}
-  .hdr-c .title{font-size:17px;font-weight:900;letter-spacing:1px;color:#064E3B;margin:2px 0}
-  .hdr-r{text-align:right;font-size:10px}
-  .meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin-bottom:12px}
-  .mrow{display:flex;gap:6px;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
-  .ml{font-weight:700;font-size:9.5px;color:#555;white-space:nowrap}
-  .mv{font-size:10px}
-  .full{grid-column:1/-1}
-  table{width:100%;border-collapse:collapse;margin-bottom:14px}
-  th{background:#064E3B;color:#fff;font-size:9px;font-weight:700;
-     text-transform:uppercase;letter-spacing:.4px;padding:7px 8px;text-align:left}
-  .r{text-align:right}
-  td{padding:6px 8px;font-size:10.5px;border-bottom:1px solid #e5e7eb}
-  tr:nth-child(even) td{background:#f9fafe}
-  .tot{display:flex;justify-content:flex-end;margin-bottom:18px}
-  .tot-box{background:#064E3B;color:#fff;padding:8px 18px;border-radius:6px;text-align:right}
-  .tot-lbl{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;opacity:.6}
-  .tot-amt{font-size:18px;font-weight:900;font-family:"Courier New",monospace}
-  .sigs{display:grid;grid-template-columns:1fr 1fr;gap:20px 48px;margin-top:12px}
-  .sig{border-top:1.5px solid #111;padding-top:5px}
-  .sig-lbl{font-size:9px;font-weight:700;color:#555;text-transform:uppercase}
-  .sig-nm{font-size:11px;font-weight:700;min-height:20px}
-  .sig-ds{font-size:9.5px;color:#555}
-  @media print{body{padding:16px 20px}@page{margin:12mm}}
-</style></head><body>
-
-<div class="hdr">
-  <div>
-    <div style="font-size:10px">Entity Name: <strong>DAR — CARAGA Region</strong></div>
-    <div style="font-size:10px;margin-top:4px">Fund Cluster: ___________</div>
-  </div>
-  <div class="hdr-c">
-    <div class="app">Appendix 60</div>
-    <div class="title">PURCHASE REQUEST</div>
-  </div>
-  <div class="hdr-r">
-    <div>PR No.: <strong>${record.prNo}</strong></div>
-    <div style="margin-top:4px">Date: <strong>${record.date}</strong></div>
-  </div>
-</div>
-
-<div class="meta">
-  <div class="mrow"><span class="ml">Office / Section:</span><span class="mv">${record.officeSection}</span></div>
-  <div class="mrow"><span class="ml">Status:</span>
-    <span class="mv" style="font-weight:700;text-transform:capitalize">${record.status}</span></div>
-  <div class="mrow full"><span class="ml">Responsibility Center Code:</span>
-    <span class="mv">___________________________</span></div>
-</div>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Times New Roman', Times, serif; font-size: 9pt; color: #000; background: #fff; padding: 24px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #000; }
+  @media print { body { padding: 10mm; } @page { margin: 8mm; } }
+</style>
+</head><body>
 
 <table>
-  <thead><tr>
-    <th style="width:14%">Stock / Property No.</th>
-    <th style="width:8%">Unit</th>
-    <th>Item Description</th>
-    <th class="r" style="width:8%">Qty</th>
-    <th class="r" style="width:13%">Unit Cost</th>
-    <th class="r" style="width:13%">Total Cost</th>
-  </tr></thead>
-  <tbody>${rows}</tbody>
+  <colgroup>
+    <col style="width:12%"/>
+    <col style="width:8%"/>
+    <col style="width:40%"/>
+    <col style="width:10%"/>
+    <col style="width:15%"/>
+    <col style="width:15%"/>
+  </colgroup>
+  <tbody>
+    <!-- Appendix label -->
+    <tr style="height:27px">
+      <td colspan="6" style="text-align:right;font-size:10pt;padding-right:4px;font-family:'Times New Roman',serif;color:#000">
+        Appendix 60
+      </td>
+    </tr>
+    <!-- Title -->
+    <tr style="height:34px">
+      <td colspan="6" style="text-align:center;font-weight:bold;font-size:12pt;font-family:'Times New Roman',serif;color:#000">
+        PURCHASE REQUEST
+      </td>
+    </tr>
+    <!-- Entity Name / Fund Cluster -->
+    <tr style="height:21px">
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        Entity Name: <span style="font-weight:normal">${record.entityName || "DAR — CARAGA Region"}</span>
+      </td>
+      <td style="border-bottom:1px solid black"></td>
+      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        Fund Cluster: <span style="font-weight:normal">${record.fundCluster || ""}</span>
+      </td>
+    </tr>
+    <!-- Office / PR No. / Date -->
+    <tr style="height:14px">
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        Office/Section :<br/>${record.officeSection || ""}
+      </td>
+      <td colspan="2" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        PR No.: <span style="font-weight:normal">${record.prNo || ""}</span>
+      </td>
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;font-weight:bold;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        Date:<br/><span style="font-weight:normal">${today}</span>
+      </td>
+    </tr>
+    <tr style="height:15px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        Responsibility Center Code : <span style="font-weight:normal">${record.respCode || ""}</span>
+      </td>
+    </tr>
+    <!-- Column headers -->
+    <tr style="height:22.5px">
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Stock/<br/>Property No.</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Unit</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Item Description</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Quantity</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Unit Cost</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;color:#000;text-align:center;font-weight:bold">Total Cost</th>
+    </tr>
+    <!-- Item rows (padded to 30) -->
+    ${rows}
+    <!-- Purpose -->
+    <tr style="height:17px">
+      <td colspan="6" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000;overflow:hidden;word-wrap:break-word;white-space:normal">
+        <b>Purpose:</b> ${record.purpose || ""}
+      </td>
+    </tr>
+    <tr style="height:30px">
+      <td colspan="6" style="border-bottom:1px solid black;border-left:1px solid black;border-right:1px solid black"></td>
+    </tr>
+    <!-- Signature rows -->
+    <tr style="height:12px">
+      <td style="border-top:1px solid black;border-left:1px solid black;font-family:'Times New Roman',serif;color:#000"></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000"><i>Requested by:</i></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000"><i>Approved by:</i></td>
+      <td style="border-top:1px solid black;border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">Signature :</td>
+      <td></td><td></td><td></td>
+      <td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">Printed Name :</td>
+      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">${record.reqName || ""}</td>
+      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">${record.appName || ""}</td>
+      <td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:14.75px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">Designation :</td>
+      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">${record.reqDesig || ""}</td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif;color:#000">${record.appDesig || ""}</td>
+      <td style="border-bottom:1px solid black;border-right:1px solid black"></td>
+    </tr>
+  </tbody>
 </table>
-
-<div class="tot">
-  <div class="tot-box">
-    <div class="tot-lbl">Total Amount</div>
-    <div class="tot-amt">&#8369;${fmt(record.totalCost)}</div>
-  </div>
-</div>
-
-<div class="mrow" style="margin-bottom:16px">
-  <span class="ml">Purpose:</span>
-  <span class="mv" style="flex:1;padding-left:4px">${record.purpose}</span>
-</div>
-
-<div class="sigs">
-  <div class="sig">
-    <div class="sig-lbl">Requested by</div>
-    <div class="sig-nm">&nbsp;</div>
-    <div class="sig-ds">Signature / Printed Name / Designation</div>
-  </div>
-  <div class="sig">
-    <div class="sig-lbl">Approved by</div>
-    <div class="sig-nm">&nbsp;</div>
-    <div class="sig-ds">Signature / Printed Name / Designation</div>
-  </div>
-</div>
 
 </body></html>`;
 }
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface ViewPRModalProps {

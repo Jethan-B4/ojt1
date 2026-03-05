@@ -27,6 +27,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useAuth } from "../AuthContext";
 
 // ─── Supabase (uncomment when ready) ─────────────────────────────────────────
 // import { supabase } from "../lib/supabase";
@@ -374,33 +375,27 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
   );
 }
 
-// ─── Dashboard Screen ─────────────────────────────────────────────────────────
+// ─── Dashboard Screen (role-aware entry point) ───────────────────────────────
 
 export default function DashboardScreen({ navigation }: any) {
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role_id === 1;
+
+  return isAdmin
+    ? <AdminDashboard navigation={navigation} />
+    : <EndUserDashboard navigation={navigation} />;
+}
+
+// ─── Shared data-loading hook ─────────────────────────────────────────────────
+
+function useDashboardData() {
   const [stats,   setStats]   = useState<StatCard[]>([]);
   const [prs,     setPrs]     = useState<PRSummary[]>([]);
   const [alerts,  setAlerts]  = useState<DeliveryAlert[]>([]);
   const [stages,  setStages]  = useState<StageCount[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ── Data loading ─────────────────────────────────────────────────────────
-  // Replace the placeholder assignments below with real Supabase queries:
-  //
-  // const { data: prData } = await supabase
-  //   .from("purchase_requests")
-  //   .select("*, purchase_request_items(count)")
-  //   .order("created_at", { ascending: false })
-  //   .limit(6);
-  //
-  // const { count: activePRs } = await supabase
-  //   .from("purchase_requests")
-  //   .select("*", { count: "exact", head: true })
-  //   .neq("status", "draft");
-  //
-  // ... etc.
-
   useEffect(() => {
-    // Simulate async load
     const t = setTimeout(() => {
       setStats(PLACEHOLDER_STATS);
       setPrs(PLACEHOLDER_PRS);
@@ -411,6 +406,17 @@ export default function DashboardScreen({ navigation }: any) {
     return () => clearTimeout(t);
   }, []);
 
+  return { stats, prs, alerts, stages, loading };
+}
+
+// ─── Admin Dashboard (role_id === 1) ─────────────────────────────────────────
+// Full system-wide overview: all PRs across sections, pipeline health,
+// alerts, phase breakdown, and admin quick-actions.
+
+function AdminDashboard({ navigation }: any) {
+  const { currentUser } = useAuth();
+  const { stats, prs, alerts, stages, loading } = useDashboardData();
+
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#f9fafb" }}>
@@ -418,8 +424,6 @@ export default function DashboardScreen({ navigation }: any) {
       </View>
     );
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <ScrollView
@@ -431,8 +435,15 @@ export default function DashboardScreen({ navigation }: any) {
       <View style={{ backgroundColor: "#064E3B", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}>
         <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
           <View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#a7f3d0", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                  Admin
+                </Text>
+              </View>
+            </View>
             <Text style={{ fontSize: 20, fontWeight: "800", color: "#ffffff", letterSpacing: -0.4 }}>
-              DAR Procurement
+              {currentUser?.username ?? "Administrator"}
             </Text>
             <Text style={{ fontSize: 12, color: "#a7f3d0", marginTop: 2 }}>
               {new Date().toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
@@ -467,17 +478,13 @@ export default function DashboardScreen({ navigation }: any) {
       <SectionHeader title="Procurement Pipeline" />
       <PhasePipeline stages={stages} />
 
-      {/* ── Main row: Recent PRs + Status breakdown ── */}
-      {/* Recent PRs table */}
+      {/* ── Recent PRs (all sections) ── */}
       <View style={{ marginHorizontal: 12, marginTop: 16, backgroundColor: "#ffffff",
         borderRadius: 16, borderWidth: 1, borderColor: "#e5e7eb", overflow: "hidden",
         shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}>
-
-        <SectionHeader title="Recent Purchase Requests"
+        <SectionHeader title="All Recent Purchase Requests"
           onViewAll={() => navigation?.navigate?.("Procurement")} />
-
-        {/* Table header */}
         <View style={{ flexDirection: "row", paddingHorizontal: 16, paddingBottom: 8,
           borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
           {["PR / Purpose", "Section", "Status", "Phase", "Amount"].map((h) => (
@@ -493,17 +500,14 @@ export default function DashboardScreen({ navigation }: any) {
           ))}
           <View style={{ width: 16 }} />
         </View>
-
         {prs.map((record, i) => (
           <PRRow key={record.id} record={record} isEven={i % 2 === 0}
             onPress={() => navigation?.navigate?.("Procurement")} />
         ))}
       </View>
 
-      {/* ── Bottom row: Status chart + Alerts ── */}
+      {/* ── Phase breakdown + Alerts ── */}
       <View style={{ flexDirection: "row", marginHorizontal: 12, marginTop: 12, gap: 10 }}>
-
-        {/* Status breakdown */}
         <View style={{ flex: 1, backgroundColor: "#ffffff", borderRadius: 16,
           borderWidth: 1, borderColor: "#e5e7eb", overflow: "hidden",
           shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
@@ -513,8 +517,6 @@ export default function DashboardScreen({ navigation }: any) {
             <DonutChart stages={stages} />
           </View>
         </View>
-
-        {/* Alerts */}
         <View style={{ flex: 1, backgroundColor: "#ffffff", borderRadius: 16,
           borderWidth: 1, borderColor: "#e5e7eb", overflow: "hidden",
           shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
@@ -524,15 +526,17 @@ export default function DashboardScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* ── Quick actions ── */}
-      <SectionHeader title="Quick Actions" />
+      {/* ── Admin quick actions ── */}
+      <SectionHeader title="Admin Actions" />
       <View style={{ flexDirection: "row", paddingHorizontal: 12, gap: 8, flexWrap: "wrap" }}>
-        {[
-          { label: "New PR",          icon: "add-circle-outline",    nav: "Procurement" },
+        {([
+          { label: "Manage PRs",      icon: "description",           nav: "Procurement" },
           { label: "Canvassing",      icon: "create",                nav: "Canvassing"  },
           { label: "Track Delivery",  icon: "local-shipping",        nav: "Procurement" },
           { label: "Payment",         icon: "account-balance-wallet", nav: "Procurement" },
-        ].map((action) => (
+          { label: "Reports",         icon: "bar-chart",             nav: "Procurement" },
+          { label: "User Management", icon: "manage-accounts",       nav: "Procurement" },
+        ] as const).map((action) => (
           <TouchableOpacity
             key={action.label}
             onPress={() => navigation?.navigate?.(action.nav)}
@@ -557,27 +561,265 @@ export default function DashboardScreen({ navigation }: any) {
         ))}
       </View>
 
-      {/* ── Process timeline summary ── */}
+      {/* ── Process guide ── */}
       <SectionHeader title="Process Guide" />
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
-        {[
-          { phase: 1, title: "Request & Approval", steps: "Steps 1–5",  detail: "PR → Div. Head → BAC → Budget → PARPO",   color: "#3b82f6" },
-          { phase: 2, title: "Canvass & Awards",   steps: "Steps 6–10", detail: "Canvass release → AAA → BAC resolution",   color: "#f59e0b" },
-          { phase: 3, title: "Order & Delivery",   steps: "Steps 11–31",detail: "PO → ORS → Accounting → Delivery → IAR",  color: "#10b981" },
-          { phase: 4, title: "Payment & Closure",  steps: "Steps 32–48",detail: "DV → Accounting → PARPO → Check/LLDAP",   color: "#8b5cf6" },
-        ].map((p) => (
+        {([
+          { phase: 1, title: "Request & Approval", steps: "Steps 1–5",   detail: "PR → Div. Head → BAC → Budget → PARPO",  color: "#3b82f6" },
+          { phase: 2, title: "Canvass & Awards",   steps: "Steps 6–10",  detail: "Canvass release → AAA → BAC resolution",  color: "#f59e0b" },
+          { phase: 3, title: "Order & Delivery",   steps: "Steps 11–31", detail: "PO → ORS → Accounting → Delivery → IAR", color: "#10b981" },
+          { phase: 4, title: "Payment & Closure",  steps: "Steps 32–48", detail: "DV → Accounting → PARPO → Check/LLDAP",  color: "#8b5cf6" },
+        ]).map((p) => (
           <View key={p.phase} style={{
             width: 200, borderRadius: 14, borderWidth: 1,
             borderColor: p.color + "40", backgroundColor: p.color + "0d",
             padding: 14, gap: 6,
           }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <View style={{ backgroundColor: p.color, paddingHorizontal: 8, paddingVertical: 3,
-                borderRadius: 999 }}>
-                <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#fff",
-                  textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <View style={{ backgroundColor: p.color, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+                <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>
                   Phase {p.phase}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 10, color: p.color, fontWeight: "600" }}>{p.steps}</Text>
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: "800", color: "#111827" }}>{p.title}</Text>
+            <Text style={{ fontSize: 11, color: "#6b7280", lineHeight: 16 }}>{p.detail}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    </ScrollView>
+  );
+}
+
+// ─── End-User Dashboard (role_id !== 1) ──────────────────────────────────────
+// Focused view: only the user's own PRs (filtered by division_id),
+// their current status, and actions relevant to a requester.
+
+const USER_STATS: StatCard[] = [
+  { label: "My PRs",          value: 4,  sub: "All time",           subType: "info", icon: "description"     },
+  { label: "Pending Approval",value: 1,  sub: "Awaiting signature", subType: "warn", icon: "pending-actions" },
+  { label: "Approved",        value: 2,  sub: "Ready to proceed",   subType: "ok",   icon: "check-circle"    },
+  { label: "In Progress",     value: 1,  sub: "Phase 2 · Canvass",  subType: "up",   icon: "autorenew"       },
+];
+
+const USER_MY_PRS: PRSummary[] = [
+  { id: "u1", prNo: "2026-PR-0014", purpose: "Office supplies & equipment",  section: "STOD",  status: "pending",    date: "Feb 25, 2026", totalCost: 6700,  stage: 1 },
+  { id: "u2", prNo: "2026-PR-0011", purpose: "Legal reference materials",    section: "Legal", status: "overdue",    date: "Feb 20, 2026", totalCost: 4800,  stage: 1 },
+  { id: "u3", prNo: "2026-PR-0009", purpose: "PARPO office consumables",     section: "PARPO", status: "draft",      date: "Feb 17, 2026", totalCost: 3200,  stage: 1 },
+  { id: "u4", prNo: "2026-PR-0007", purpose: "IT equipment & peripherals",   section: "STOD",  status: "approved",   date: "Feb 10, 2026", totalCost: 38000, stage: 2 },
+];
+
+const USER_ALERTS: DeliveryAlert[] = [
+  { id: "a1", prNo: "2026-PR-0014", label: "Approval pending",           sub: "Awaiting Division Head signature", level: "urgent"    },
+  { id: "a2", prNo: "2026-PR-0011", label: "Action required",            sub: "PR is overdue — please follow up", level: "urgent"    },
+  { id: "a3", prNo: "2026-PR-0007", label: "Canvass in progress",        sub: "BAC reviewing supplier quotes",    level: "info"      },
+];
+
+const PR_TRACKER_STEPS = [
+  { key: "submitted",  label: "Submitted",    icon: "description"      as const },
+  { key: "div_head",   label: "Div. Head",    icon: "how-to-reg"       as const },
+  { key: "bac",        label: "BAC",          icon: "gavel"            as const },
+  { key: "budget",     label: "Budget",       icon: "account-balance"  as const },
+  { key: "parpo",      label: "PARPO",        icon: "verified"         as const },
+];
+
+function PRTrackerCard({ pr, currentStep }: { pr: PRSummary; currentStep: number }) {
+  const statusCfg = STATUS_CFG[pr.status];
+  return (
+    <View style={{
+      backgroundColor: "#ffffff", borderRadius: 16, borderWidth: 1, borderColor: "#e5e7eb",
+      marginHorizontal: 12, marginBottom: 12, overflow: "hidden",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+    }}>
+      {/* PR header */}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
+        borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#064E3B", fontFamily: MONO }}>{pr.prNo}</Text>
+          <Text style={{ fontSize: 11.5, color: "#6b7280", marginTop: 2 }} numberOfLines={1}>{pr.purpose}</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4,
+          backgroundColor: statusCfg.bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusCfg.dot }} />
+          <Text style={{ fontSize: 10, fontWeight: "700", color: statusCfg.text }}>{statusCfg.label}</Text>
+        </View>
+      </View>
+
+      {/* Step tracker */}
+      <View style={{ paddingHorizontal: 14, paddingVertical: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {PR_TRACKER_STEPS.map((step, i) => {
+            const done    = i < currentStep;
+            const active  = i === currentStep;
+            const pending = i > currentStep;
+            const dotColor = done ? "#064E3B" : active ? "#10B981" : "#e5e7eb";
+            const lineColor = i < currentStep ? "#064E3B" : "#e5e7eb";
+            return (
+              <React.Fragment key={step.key}>
+                <View style={{ alignItems: "center", gap: 4 }}>
+                  <View style={{
+                    width: 34, height: 34, borderRadius: 17,
+                    backgroundColor: done ? "#064E3B" : active ? "#ecfdf5" : "#f9fafb",
+                    borderWidth: active ? 2 : 1,
+                    borderColor: active ? "#10B981" : done ? "#064E3B" : "#e5e7eb",
+                    alignItems: "center", justifyContent: "center",
+                  }}>
+                    <MaterialIcons
+                      name={done ? "check" : step.icon}
+                      size={16}
+                      color={done ? "#ffffff" : active ? "#10B981" : "#d1d5db"}
+                    />
+                  </View>
+                  <Text style={{
+                    fontSize: 9, fontWeight: active || done ? "700" : "500",
+                    color: done ? "#064E3B" : active ? "#10B981" : "#9ca3af",
+                    textAlign: "center", maxWidth: 40,
+                  }} numberOfLines={1}>{step.label}</Text>
+                </View>
+                {i < PR_TRACKER_STEPS.length - 1 && (
+                  <View style={{ flex: 1, height: 2, backgroundColor: lineColor, marginBottom: 14, marginHorizontal: 2 }} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Footer: date + cost */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        paddingHorizontal: 16, paddingBottom: 12 }}>
+        <Text style={{ fontSize: 11, color: "#9ca3af" }}>{pr.date}</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: "#374151", fontFamily: MONO }}>
+          ₱{pr.totalCost.toLocaleString("en-PH")}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function EndUserDashboard({ navigation }: any) {
+  const { currentUser } = useAuth();
+  const divisionLabel = `Division ${currentUser?.division_id ?? ""}`;
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f9fafb" }}
+      contentContainerStyle={{ paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* ── Welcome bar ── */}
+      <View style={{ backgroundColor: "#064E3B", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 }}>
+              <View style={{ backgroundColor: "rgba(255,255,255,0.12)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#a7f3d0", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                  {divisionLabel}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: "800", color: "#ffffff", letterSpacing: -0.4 }}>
+              {currentUser?.username ?? "Welcome"}
+            </Text>
+            <Text style={{ fontSize: 12, color: "#a7f3d0", marginTop: 2 }}>
+              {new Date().toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => navigation?.navigate?.("Procurement")}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: 6,
+              backgroundColor: pressed ? "#ffffff" : "rgba(255,255,255,0.15)",
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+              borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+            })}>
+            {({ pressed }) => (
+              <>
+                <MaterialIcons name="add" size={16} color={pressed ? "#064E3B" : "#ffffff"} />
+                <Text style={{ fontSize: 12, fontWeight: "700", color: pressed ? "#064E3B" : "#ffffff" }}>
+                  New PR
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ── My stat cards ── */}
+      <View style={{ paddingHorizontal: 12, paddingTop: 16, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {USER_STATS.map((card) => <StatPill key={card.label} card={card} />)}
+      </View>
+
+      {/* ── My PR tracker ── */}
+      <SectionHeader title="My Purchase Requests"
+        onViewAll={() => navigation?.navigate?.("Procurement")} />
+      {USER_MY_PRS.map((pr, i) => (
+        <PRTrackerCard key={pr.id} pr={pr} currentStep={pr.stage} />
+      ))}
+
+      {/* ── My alerts ── */}
+      <View style={{ marginHorizontal: 12, marginTop: 4, backgroundColor: "#ffffff", borderRadius: 16,
+        borderWidth: 1, borderColor: "#e5e7eb", overflow: "hidden",
+        shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}>
+        <SectionHeader title="My Alerts" />
+        {USER_ALERTS.map((alert) => <AlertRow key={alert.id} alert={alert} />)}
+      </View>
+
+      {/* ── User quick actions ── */}
+      <SectionHeader title="Quick Actions" />
+      <View style={{ flexDirection: "row", paddingHorizontal: 12, gap: 8, flexWrap: "wrap" }}>
+        {([
+          { label: "New PR",         icon: "add-circle-outline",     nav: "Procurement" },
+          { label: "Track PR",       icon: "track-changes",          nav: "Procurement" },
+          { label: "View History",   icon: "history",                nav: "Procurement" },
+          { label: "Canvassing",     icon: "create",                 nav: "Canvassing"  },
+        ] as const).map((action) => (
+          <TouchableOpacity
+            key={action.label}
+            onPress={() => navigation?.navigate?.(action.nav)}
+            activeOpacity={0.8}
+            style={{
+              flex: 1, minWidth: (SCREEN_W - 56) / 2,
+              backgroundColor: "#ffffff", borderRadius: 14,
+              borderWidth: 1, borderColor: "#e5e7eb",
+              paddingVertical: 14, paddingHorizontal: 12,
+              flexDirection: "row", alignItems: "center", gap: 10,
+              shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+            }}>
+            <View style={{ width: 36, height: 36, borderRadius: 10,
+              backgroundColor: "#ecfdf5", alignItems: "center", justifyContent: "center" }}>
+              <MaterialIcons name={action.icon as any} size={20} color="#064E3B" />
+            </View>
+            <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#111827" }}>
+              {action.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── How it works ── */}
+      <SectionHeader title="How Your PR Moves" />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
+        {([
+          { phase: 1, title: "You Submit",      steps: "Step 1",    detail: "Fill in items, purpose, and submit your PR",        color: "#3b82f6" },
+          { phase: 2, title: "Approvals",        steps: "Steps 2–5", detail: "Div. Head → BAC → Budget Office → PARPO signs off", color: "#f59e0b" },
+          { phase: 3, title: "Order & Delivery", steps: "Steps 6+",  detail: "PO issued, items delivered, IAR completed",         color: "#10b981" },
+          { phase: 4, title: "Payment",          steps: "Final",     detail: "DV processed and payment released",                 color: "#8b5cf6" },
+        ]).map((p) => (
+          <View key={p.phase} style={{
+            width: 180, borderRadius: 14, borderWidth: 1,
+            borderColor: p.color + "40", backgroundColor: p.color + "0d",
+            padding: 14, gap: 6,
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ backgroundColor: p.color, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+                <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Step {p.phase}
                 </Text>
               </View>
               <Text style={{ fontSize: 10, color: p.color, fontWeight: "600" }}>{p.steps}</Text>

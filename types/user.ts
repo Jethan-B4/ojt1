@@ -7,6 +7,7 @@ export interface DatabaseUser {
   username: string;
   email: string;
   password: string;
+  user_id: string;
   role_id: number;
   division_id: number;
   created_at: string;

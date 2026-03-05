@@ -8,7 +8,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   currentUser: DatabaseUser | null;
   handleSignOut: () => void;
-  handleSignIn: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  handleSignIn: (user_id: string, password: string) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,13 +17,13 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<DatabaseUser | null>(null);
 
-  const handleSignIn = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
-    if (!email.trim() || !password.trim()) {
-      return { success: false, message: 'Please enter both email and password' };
+  const handleSignIn = async (user_id: string, password: string): Promise<{ success: boolean; message?: string }> => {
+    if (!user_id.trim() || !password.trim()) {
+      return { success: false, message: 'Please enter both user_id and password' };
     }
 
     try {
-      console.log('Attempting custom sign in with:', email);
+      console.log('Attempting custom sign in with:', user_id);
       
       // Query the 'users' table directly
       // WARNING: This assumes you have a 'password' column in your users table.
@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
+        .eq('user_id', user_id)
         .eq('password', password)
         .single();
 
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       }
 
       if (data) {
-        console.log('Custom Sign-in successful:', data.email);
+        console.log('Custom Sign-in successful:', data.user_id);
         setCurrentUser(data as DatabaseUser);
         setIsAuthenticated(true);
         return { success: true };

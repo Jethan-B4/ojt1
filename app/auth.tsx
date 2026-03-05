@@ -15,7 +15,7 @@ import { JSX } from 'react/jsx-runtime';
 import { useAuth } from './AuthContext';
 
 export default function App(): JSX.Element {
-  const [email, setEmail] = useState<string>('');
+  const [user_id, setUserID] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -29,9 +29,9 @@ export default function App(): JSX.Element {
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const result = await handleSignIn(email, password);
+        const result = await handleSignIn(user_id, password);
       if (result.success) {
-        setEmail('');
+        setUserID('');
         setPassword('');
         router.navigate('./(tabs)'); // Navigate to the main app layout after successful sign in
       } else {
@@ -65,10 +65,10 @@ export default function App(): JSX.Element {
 
           <TextInput
             style={styles.input}
-            placeholder="Email"
+            placeholder="User ID"
             placeholderTextColor="#999"
-            value={email}
-            onChangeText={(text) => { setEmail(text); setErrorMessage(''); }}
+            value={user_id}
+            onChangeText={(text) => { setUserID(text); setErrorMessage(''); }}
             autoCapitalize="none"
             autoCorrect={false}
           />
