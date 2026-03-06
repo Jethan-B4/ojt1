@@ -21,37 +21,17 @@ import {
   ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useAuth } from "../AuthContext";
+import {
+  BACMember,
+  CanvassPayload,
+  CanvassStage,
+  CanvassingPR,
+  CanvassingPRItem,
+  DivAssign,
+  SupplierQ,
+} from "@/types/canvassing";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface CanvassingPRItem {
-  id: number; desc: string; stock: string;
-  unit: string; qty: number; unitCost: number;
-}
-
-export interface CanvassingPR {
-  prNo: string; date: string; officeSection: string;
-  responsibilityCode: string; purpose: string;
-  isHighValue: boolean; budgetNumber?: string | null;
-  items: CanvassingPRItem[];
-}
-
-type CanvassStage =
-  | "pr_received"       // Step 6  — BAC receives PR from PARPO
-  | "bac_resolution"    // Step 7  — Prepare BAC Resolution
-  | "release_canvass"   // Step 8  — Release to canvassers per division
-  | "collect_canvass"   // Step 9  — Collect filled-out canvass + encode quotes
-  | "aaa_preparation";  // Step 10 — Prepare & sign Abstract of Awards
-
-interface BACMember   { name: string; designation: string; signed: boolean; signedAt: string; }
-interface DivAssign   { section: string; canvasser: string; releaseDate: string; returnDate: string; status: "pending"|"released"|"returned"; }
-interface SupplierQ   { id: number; name: string; address: string; contact: string; tin: string; days: string; prices: Record<number,string>; remarks: string; }
-
-export interface CanvassPayload {
-  pr_no: string; bac_no: string; resolution_no: string; mode: string;
-  aaa_no: string; awarded_supplier: string; awarded_total: number;
-  suppliers: SupplierQ[]; bac_members: BACMember[];
-}
+// ─── Types are centralized in /types/canvassing ───────────────────────────────
 
 export interface CanvassingModuleProps {
   prRecord?:   CanvassingPR;

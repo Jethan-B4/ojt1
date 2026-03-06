@@ -14,7 +14,8 @@ import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-import { updatePurchaseRequest } from "../../lib/supabase";
+import { fetchPRWithItemsById, updatePurchaseRequest } from "../../lib/supabase";
+import { toLineItemDisplay, toPRDisplay } from "../../types/model";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,11 +24,10 @@ export interface EditLineItem {
   desc: string; stock: string; unit: string; qty: string; price: string;
 }
 
+// Only id + prNo are needed to open the modal — full data is fetched inside
 export interface PREditRecord {
-  id: string; prNo: string; officeSection: string;
-  responsibilityCode?: string; purpose: string;
-  budgetNumber?: string; papCode?: string; proposalFileName?: string;
-  items?: EditLineItem[];
+  id: string;
+  prNo: string;
 }
 
 export interface PREditPayload {
@@ -259,19 +259,50 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
   const [nextId,             setNextId]             = useState(1);
   const [fileOpen,           setFileOpen]           = useState(false);
   const [saving,             setSaving]             = useState(false);
+  const [loading,            setLoading]            = useState(false);
 
-  // Seed form from record whenever modal opens
+  // Fetch full PR + items from Supabase whenever the modal opens.
+  // toPRDisplay / toLineItemDisplay are the canonical converters — same ones used by
+  // ViewPRModal and PRModule — so field names stay consistent across the whole app.
   useEffect(() => {
     if (!visible || !record) return;
-    setOfficeSection(record.officeSection ?? "");
-    setResponsibilityCode(record.responsibilityCode ?? "");
-    setPurpose(record.purpose ?? "");
-    setBudgetNumber(record.budgetNumber ?? "");
-    setPapCode(record.papCode ?? "");
-    setProposalFileName(record.proposalFileName ?? "");
-    const seeded = record.items?.length ? record.items : [makeItem(1)];
-    setItems(seeded);
-    setNextId((seeded.at(-1)?.id ?? 0) + 1);
+    setLoading(true);
+    fetchPRWithItemsById(record.id)
+      .then(({ header: raw, items: rawItems }) => {
+        // ── Header: canonical display fields ──────────────────────────────
+        const pr = toPRDisplay(raw);
+        setOfficeSection(pr.officeSection);
+        setPurpose(pr.purpose);
+
+        // ── Header: procurement-only columns not in PRDisplay ─────────────
+        setResponsibilityCode(raw.resp_code     ?? "");
+        setBudgetNumber(raw.budget_number       ?? "");
+        setPapCode(raw.pap_code                 ?? "");
+        setProposalFileName(raw.proposal_file   ?? "");
+
+        // ── Line items: canonical display fields ──────────────────────────
+        const seeded: EditLineItem[] = rawItems.length
+          ? rawItems.map((it, idx) => {
+              const li = toLineItemDisplay(it);
+              return {
+                id:    idx + 1,
+                desc:  li.description,
+                stock: li.stock_no  ?? "",
+                unit:  li.unit      ?? "",
+                qty:   String(li.quantity),
+                price: String(li.unit_price),
+              };
+            })
+          : [makeItem(1)];
+
+        setItems(seeded);
+        setNextId((seeded.at(-1)?.id ?? 0) + 1);
+      })
+      .catch((e: any) => {
+        Alert.alert("Load failed", e?.message ?? "Could not load PR details.");
+        onClose();
+      })
+      .finally(() => setLoading(false));
   }, [visible, record]);
 
   const addItem    = useCallback(() => {
@@ -334,7 +365,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
     }
   }, [record, officeSection, responsibilityCode, purpose, budgetNumber, papCode, proposalFileName, items, total, onSave, onClose]);
 
-  if (!record) return null;
+  const showSpinner = loading;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -370,12 +401,18 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
               </Text>
             </View>
             <View className="px-2.5 py-1 rounded-md bg-white/10 border border-white/20">
-              <Text className="text-[10.5px] text-white/50" style={{ fontFamily: MONO }}>{record.prNo}</Text>
+              <Text className="text-[10.5px] text-white/50" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
             </View>
           </View>
         </View>
 
         {/* ── Body ─────────────────────────────────────────────────────── */}
+        {showSpinner ? (
+          <View className="flex-1 items-center justify-center gap-3 bg-gray-50">
+            <ActivityIndicator size="large" color="#064E3B" />
+            <Text className="text-[13px] text-gray-400">Loading PR details…</Text>
+          </View>
+        ) : (
         <ScrollView ref={scrollRef} className="flex-1 bg-gray-50"
           contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 }}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -385,7 +422,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
             <View className="flex-1">
               <Field label="PR No." hint="Read-only">
                 <View className="bg-gray-100 border border-gray-200 rounded-xl px-3.5 py-2.5">
-                  <Text className="text-[12.5px] text-gray-500" style={{ fontFamily: MONO }}>{record.prNo}</Text>
+                  <Text className="text-[12.5px] text-gray-500" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
                 </View>
               </Field>
             </View>
@@ -465,10 +502,11 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
               multiline numberOfLines={4} />
           </Field>
         </ScrollView>
+        )}
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
         <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
-          <Text className="text-[11.5px] text-gray-400" style={{ fontFamily: MONO }}>{record.prNo}</Text>
+          <Text className="text-[11.5px] text-gray-400" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
           <View className="flex-row items-center gap-2.5">
             <TouchableOpacity onPress={onClose} activeOpacity={0.7}
               className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white">

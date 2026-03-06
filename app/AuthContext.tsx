@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
   const handleSignIn = async (user_id: string, password: string): Promise<{ success: boolean; message?: string }> => {
     if (!user_id.trim() || !password.trim()) {
-      return { success: false, message: 'Please enter both user_id and password' };
+      return { success: false, message: 'Please enter both user id and password' };
     }
 
     try {
@@ -42,7 +42,18 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
       if (data) {
         console.log('Custom Sign-in successful:', data.user_id);
-        setCurrentUser(data as DatabaseUser);
+
+        // Fetch division name and role name in parallel
+        const [divResult, roleResult] = await Promise.allSettled([
+          supabase.from('divisions').select('division_name').eq('division_id', data.division_id).single(),
+          supabase.from('roles').select('role_name').eq('role_id', data.role_id).single(),
+        ]);
+
+        const division_name = divResult.status === 'fulfilled' ? (divResult.value.data?.division_name ?? null) : null;
+        const role_name     = roleResult.status === 'fulfilled' ? (roleResult.value.data?.role_name ?? null) : null;
+
+        setCurrentUser({ ...(data as DatabaseUser), division_name, role_name });
+        console.log('Current user:', division_name, role_name);
         setIsAuthenticated(true);
         return { success: true };
       } else {

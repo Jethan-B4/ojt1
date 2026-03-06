@@ -3,9 +3,11 @@ import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/EditPRModal";
+import ProcessPRModal, { type ProcessRecord } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
+import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +36,9 @@ const SECTION_FILTERS = ["All", "STOD", "LTSP", "ARBDSP", "Legal", "PARPO", "PAR
 const MONO      = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
 const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// role_id 2 = Division Head (Step 2), 3 = BAC (Step 3), 4 = Budget (Step 4)
+const PROCESS_ROLES = new Set([2, 3, 4]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,8 +137,10 @@ const StatStrip: React.FC<{ records: PRRecord[] }> = ({ records }) => {
   );
 };
 
-const StatusPill: React.FC<{ status: PRStatus; elapsed: string }> = ({ status, elapsed }) => {
-  const cfg = STATUS_CONFIG[status];
+const STATUS_FALLBACK = { dotClass: "bg-gray-400", bgClass: "bg-gray-100", textClass: "text-gray-500" };
+
+const StatusPill: React.FC<{ status: string; elapsed: string }> = ({ status, elapsed }) => {
+  const cfg = STATUS_CONFIG[status as PRStatus] ?? STATUS_FALLBACK;
   return (
     <View className={`flex-row items-center gap-1.5 self-start px-2.5 py-1 rounded-full ${cfg.bgClass}`}>
       <View className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
@@ -143,11 +150,12 @@ const StatusPill: React.FC<{ status: PRStatus; elapsed: string }> = ({ status, e
 };
 
 const RecordCard: React.FC<{
-  record: PRRecord; isEven: boolean;
-  onView: (r: PRRecord) => void;
-  onEdit: (r: PRRecord) => void;
-  onMore: (r: PRRecord) => void;
-}> = ({ record, isEven, onView, onEdit, onMore }) => (
+  record: PRRecord; isEven: boolean; roleId: number;
+  onView:    (r: PRRecord) => void;
+  onEdit:    (r: PRRecord) => void;
+  onProcess: (r: PRRecord) => void;
+  onMore:    (r: PRRecord) => void;
+}> = ({ record, isEven, roleId, onView, onEdit, onProcess, onMore }) => (
   <View className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
     style={{ shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}>
     <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
@@ -176,10 +184,17 @@ const RecordCard: React.FC<{
         className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
         <Text className="text-white text-[12px] font-bold">View</Text>
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => onEdit(record)} activeOpacity={0.8}
-        className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
-        <Text className="text-white text-[12px] font-bold">Edit</Text>
-      </TouchableOpacity>
+      {PROCESS_ROLES.has(roleId) ? (
+        <TouchableOpacity onPress={() => onProcess(record)} activeOpacity={0.8}
+          className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
+          <Text className="text-white text-[12px] font-bold">Process</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity onPress={() => onEdit(record)} activeOpacity={0.8}
+          className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
+          <Text className="text-white text-[12px] font-bold">Edit</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity onPress={() => onMore(record)} activeOpacity={0.8}
         className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center">
         <Text className="text-white text-[11px] font-bold tracking-widest">•••</Text>
@@ -200,6 +215,8 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 
 export default function PRModule() {
   const navigation = useNavigation();
+  const { currentUser } = useAuth();
+  const roleId = currentUser?.role_id ?? 0;
 
   const [activeSubTab,  setActiveSubTab]  = useState<SubTab>("pr");
   const [searchQuery,   setSearchQuery]   = useState("");
@@ -214,6 +231,10 @@ export default function PRModule() {
   // Edit PR modal state
   const [editRecord,  setEditRecord]  = useState<PREditRecord | null>(null);
   const [editVisible, setEditVisible] = useState(false);
+
+  // Process PR modal state (Division Head / BAC / Budget)
+  const [processRecord,  setProcessRecord]  = useState<ProcessRecord | null>(null);
+  const [processVisible, setProcessVisible] = useState(false);
 
   // More / actions sheet state
   const [moreRecord,  setMoreRecord]  = useState<PRRecord | null>(null);
@@ -318,10 +339,11 @@ export default function PRModule() {
         {paged.length === 0
           ? <EmptyState label="No records found" />
           : paged.map((record, idx) => (
-              <RecordCard key={record.id} record={record} isEven={idx % 2 === 0}
-                onView={(r) => { setViewRecord(r); setViewVisible(true); }}
-                onEdit={(r) => { setEditRecord({ id: r.id, prNo: r.prNo, officeSection: r.officeSection, purpose: r.itemDescription }); setEditVisible(true); }}
-                onMore={(r) => { setMoreRecord(r); setMoreVisible(true); }} />
+              <RecordCard key={record.id} record={record} isEven={idx % 2 === 0} roleId={roleId}
+                onView={(r)    => { setViewRecord(r); setViewVisible(true); }}
+                onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
+                onProcess={(r) => { setProcessRecord({ id: r.id, prNo: r.prNo }); setProcessVisible(true); }}
+                onMore={(r)    => { setMoreRecord(r); setMoreVisible(true); }} />
             ))}
       </ScrollView>
 
@@ -379,6 +401,17 @@ export default function PRModule() {
         record={editRecord}
         onClose={() => { setEditVisible(false); setEditRecord(null); }}
         onSave={handlePRSave}
+      />
+
+      {/* Process PR modal — Division Head / BAC / Budget */}
+      <ProcessPRModal
+        visible={processVisible}
+        record={processRecord}
+        roleId={roleId}
+        onClose={() => { setProcessVisible(false); setProcessRecord(null); }}
+        onProcessed={(id, newStatus) =>
+          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, status: newStatus as any } : r))
+        }
       />
 
       {/* Create PR modal */}

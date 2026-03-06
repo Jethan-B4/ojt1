@@ -7,7 +7,7 @@
  * ─── 1. Import ─────────────────────────────────────────────
  */
 import type { PRDisplay } from "@/types/model";
-import type { CanvassingPR } from "../app/(tabs)/CanvassingModule";
+import type { CanvassingPR } from "@/types/canvassing";
 
 /**
  * ─── 2. Add navigation prop ────────────────────────────────

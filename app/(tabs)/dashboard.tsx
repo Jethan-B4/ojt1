@@ -702,7 +702,7 @@ function PRTrackerCard({ pr, currentStep }: { pr: PRSummary; currentStep: number
 
 function EndUserDashboard({ navigation }: any) {
   const { currentUser } = useAuth();
-  const divisionLabel = `Division ${currentUser?.division_id ?? ""}`;
+  const divisionLabel = `${currentUser?.division_name ?? ""}`;
 
   return (
     <ScrollView

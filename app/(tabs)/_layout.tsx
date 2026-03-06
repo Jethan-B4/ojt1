@@ -7,11 +7,12 @@ import {
 } from "@react-navigation/drawer";
 import { Image } from "expo-image";
 import React, { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, TouchableOpacity, View } from "react-native";
 
+import type { CanvassingPR } from "@/types/canvassing";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
-import CanvassingModule, { type CanvassingPR } from "./CanvassingModule";
+import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
 import ReactScreen from "./index";
 import ProcurementScreen from "./procurement";
@@ -62,7 +63,7 @@ export default function TabLayout() {
             <BrandHeader navigation={navigation} onCalendarPress={() => setCalendarOpen(true)} />
           ),
         }}
-        drawerContent={(props) => <CustomDrawer {...props} />}
+        drawerContent={(props) => <CustomDrawer {...props} onSignOut={handleSignOut} />}
       >
         <Drawer.Screen name="Dashboard" component={DashboardScreen}
           options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="space-dashboard" size={size} color={color} /> }} />
@@ -72,8 +73,7 @@ export default function TabLayout() {
           options={{ title: "Explore", drawerIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} /> }} />
         <Drawer.Screen name="Canvassing" component={CanvassingScreen}
           options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} />
-        <Drawer.Screen name="Logout" component={LogoutPlaceholder}
-          listeners={{ drawerItemPress: (e) => { e.preventDefault(); handleSignOut(); } }} />
+
       </Drawer.Navigator>
 
       <CalendarModal visible={calendarOpen} onClose={() => setCalendarOpen(false)}
@@ -82,7 +82,6 @@ export default function TabLayout() {
   );
 }
 
-function LogoutPlaceholder() { return null; }
 
 function BrandHeader({ navigation, onCalendarPress }: { navigation: any; onCalendarPress: () => void }) {
   return (
@@ -107,10 +106,12 @@ function BrandHeader({ navigation, onCalendarPress }: { navigation: any; onCalen
   );
 }
 
-function CustomDrawer(props: any) {
+function CustomDrawer(props: any & { onSignOut: () => void }) {
   const { currentUser } = useAuth();
+  const { onSignOut } = props;
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ backgroundColor: "#064E3B", flexGrow: 1 }}>
+      {/* ── App branding ── */}
       <View style={{ alignItems: "center", paddingVertical: 24, paddingHorizontal: 20, backgroundColor: "#064E3B" }}>
         <Image source={require("@/assets/images/dar.png")}
           style={{ height: 64, width: 64, borderRadius: 32, backgroundColor: "#ffffff" }}
@@ -120,14 +121,80 @@ function CustomDrawer(props: any) {
           Monitoring & Automation System
         </Text>
       </View>
+
       <View style={{ height: 1, backgroundColor: "#047857", marginVertical: 12 }} />
+
+      {/* ── Nav items ── */}
       <View style={{ flexGrow: 1 }}><DrawerItemList {...props} /></View>
+
+      {/* ── User identity card ── */}
       {currentUser && (
-        <View style={{ borderTopWidth: 1, borderTopColor: "#047857", paddingHorizontal: 20, paddingVertical: 16 }}>
-          <Text style={{ fontSize: 11, color: "#A7F3D0" }}>Logged in as:</Text>
-          <Text style={{ fontSize: 13, fontWeight: "600", color: "#ffffff" }}>{currentUser.username}</Text>
+        <View style={{ borderTopWidth: 1, borderTopColor: "#047857", margin: 12, borderRadius: 14,
+          backgroundColor: "rgba(255,255,255,0.06)", padding: 14 }}>
+
+          {/* Avatar row */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <View style={{ width: 38, height: 38, borderRadius: 19,
+              backgroundColor: "#10B981", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: "#ffffff" }}>
+                {currentUser.username?.charAt(0).toUpperCase() ?? "?"}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#ffffff" }} numberOfLines={1}>
+                {currentUser.username}
+              </Text>
+              <Text style={{ fontSize: 11, color: "#A7F3D0", marginTop: 1 }} numberOfLines={1}>
+                {currentUser.email ?? currentUser.user_id}
+              </Text>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: "#047857", marginBottom: 10 }} />
+
+          {/* Role badge */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={{ fontSize: 10, fontWeight: "600", color: "#6ee7b7", textTransform: "uppercase", letterSpacing: 0.6 }}>
+              Role
+            </Text>
+            <View style={{ backgroundColor: "#10B981", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
+                {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
+              </Text>
+            </View>
+          </View>
+
+          {/* Division */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 10, fontWeight: "600", color: "#6ee7b7", textTransform: "uppercase", letterSpacing: 0.6 }}>
+              Division
+            </Text>
+            <Text style={{ fontSize: 11, fontWeight: "600", color: "#ffffff", flexShrink: 1, textAlign: "right", maxWidth: "65%" }} numberOfLines={2}>
+              {currentUser.division_name ?? `Division ${currentUser.division_id}`}
+            </Text>
+          </View>
         </View>
       )}
+
+      {/* ── Logout button ── */}
+      <TouchableOpacity
+        onPress={onSignOut}
+        activeOpacity={0.75}
+        style={{
+          flexDirection: "row", alignItems: "center", gap: 12,
+          marginHorizontal: 12, marginBottom: 16, marginTop: 4,
+          paddingHorizontal: 16, paddingVertical: 13,
+          borderRadius: 12,
+          backgroundColor: "rgba(239,68,68,0.12)",
+          borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
+        }}>
+        <MaterialIcons name="logout" size={20} color="#f87171" />
+        <Text style={{ fontSize: 13, fontWeight: "700", color: "#f87171", flex: 1 }}>
+          Sign Out
+        </Text>
+        <MaterialIcons name="chevron-right" size={16} color="#f87171" />
+      </TouchableOpacity>
     </DrawerContentScrollView>
   );
 }
