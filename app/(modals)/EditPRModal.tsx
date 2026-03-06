@@ -9,11 +9,14 @@
  *     onClose={() => setEditVisible(false)} onSave={handlePRSave} />
  */
 
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import WebView from "react-native-webview";
 import { fetchPRWithItemsById, updatePurchaseRequest } from "../../lib/supabase";
 import { toLineItemDisplay, toPRDisplay } from "../../types/model";
 
@@ -70,6 +73,90 @@ const CLR  = {
 
 const makeItem = (id: number): EditLineItem => ({ id, desc: "", stock: "", unit: "", qty: "", price: "" });
 const fmtPHP   = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ─── PDF HTML builder (mirrors ViewPRModal exactly) ───────────────────────────
+
+function buildPRHtml(fields: {
+  prNo: string; officeSection: string; purpose: string;
+  respCode: string; date: string;
+}, items: EditLineItem[]): string {
+  const f = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const padded = [...items];
+  while (padded.length < 30) padded.push({ id: 0, desc: "", stock: "", unit: "", qty: "", price: "" });
+
+  const rows = padded.map((it) => {
+    const qty   = parseFloat(it.qty   || "0");
+    const price = parseFloat(it.price || "0");
+    const total = qty * price || 0;
+    return `<tr>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif;height:16px">${it.stock || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${it.unit || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 4px;text-align:left;font-family:'Times New Roman',serif">${it.desc || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${qty || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${price ? f(price) : ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${total > 0 ? f(total) : ""}</td>
+    </tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Times New Roman',Times,serif;font-size:9pt;color:#000;background:#fff;padding:24px}table{width:100%;border-collapse:collapse;table-layout:fixed;color:#000}@media print{body{padding:10mm}@page{margin:8mm}}</style>
+</head><body>
+<table>
+  <colgroup><col style="width:12%"/><col style="width:8%"/><col style="width:40%"/><col style="width:10%"/><col style="width:15%"/><col style="width:15%"/></colgroup>
+  <tbody>
+    <tr style="height:27px"><td colspan="6" style="text-align:right;font-size:10pt;padding-right:4px;font-family:'Times New Roman',serif">Appendix 60</td></tr>
+    <tr style="height:34px"><td colspan="6" style="text-align:center;font-weight:bold;font-size:12pt;font-family:'Times New Roman',serif">PURCHASE REQUEST</td></tr>
+    <tr style="height:21px">
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">DAR — CARAGA Region</span></td>
+      <td style="border-bottom:1px solid black"></td>
+      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal"></span></td>
+    </tr>
+    <tr style="height:14px">
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Office/Section :<br/>${fields.officeSection}</td>
+      <td colspan="2" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">PR No.: <span style="font-weight:normal">${fields.prNo}</span></td>
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;font-weight:bold;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Date:<br/><span style="font-weight:normal">${fields.date}</span></td>
+    </tr>
+    <tr style="height:15px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">Responsibility Center Code: <span style="font-weight:normal">${fields.respCode}</span></td>
+    </tr>
+    <tr style="height:22.5px">
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Stock/<br/>Property No.</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Unit</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Item Description</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Quantity</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Unit Cost</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Total Cost</th>
+    </tr>
+    ${rows}
+    <tr style="height:17px"><td colspan="6" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><b>Purpose:</b> ${fields.purpose}</td></tr>
+    <tr style="height:30px"><td colspan="6" style="border-bottom:1px solid black;border-left:1px solid black;border-right:1px solid black"></td></tr>
+    <tr style="height:12px">
+      <td style="border-top:1px solid black;border-left:1px solid black"></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><i>Requested by:</i></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><i>Approved by:</i></td>
+      <td style="border-top:1px solid black;border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Signature :</td>
+      <td></td><td></td><td></td><td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Printed Name :</td>
+      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:14.75px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Designation :</td>
+      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="border-bottom:1px solid black;border-right:1px solid black"></td>
+    </tr>
+  </tbody>
+</table>
+</body></html>`;
+}
 
 // ─── Shared atoms (mirrors PurchaseRequestModal) ──────────────────────────────
 
@@ -248,7 +335,9 @@ function TotalBar({ total, isHighValue }: { total: number; isHighValue: boolean 
 
 export default function EditPRModal({ visible, record, onClose, onSave }: EditPRModalProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const webRef    = useRef<WebView>(null);
 
+  const [tab,                setTab]                = useState<"form" | "pdf">("form");
   const [officeSection,      setOfficeSection]      = useState("");
   const [responsibilityCode, setResponsibilityCode] = useState("");
   const [purpose,            setPurpose]            = useState("");
@@ -266,6 +355,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
   // ViewPRModal and PRModule — so field names stay consistent across the whole app.
   useEffect(() => {
     if (!visible || !record) return;
+    setTab("form");
     setLoading(true);
     fetchPRWithItemsById(record.id)
       .then(({ header: raw, items: rawItems }) => {
@@ -365,14 +455,45 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
     }
   }, [record, officeSection, responsibilityCode, purpose, budgetNumber, papCode, proposalFileName, items, total, onSave, onClose]);
 
+  // Build PDF HTML from live form state so the preview always reflects current edits
+  const html = useMemo(() => buildPRHtml(
+    {
+      prNo:          record?.prNo ?? "",
+      officeSection,
+      purpose,
+      respCode:      responsibilityCode,
+      date:          new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }),
+    },
+    items,
+  ), [record?.prNo, officeSection, purpose, responsibilityCode, items]);
+
+  const handlePrint = async () => {
+    try { await Print.printAsync({ html }); } catch {}
+  };
+
+  const handleDownload = async () => {
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf" });
+      } else {
+        Alert.alert("Saved", `PDF created at: ${uri}`);
+      }
+    } catch (e: any) {
+      Alert.alert("Download failed", e?.message ?? String(e));
+    }
+  };
+
   const showSpinner = loading;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
 
-        {/* ── Header (mirrors ViewPRModal) ─────────────────────────────── */}
-        <View className="bg-[#064E3B] px-5 pt-5 pb-4">
+        {/* ── Header ───────────────────────────────────────────────────── */}
+        <View style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}
+          className="px-5 pt-5 pb-0">
           <View className="flex-row items-start justify-between mb-3">
             <View className="flex-row items-center gap-3">
               <View className="w-10 h-10 rounded-xl items-center justify-center bg-white/10">
@@ -391,8 +512,8 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
             </TouchableOpacity>
           </View>
 
-          {/* PR number badge */}
-          <View className="flex-row items-center justify-between">
+          {/* PR number + value badge */}
+          <View className="flex-row items-center justify-between mb-3">
             <View className="flex-row items-center gap-2 px-3 py-1.5 rounded-full"
               style={{ backgroundColor: isHighValue ? "rgba(16,185,129,0.2)" : "rgba(82,183,136,0.25)" }}>
               <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CLR.brand100 }} />
@@ -404,6 +525,34 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
               <Text className="text-[10.5px] text-white/50" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
             </View>
           </View>
+
+          {/* Tab toggle — same pattern as ViewPRModal */}
+          <View className="flex-row bg-black/20 rounded-xl p-1">
+            {(["form", "pdf"] as const).map((t) => (
+              <TouchableOpacity key={t} onPress={() => setTab(t)} activeOpacity={0.8}
+                className={`flex-1 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}>
+                <Text className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}>
+                  {t === "form" ? "✏️  Edit Form" : "📄  PDF Preview"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* PDF action bar — only in PDF tab */}
+          {tab === "pdf" && (
+            <View className="flex-row justify-end gap-2.5 pt-2 pb-1">
+              <TouchableOpacity onPress={handlePrint} activeOpacity={0.8}
+                className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 border border-white/20">
+                <Text className="text-base">🖨️</Text>
+                <Text className="text-[12px] font-bold text-white">Print</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDownload} activeOpacity={0.8}
+                className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white">
+                <Text className="text-base">⬇️</Text>
+                <Text className="text-[12px] font-bold text-[#064E3B]">Download PDF</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* ── Body ─────────────────────────────────────────────────────── */}
@@ -412,6 +561,9 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
             <ActivityIndicator size="large" color="#064E3B" />
             <Text className="text-[13px] text-gray-400">Loading PR details…</Text>
           </View>
+        ) : tab === "pdf" ? (
+          <WebView ref={webRef} source={{ html }} style={{ flex: 1 }}
+            originWhitelist={["*"]} showsVerticalScrollIndicator={false} />
         ) : (
         <ScrollView ref={scrollRef} className="flex-1 bg-gray-50"
           contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 }}
@@ -461,9 +613,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
                 </Text>
                 <View className="flex-1 h-px" style={{ backgroundColor: CLR.brand500 }} />
               </View>
-
               <SectionLabel tag="REQUIRED FOR >10K">Budget & Project</SectionLabel>
-
               <Field label="Budget Number" required hint="from PPMP">
                 <StyledInput value={budgetNumber} onChangeText={setBudgetNumber}
                   placeholder="e.g. 2026-PPMP-00X" />
@@ -486,7 +636,6 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
                   }
                 </TouchableOpacity>
               </Field>
-
               {fileOpen && (
                 <PickerSheet title="Select Proposal File" options={MOCK_PROPOSAL_FILES}
                   selected={proposalFileName} onSelect={setProposalFileName}
@@ -504,24 +653,26 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
         </ScrollView>
         )}
 
-        {/* ── Footer ───────────────────────────────────────────────────── */}
-        <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
-          <Text className="text-[11.5px] text-gray-400" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
-          <View className="flex-row items-center gap-2.5">
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
-              <Text className="text-[13.5px] font-semibold text-gray-500">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave} disabled={!isValid || saving} activeOpacity={0.8}
-              className={`flex-row items-center gap-2 px-5 py-2.5 rounded-xl ${(!isValid || saving) ? "opacity-50" : ""}`}
-              style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
-              {saving && <ActivityIndicator size="small" color="#ffffff" />}
-              <Text className="text-[13.5px] font-bold text-white">
-                {saving ? "Saving…" : "Save Changes"}
-              </Text>
-            </TouchableOpacity>
+        {/* ── Footer — only shown in form tab ──────────────────────────── */}
+        {tab === "form" && !showSpinner && (
+          <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
+            <Text className="text-[11.5px] text-gray-400" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
+            <View className="flex-row items-center gap-2.5">
+              <TouchableOpacity onPress={onClose} activeOpacity={0.7}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+                <Text className="text-[13.5px] font-semibold text-gray-500">Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} disabled={!isValid || saving} activeOpacity={0.8}
+                className={`flex-row items-center gap-2 px-5 py-2.5 rounded-xl ${(!isValid || saving) ? "opacity-50" : ""}`}
+                style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
+                {saving && <ActivityIndicator size="small" color="#ffffff" />}
+                <Text className="text-[13.5px] font-bold text-white">
+                  {saving ? "Saving…" : "Save Changes"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
       </KeyboardAvoidingView>
     </Modal>

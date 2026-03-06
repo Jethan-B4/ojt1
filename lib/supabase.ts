@@ -109,6 +109,16 @@ export async function fetchPurchaseRequests(): Promise<PRRow[]> {
   return data;
 }
 
+export async function fetchPurchaseRequestsByDivision(divisionId: number): Promise<PRRow[]> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("division_id", divisionId);
+
+  if (error) throw error;
+  return data;
+}
+
 // Fetch PR header and items by header id
 export async function fetchPRWithItemsById(prId: string): Promise<{ header: PRRow; items: PRItemRow[] }> {
   let headerResp = await supabase.from("purchase_requests").select("*").eq("id", prId).single();

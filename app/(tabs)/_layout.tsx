@@ -158,11 +158,14 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             <Text style={{ fontSize: 10, fontWeight: "600", color: "#6ee7b7", textTransform: "uppercase", letterSpacing: 0.6 }}>
               Role
             </Text>
-            <View style={{ backgroundColor: "#10B981", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
+             <Text style={{ fontSize: 11, fontWeight: "600", color: "#ffffff", flexShrink: 1, textAlign: "right", maxWidth: "65%", marginTop: 4 }} numberOfLines={2}>
+              {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
+            </Text>
+            {/* <View style={{flexShrink: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+              <Text style={{ flexShrink: 1, alignSelf: "center", justifyContent: "center", fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
                 {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
               </Text>
-            </View>
+            </View> */}
           </View>
 
           {/* Division */}

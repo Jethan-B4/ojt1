@@ -72,6 +72,11 @@ const ROLE_META: Record<number, {
     accentColor: "#b45309", bannerBg: "bg-amber-50",  bannerBorder: "border-amber-400",
     nextStatus: "processing",
   },
+  5: {
+    step: "Step 5", title: "PARPO Approval",
+    accentColor: "#065f46", bannerBg: "bg-emerald-50", bannerBorder: "border-emerald-400",
+    nextStatus: "approved",
+  },
 };
 
 // ─── Shared utilities ─────────────────────────────────────────────────────────
@@ -419,11 +424,68 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
   );
 }
 
+// ─── PARPO Modal (role_id = 5 · Step 5) ───────────────────────────────────────
+
+function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
+  const meta                = ROLE_META[5];
+  const { header, loading } = usePRFetch(visible, record, onClose);
+  const [notes, setNotes]   = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (visible) setNotes(""); }, [visible]);
+
+  const handleApprove = async () => {
+    if (!record) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("purchase_requests")
+        .update({ status: meta.nextStatus })
+        .eq("id", record.id);
+      if (error) throw error;
+      onProcessed(record.id, meta.nextStatus);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not approve the PR.");
+    } finally { setSaving(false); }
+  };
+
+  if (!record) return null;
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
+        {loading ? <LoadingBody color={meta.accentColor} /> : (
+          <ScrollView className="flex-1 bg-gray-50"
+            contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
+              As <Text className="font-bold">PARPO</Text>, review and approve this PR to complete Phase 1 and
+              advance to Canvassing (Steps 6–10).
+            </InfoBanner>
+            {header && <PRSummaryCard header={header} />}
+            <SectionLabel>Approval</SectionLabel>
+            <Field label="Approval Notes">
+              <StyledInput value={notes} onChangeText={setNotes} placeholder="e.g. Approved. Proceed to canvassing." multiline />
+            </Field>
+          </ScrollView>
+        )}
+        <ModalFooter
+          onCancel={onClose} onConfirm={handleApprove}
+          confirmLabel="Approve PR" confirmingLabel="Approving…"
+          disabled={loading} saving={saving} color={meta.accentColor}
+        />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Root export — routes to the correct modal by role_id ─────────────────────
 
 export default function ProcessPRModal({ roleId, ...rest }: ProcessPRModalProps) {
   if (roleId === 2) return <DivisionHeadModal {...rest} />;
   if (roleId === 3) return <BACModal          {...rest} />;
   if (roleId === 4) return <BudgetModal       {...rest} />;
+  if (roleId === 5) return <PARPOModal        {...rest} />;
   return null;
 }

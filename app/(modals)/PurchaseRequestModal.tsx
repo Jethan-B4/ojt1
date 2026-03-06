@@ -10,13 +10,16 @@
  *  - onSubmit is now required and receives { pr, items, prNo }
  */
 
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import {
-  Animated, Easing, KeyboardAvoidingView, Modal,
+  Alert, Animated, Easing, KeyboardAvoidingView, Modal,
   Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import WebView from "react-native-webview";
 import type { PRItemRow, PRRow } from "../../lib/supabase";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -79,6 +82,89 @@ const emptyForm = (): FormState => ({
 });
 const makeItem  = (id: number): LineItem => ({ id, desc: "", stock: "", unit: "", qty: "", price: "" });
 const fmtPHP    = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ─── PDF HTML builder (mirrors ViewPRModal exactly) ───────────────────────────
+
+function buildPRHtml(fields: {
+  prNo: string; officeSection: string; purpose: string; respCode: string; date: string;
+}, items: LineItem[]): string {
+  const f = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const padded = [...items];
+  while (padded.length < 30) padded.push({ id: 0, desc: "", stock: "", unit: "", qty: "", price: "" });
+
+  const rows = padded.map((it) => {
+    const qty   = parseFloat(it.qty   || "0");
+    const price = parseFloat(it.price || "0");
+    const total = qty * price || 0;
+    return `<tr>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif;height:16px">${it.stock || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${it.unit || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 4px;text-align:left;font-family:'Times New Roman',serif">${it.desc || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${qty || ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${price ? f(price) : ""}</td>
+      <td style="border:1px solid black;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${total > 0 ? f(total) : ""}</td>
+    </tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Times New Roman',Times,serif;font-size:9pt;color:#000;background:#fff;padding:24px}table{width:100%;border-collapse:collapse;table-layout:fixed;color:#000}@media print{body{padding:10mm}@page{margin:8mm}}</style>
+</head><body>
+<table>
+  <colgroup><col style="width:12%"/><col style="width:8%"/><col style="width:40%"/><col style="width:10%"/><col style="width:15%"/><col style="width:15%"/></colgroup>
+  <tbody>
+    <tr style="height:27px"><td colspan="6" style="text-align:right;font-size:10pt;padding-right:4px;font-family:'Times New Roman',serif">Appendix 60</td></tr>
+    <tr style="height:34px"><td colspan="6" style="text-align:center;font-weight:bold;font-size:12pt;font-family:'Times New Roman',serif">PURCHASE REQUEST</td></tr>
+    <tr style="height:21px">
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">DAR — CARAGA Region</span></td>
+      <td style="border-bottom:1px solid black"></td>
+      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal"></span></td>
+    </tr>
+    <tr style="height:14px">
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Office/Section :<br/>${fields.officeSection}</td>
+      <td colspan="2" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">PR No.: <span style="font-weight:normal">${fields.prNo}</span></td>
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;font-weight:bold;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Date:<br/><span style="font-weight:normal">${fields.date}</span></td>
+    </tr>
+    <tr style="height:15px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">Responsibility Center Code: <span style="font-weight:normal">${fields.respCode}</span></td>
+    </tr>
+    <tr style="height:22.5px">
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Stock/<br/>Property No.</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Unit</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Item Description</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Quantity</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Unit Cost</th>
+      <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Total Cost</th>
+    </tr>
+    ${rows}
+    <tr style="height:17px"><td colspan="6" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><b>Purpose:</b> ${fields.purpose}</td></tr>
+    <tr style="height:30px"><td colspan="6" style="border-bottom:1px solid black;border-left:1px solid black;border-right:1px solid black"></td></tr>
+    <tr style="height:12px">
+      <td style="border-top:1px solid black;border-left:1px solid black"></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><i>Requested by:</i></td>
+      <td colspan="2" style="border-top:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><i>Approved by:</i></td>
+      <td style="border-top:1px solid black;border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Signature :</td>
+      <td></td><td></td><td></td><td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:12px">
+      <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Printed Name :</td>
+      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="border-right:1px solid black"></td>
+    </tr>
+    <tr style="height:14.75px">
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Designation :</td>
+      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="border-bottom:1px solid black;border-right:1px solid black"></td>
+    </tr>
+  </tbody>
+</table>
+</body></html>`;
+}
 
 // ─── PickerSheet (bottom-sheet selector) ─────────────────────────────────────
 
@@ -382,15 +468,17 @@ function NextFlow({ isHighValue }: { isHighValue: boolean }) {
 
 // ─── ModalHeader ──────────────────────────────────────────────────────────────
 
-function ModalHeader({ isHighValue, prNo, onClose }: {
+function ModalHeader({ isHighValue, prNo, onClose, tab, onTabChange, onPrint, onDownload }: {
   isHighValue: boolean; prNo: string; onClose: () => void;
+  tab: "form" | "pdf"; onTabChange: (t: "form" | "pdf") => void;
+  onPrint: () => void; onDownload: () => void;
 }) {
   const steps = isHighValue
     ? ["PR+Proposal", "Div.Head", "BAC(APP)", "Budget", "PARPO"]
     : ["PR Details",  "Div.Head", "BAC",      "Budget", "PARPO"];
 
   return (
-    <View className="px-5 pt-5 pb-4" style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
+    <View className="px-5 pt-5 pb-0" style={{ backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900 }}>
       <View className="flex-row items-start justify-between mb-4">
         <View className="flex-row items-center gap-3">
           <View className="w-10 h-10 rounded-xl items-center justify-center bg-white/10">
@@ -407,7 +495,7 @@ function ModalHeader({ isHighValue, prNo, onClose }: {
         </TouchableOpacity>
       </View>
 
-      <View className="flex-row items-center justify-between mb-4">
+      <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center gap-2 px-3 py-1.5 rounded-full"
           style={{ backgroundColor: isHighValue ? "rgba(16,185,129,0.3)" : "rgba(16,185,129,0.25)" }}>
           <View className="w-1.5 h-1.5 rounded-full"
@@ -422,7 +510,8 @@ function ModalHeader({ isHighValue, prNo, onClose }: {
         </View>
       </View>
 
-      <View className="flex-row rounded-xl overflow-hidden" style={{ backgroundColor: "rgba(0,0,0,0.2)" }}>
+      {/* Workflow steps bar */}
+      <View className="flex-row rounded-xl overflow-hidden mb-3" style={{ backgroundColor: "rgba(0,0,0,0.2)" }}>
         {steps.map((label, i) => (
           <React.Fragment key={label}>
             {i > 0 && <View className="w-px self-stretch bg-white/10" />}
@@ -435,6 +524,34 @@ function ModalHeader({ isHighValue, prNo, onClose }: {
           </React.Fragment>
         ))}
       </View>
+
+      {/* Tab toggle — same pattern as ViewPRModal */}
+      <View className="flex-row bg-black/20 rounded-xl p-1">
+        {(["form", "pdf"] as const).map((t) => (
+          <TouchableOpacity key={t} onPress={() => onTabChange(t)} activeOpacity={0.8}
+            className={`flex-1 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}>
+            <Text className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}>
+              {t === "form" ? "🌾  PR Form" : "📄  PDF Preview"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* PDF action bar — only in PDF tab */}
+      {tab === "pdf" && (
+        <View className="flex-row justify-end gap-2.5 pt-2 pb-1">
+          <TouchableOpacity onPress={onPrint} activeOpacity={0.8}
+            className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 border border-white/20">
+            <Text className="text-base">🖨️</Text>
+            <Text className="text-[12px] font-bold text-white">Print</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDownload} activeOpacity={0.8}
+            className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white">
+            <Text className="text-base">⬇️</Text>
+            <Text className="text-[12px] font-bold text-[#064E3B]">Download PDF</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -445,8 +562,10 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
   const [form, setForm]                 = useState<FormState>(emptyForm);
   const [nextId, setNextId]             = useState(2);
   const [justUnlocked, setJustUnlocked] = useState(false);
+  const [tab, setTab]                   = useState<"form" | "pdf">("form");
   const prevHighValue = useRef(false);
   const scrollRef     = useRef<ScrollView>(null);
+  const webRef        = useRef<WebView>(null);
 
   const setField   = useCallback((field: keyof FormState, value: string) =>
     setForm((f) => ({ ...f, [field]: value })), []);
@@ -483,10 +602,41 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
     if (!visible) {
       setForm(emptyForm()); setNextId(2);
       setJustUnlocked(false); prevHighValue.current = false;
+      setTab("form");
     }
   }, [visible]);
 
   useEffect(() => { if (visible && form.items.length === 0) addItem(); }, [visible]);
+
+  // Build PDF HTML from live form state so preview always reflects current input
+  const html = useMemo(() => buildPRHtml(
+    {
+      prNo:          generatedPRNo ?? `${new Date().getFullYear()}-PR-DRAFT`,
+      officeSection: form.officeSection,
+      purpose:       form.purpose,
+      respCode:      form.responsibilityCode,
+      date:          TODAY_DISPLAY,
+    },
+    form.items,
+  ), [generatedPRNo, form.officeSection, form.purpose, form.responsibilityCode, form.items]);
+
+  const handlePrint = async () => {
+    try { await Print.printAsync({ html }); } catch {}
+  };
+
+  const handleDownload = async () => {
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf" });
+      } else {
+        Alert.alert("Saved", `PDF created at: ${uri}`);
+      }
+    } catch (e: any) {
+      Alert.alert("Download failed", e?.message ?? String(e));
+    }
+  };
 
   // ── Build Supabase-ready payload on submit ────────────────────────────────
 
@@ -526,8 +676,13 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ModalHeader isHighValue={isHighValue} prNo={prNoDisplay} onClose={onClose} />
+        <ModalHeader isHighValue={isHighValue} prNo={prNoDisplay} onClose={onClose}
+          tab={tab} onTabChange={setTab} onPrint={handlePrint} onDownload={handleDownload} />
 
+        {tab === "pdf" ? (
+          <WebView ref={webRef} source={{ html }} style={{ flex: 1 }}
+            originWhitelist={["*"]} showsVerticalScrollIndicator={false} />
+        ) : (
         <ScrollView ref={scrollRef} className="flex-1 bg-gray-50"
           contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 }}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -593,7 +748,10 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
 
           <NextFlow isHighValue={isHighValue} />
         </ScrollView>
+        )}
 
+        {/* Footer — only shown in form tab */}
+        {tab === "form" && (
         <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
           <Text className="text-[11.5px] text-gray-400">Requested by: —</Text>
           <View className="flex-row items-center gap-2.5">
@@ -610,6 +768,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
             </TouchableOpacity>
           </View>
         </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );

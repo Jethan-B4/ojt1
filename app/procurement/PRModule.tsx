@@ -37,8 +37,8 @@ const MONO      = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
 const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// role_id 2 = Division Head (Step 2), 3 = BAC (Step 3), 4 = Budget (Step 4)
-const PROCESS_ROLES = new Set([2, 3, 4]);
+// role_id 2 = Division Head (Step 2), 3 = BAC (Step 3), 4 = Budget (Step 4), 5 = PARPO (Step 5)
+const PROCESS_ROLES = new Set([2, 3, 4, 5]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
