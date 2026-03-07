@@ -295,19 +295,20 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
 function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[3];
   const { header, loading } = usePRFetch(visible, record, onClose);
-  const [appNo,     setAppNo]     = useState("");
+  const [assignedPR, setAssignedPR] = useState("");
+  const [appNo,       setAppNo]     = useState("");
   const [certNotes, setCertNotes] = useState("");
   const [saving,    setSaving]    = useState(false);
 
-  useEffect(() => { if (visible) { setAppNo(""); setCertNotes(""); } }, [visible]);
+  useEffect(() => { if (visible) { setAssignedPR(""); setAppNo(""); setCertNotes(""); } }, [visible]);
 
   const handleCertify = async () => {
-    if (!record || !appNo.trim()) return;
+    if (!record || !assignedPR.trim()) return;
     setSaving(true);
     try {
       const { error } = await supabase
         .from("purchase_requests")
-        .update({ status: meta.nextStatus, resp_code: appNo.trim() })
+        .update({ status: meta.nextStatus, pr_no: assignedPR.trim(), app_no: appNo.trim() || null })
         .eq("id", record.id);
       if (error) throw error;
       onProcessed(record.id, meta.nextStatus);
@@ -327,12 +328,15 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
             contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-              As <Text className="font-bold">BAC</Text>, assign an APP number and certify this PR's inclusion
+              As <Text className="font-bold">BAC</Text>, assign the PR number and certify inclusion
               in the Annual Procurement Plan before forwarding to Budget (Step 4).
             </InfoBanner>
             {header && <PRSummaryCard header={header} />}
             <SectionLabel>BAC Action</SectionLabel>
-            <Field label="APP / PR Number Assignment" required>
+            <Field label="PR Number" required>
+              <StyledInput value={assignedPR} onChangeText={setAssignedPR} placeholder="e.g. 2026-PR-0042" />
+            </Field>
+            <Field label="APP Number">
               <StyledInput value={appNo} onChangeText={setAppNo} placeholder="e.g. 2026-APP-0042" />
             </Field>
             <Field label="Certification Notes">
@@ -343,8 +347,8 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
         )}
         <ModalFooter
           onCancel={onClose} onConfirm={handleCertify}
-          confirmLabel="Certify & Forward to Budget" confirmingLabel="Certifying…"
-          disabled={!appNo.trim() || loading} saving={saving} color={meta.accentColor}
+          confirmLabel="Assign PR & Forward to Budget" confirmingLabel="Certifying…"
+          disabled={!assignedPR.trim() || loading} saving={saving} color={meta.accentColor}
         />
       </KeyboardAvoidingView>
     </Modal>

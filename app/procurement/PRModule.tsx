@@ -6,7 +6,7 @@ import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/
 import ProcessPRModal, { type ProcessRecord } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import { fetchPurchaseRequests, generatePRNumber, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
+import { fetchPurchaseRequests, insertProposalForPR, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -242,7 +242,6 @@ export default function PRModule() {
 
   // Create PR modal state
   const [prModalOpen,   setPrModalOpen]   = useState(false);
-  const [generatedPRNo, setGeneratedPRNo] = useState("");
   const [saving,        setSaving]        = useState(false);
 
   // Load on mount
@@ -258,19 +257,17 @@ export default function PRModule() {
       (navigation as any).navigate("Canvassing" as never, { role: "bac" } as never);
   }, [activeSubTab, navigation]);
 
-  const handleOpenCreate = useCallback(async () => {
-    try {
-      setGeneratedPRNo(await generatePRNumber());
-    } catch {
-      setGeneratedPRNo(`${new Date().getFullYear()}-PR-${String(records.length + 1).padStart(4, "0")}`);
-    }
+  const handleOpenCreate = useCallback(() => {
     setPrModalOpen(true);
-  }, [records.length]);
+  }, []);
 
   const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
     setSaving(true);
       try {
       const saved = await insertPurchaseRequest(payload.pr, payload.items);
+      try {
+        await insertProposalForPR(saved.id, payload.proposalNo, currentUser?.division_id);
+      } catch {}
       setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
       setPage(1);
     } catch (e: any) {
@@ -416,7 +413,7 @@ export default function PRModule() {
 
       {/* Create PR modal */}
       {prModalOpen && (
-        <PurchaseRequestModal visible={prModalOpen} generatedPRNo={generatedPRNo}
+        <PurchaseRequestModal visible={prModalOpen}
           onClose={() => setPrModalOpen(false)} onSubmit={handlePRSubmit} />
       )}
 

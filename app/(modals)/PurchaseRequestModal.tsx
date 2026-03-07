@@ -13,11 +13,11 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import React, {
-  useCallback, useEffect, useMemo, useRef, useState,
+    useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import {
-  Alert, Animated, Easing, KeyboardAvoidingView, Modal,
-  Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
+    Alert, Animated, Easing, KeyboardAvoidingView, Modal,
+    Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import WebView from "react-native-webview";
 import type { PRItemRow, PRRow } from "../../lib/supabase";
@@ -34,14 +34,13 @@ export interface PRSubmitPayload {
   pr: Omit<PRRow, "id" | "created_at">;
   items: Omit<PRItemRow, "id" | "pr_id">[];
   prNo: string;
+  proposalNo: string;
 }
 
 export interface PRModalProps {
   visible: boolean;
   onClose: () => void;
   onSubmit: (payload: PRSubmitPayload) => void;
-  /** Pre-generated PR number from the parent (fetched async before opening) */
-  generatedPRNo?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -55,12 +54,6 @@ const UNITS = [
 const SECTIONS = [
   "STOD", "LTSP", "ARBDSP", "Legal", "PARPO", "PARAD", "TDG Unit", "Budget", "Accounting",
 ];
-// Replace with expo-document-picker for real file selection
-const MOCK_PROPOSAL_FILES = [
-  "ProjectProposal_2026.pdf", "ActivityProposal_Q1.pdf",
-  "BudgetProposal_ARBDSP.docx", "PPMPAttachment.pdf",
-];
-
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const TODAY_DISPLAY = new Date().toLocaleDateString("en-PH", {
   year: "numeric", month: "long", day: "numeric",
@@ -73,12 +66,18 @@ const CLR = {
 } as const;
 
 interface FormState {
+  entityName: string; fundCluster: string;
   officeSection: string; responsibilityCode: string; purpose: string;
-  items: LineItem[]; budgetNumber: string; papCode: string; proposalFileName: string;
+  reqName: string; reqDesig: string;
+  appName: string; appDesig: string;
+  items: LineItem[]; budgetNumber: string; papCode: string; proposalNumber: string;
 }
 const emptyForm = (): FormState => ({
+  entityName: "DAR — CARAGA Region", fundCluster: "",
   officeSection: "", responsibilityCode: "", purpose: "",
-  items: [], budgetNumber: "", papCode: "", proposalFileName: "",
+  reqName: "", reqDesig: "",
+  appName: "", appDesig: "",
+  items: [], budgetNumber: "", papCode: "", proposalNumber: "",
 });
 const makeItem  = (id: number): LineItem => ({ id, desc: "", stock: "", unit: "", qty: "", price: "" });
 const fmtPHP    = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -86,7 +85,9 @@ const fmtPHP    = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigi
 // ─── PDF HTML builder (mirrors ViewPRModal exactly) ───────────────────────────
 
 function buildPRHtml(fields: {
-  prNo: string; officeSection: string; purpose: string; respCode: string; date: string;
+  prNo: string; entityName: string; fundCluster: string;
+  officeSection: string; purpose: string; respCode: string; date: string;
+  reqName: string; reqDesig: string; appName: string; appDesig: string;
 }, items: LineItem[]): string {
   const f = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const padded = [...items];
@@ -116,9 +117,9 @@ function buildPRHtml(fields: {
     <tr style="height:27px"><td colspan="6" style="text-align:right;font-size:10pt;padding-right:4px;font-family:'Times New Roman',serif">Appendix 60</td></tr>
     <tr style="height:34px"><td colspan="6" style="text-align:center;font-weight:bold;font-size:12pt;font-family:'Times New Roman',serif">PURCHASE REQUEST</td></tr>
     <tr style="height:21px">
-      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">DAR — CARAGA Region</span></td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">${fields.entityName}</span></td>
       <td style="border-bottom:1px solid black"></td>
-      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal"></span></td>
+      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal">${fields.fundCluster}</span></td>
     </tr>
     <tr style="height:14px">
       <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Office/Section :<br/>${fields.officeSection}</td>
@@ -151,14 +152,14 @@ function buildPRHtml(fields: {
     </tr>
     <tr style="height:12px">
       <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Printed Name :</td>
-      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
-      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.reqName}</td>
+      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.appName}</td>
       <td style="border-right:1px solid black"></td>
     </tr>
     <tr style="height:14.75px">
       <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Designation :</td>
-      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
-      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"></td>
+      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.reqDesig}</td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.appDesig}</td>
       <td style="border-bottom:1px solid black;border-right:1px solid black"></td>
     </tr>
   </tbody>
@@ -278,7 +279,6 @@ function ItemRow({ item, onUpdate, onRemove }: {
   onUpdate: (id: number, field: keyof LineItem, value: string) => void;
   onRemove: (id: number) => void;
 }) {
-  const [unitOpen, setUnitOpen] = useState(false);
   const subtotal = parseFloat(item.qty || "0") * parseFloat(item.price || "0") || 0;
 
   return (
@@ -297,11 +297,9 @@ function ItemRow({ item, onUpdate, onRemove }: {
         <TextInput value={item.stock} onChangeText={(v) => onUpdate(item.id, "stock", v)}
           placeholder="Stock No." placeholderTextColor="#9ca3af"
           className="flex-1 text-[12px] text-gray-700 bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-100" />
-        <TouchableOpacity onPress={() => setUnitOpen(true)}
-          className="flex-row items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-2 min-w-[56px]">
-          <Text className="text-[12px] text-gray-700 flex-1" numberOfLines={1}>{item.unit || "Unit"}</Text>
-          <Text className="text-gray-400 text-[10px]">▾</Text>
-        </TouchableOpacity>
+        <TextInput value={item.unit} onChangeText={(v) => onUpdate(item.id, "unit", v)}
+          placeholder="Unit" placeholderTextColor="#9ca3af"
+          className="w-16 text-[12px] text-gray-700 bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-100 text-center" />
         <TextInput value={item.qty} onChangeText={(v) => onUpdate(item.id, "qty", v)}
           placeholder="Qty" placeholderTextColor="#9ca3af" keyboardType="numeric"
           className="w-14 text-[12px] text-gray-700 bg-gray-50 rounded-lg px-2 py-2 border border-gray-100 text-center" />
@@ -315,10 +313,6 @@ function ItemRow({ item, onUpdate, onRemove }: {
             Subtotal: <Text className="font-semibold text-gray-600">₱{fmtPHP(subtotal)}</Text>
           </Text>
         </View>
-      )}
-      {unitOpen && (
-        <PickerSheet title="Select Unit" options={UNITS} selected={item.unit}
-          onSelect={(v) => onUpdate(item.id, "unit", v)} onClose={() => setUnitOpen(false)} />
       )}
     </View>
   );
@@ -346,7 +340,6 @@ function HighValueSection({ visible, justUnlocked, form, setField }: {
   form: FormState; setField: (f: keyof FormState, v: string) => void;
 }) {
   const progress = useRef(new Animated.Value(0)).current;
-  const [fileOpen, setFileOpen] = useState(false);
 
   useEffect(() => {
     Animated.timing(progress, {
@@ -406,25 +399,10 @@ function HighValueSection({ visible, justUnlocked, form, setField }: {
           placeholder="e.g. ARBDSP-2026-001" />
       </Field>
 
-      <Field label="Project / Activity Proposal" required>
-        <TouchableOpacity onPress={() => setFileOpen(true)} activeOpacity={0.8}
-          className={`rounded-2xl border-2 border-dashed px-4 py-5 items-center gap-1.5 ${form.proposalFileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"}`}>
-          <Text className="text-3xl">{form.proposalFileName ? "✅" : "📄"}</Text>
-          {form.proposalFileName
-            ? <Text className="text-[12.5px] font-semibold text-emerald-700 text-center">{form.proposalFileName}</Text>
-            : <>
-                <Text className="text-[13px] font-semibold text-gray-600">Tap to attach proposal</Text>
-                <Text className="text-[11.5px] text-gray-400">PDF or DOCX · Max 10 MB</Text>
-              </>
-          }
-        </TouchableOpacity>
-      </Field>
-
-      {fileOpen && (
-        <PickerSheet title="Select Proposal File" options={MOCK_PROPOSAL_FILES}
-          selected={form.proposalFileName} onSelect={(v) => setField("proposalFileName", v)}
-          onClose={() => setFileOpen(false)} />
-      )}
+  <Field label="Proposal Number" required>
+    <StyledInput value={form.proposalNumber} onChangeText={(v) => setField("proposalNumber", v)}
+      placeholder="e.g. 2026-PROP-00123" />
+  </Field>
     </Animated.View>
   );
 }
@@ -558,7 +536,7 @@ function ModalHeader({ isHighValue, prNo, onClose, tab, onTabChange, onPrint, on
 
 // ─── PurchaseRequestModal ─────────────────────────────────────────────────────
 
-export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo }: PRModalProps) {
+export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProps) {
   const [form, setForm]                 = useState<FormState>(emptyForm);
   const [nextId, setNextId]             = useState(2);
   const [justUnlocked, setJustUnlocked] = useState(false);
@@ -585,7 +563,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
   );
   const isHighValue = total >= HIGH_VALUE_THRESHOLD;
   const hasItems    = form.items.some((i) => i.desc && i.qty && i.price);
-  const hvComplete  = !isHighValue || (!!form.budgetNumber && !!form.papCode && !!form.proposalFileName);
+  const hvComplete  = !isHighValue || (!!form.budgetNumber && !!form.papCode && !!form.proposalNumber);
   const isValid     = hasItems && hvComplete && !!form.officeSection && !!form.purpose;
 
   useEffect(() => {
@@ -611,14 +589,20 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
   // Build PDF HTML from live form state so preview always reflects current input
   const html = useMemo(() => buildPRHtml(
     {
-      prNo:          generatedPRNo ?? `${new Date().getFullYear()}-PR-DRAFT`,
+      prNo:          "",
+      entityName:    form.entityName,
+      fundCluster:   form.fundCluster,
       officeSection: form.officeSection,
       purpose:       form.purpose,
       respCode:      form.responsibilityCode,
       date:          TODAY_DISPLAY,
+      reqName:       form.reqName,
+      reqDesig:      form.reqDesig,
+      appName:       form.appName,
+      appDesig:      form.appDesig,
     },
     form.items,
-  ), [generatedPRNo, form.officeSection, form.purpose, form.responsibilityCode, form.items]);
+  ), [form.entityName, form.fundCluster, form.officeSection, form.purpose, form.responsibilityCode, form.reqName, form.reqDesig, form.appName, form.appDesig, form.items]);
 
   const handlePrint = async () => {
     try { await Print.printAsync({ html }); } catch {}
@@ -641,19 +625,25 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
   // ── Build Supabase-ready payload on submit ────────────────────────────────
 
   const handleSubmit = useCallback(() => {
-    const prNo = generatedPRNo ?? `${new Date().getFullYear()}-PR-DRAFT`;
+    const prNo = `DRAFT-${Date.now()}`;
 
     const pr: Omit<PRRow, "id" | "created_at"> = {
       pr_no:          prNo,
       office_section: form.officeSection,
       resp_code:      form.responsibilityCode,
+      entity_name:    form.entityName,
+      fund_cluster:   form.fundCluster,
+      req_name:       form.reqName      || null,
+      req_desig:      form.reqDesig     || null,
+      app_name:       form.appName      || null,
+      app_desig:      form.appDesig     || null,
       purpose:        form.purpose,
       total_cost:     total,
       is_high_value:  isHighValue,
       status:         "pending",
       budget_number:  form.budgetNumber   || null,
       pap_code:       form.papCode        || null,
-      proposal_file:  form.proposalFileName || null,
+      proposal_file:  null,
     };
 
     const items: Omit<PRItemRow, "id" | "pr_id">[] = form.items
@@ -667,11 +657,11 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
         subtotal:    parseFloat(i.qty) * parseFloat(i.price),
       }));
 
-    onSubmit({ pr, items, prNo });
+    onSubmit({ pr, items, prNo, proposalNo: form.proposalNumber });
     onClose();
-  }, [form, total, isHighValue, generatedPRNo, onSubmit, onClose]);
+  }, [form, total, isHighValue, onSubmit, onClose]);
 
-  const prNoDisplay = generatedPRNo ?? "Generating…";
+  const prNoDisplay = "Pending BAC assignment";
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -699,7 +689,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
           <SectionLabel>Reference Information</SectionLabel>
           <View className="flex-row gap-3">
             <View className="flex-1">
-              <Field label="PR No." required hint="Auto-generated">
+              <Field label="PR No." required hint="Assigned by BAC">
                 <ReadonlyInput value={prNoDisplay} />
               </Field>
             </View>
@@ -710,14 +700,28 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
             </View>
           </View>
 
+          <Field label="Entity Name" required>
+            <StyledInput value={form.entityName} onChangeText={(v) => setField("entityName", v)}
+              placeholder="e.g. DAR — CARAGA Region" />
+          </Field>
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <Field label="Fund Cluster">
+                <StyledInput value={form.fundCluster} onChangeText={(v) => setField("fundCluster", v)}
+                  placeholder="e.g. 01" />
+              </Field>
+            </View>
+            <View className="flex-1">
+              <Field label="Responsibility Center Code">
+                <StyledInput value={form.responsibilityCode}
+                  onChangeText={(v) => setField("responsibilityCode", v)} placeholder="e.g. 10-001" />
+              </Field>
+            </View>
+          </View>
           <Field label="Office / Section" required>
             <SelectTrigger value={form.officeSection} options={SECTIONS}
               placeholder="Select section…" title="Office / Section"
               onSelect={(v) => setField("officeSection", v)} />
-          </Field>
-          <Field label="Responsibility Center Code">
-            <StyledInput value={form.responsibilityCode}
-              onChangeText={(v) => setField("responsibilityCode", v)} placeholder="e.g. 10-001" />
           </Field>
 
           <SectionLabel>Items Requested</SectionLabel>
@@ -746,6 +750,39 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
               multiline numberOfLines={4} />
           </Field>
 
+          <SectionLabel>Signatories</SectionLabel>
+          <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-4">
+            <View className="bg-gray-50 border-b border-gray-100 px-4 py-2.5">
+              <Text className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Requested by</Text>
+            </View>
+            <View className="px-4 pt-3 pb-1">
+              <Field label="Printed Name">
+                <StyledInput value={form.reqName} onChangeText={(v) => setField("reqName", v)}
+                  placeholder="Full name of requesting officer" />
+              </Field>
+              <Field label="Designation">
+                <StyledInput value={form.reqDesig} onChangeText={(v) => setField("reqDesig", v)}
+                  placeholder="e.g. Division Chief" />
+              </Field>
+            </View>
+          </View>
+
+          <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-4">
+            <View className="bg-gray-50 border-b border-gray-100 px-4 py-2.5">
+              <Text className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Approved by</Text>
+            </View>
+            <View className="px-4 pt-3 pb-1">
+              <Field label="Printed Name">
+                <StyledInput value={form.appName} onChangeText={(v) => setField("appName", v)}
+                  placeholder="Full name of approving officer" />
+              </Field>
+              <Field label="Designation">
+                <StyledInput value={form.appDesig} onChangeText={(v) => setField("appDesig", v)}
+                  placeholder="e.g. Regional Director" />
+              </Field>
+            </View>
+          </View>
+
           <NextFlow isHighValue={isHighValue} />
         </ScrollView>
         )}
@@ -753,7 +790,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, generatedPRNo
         {/* Footer — only shown in form tab */}
         {tab === "form" && (
         <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
-          <Text className="text-[11.5px] text-gray-400">Requested by: —</Text>
+          <Text className="text-[11.5px] text-gray-400">Requested by: {form.reqName || "—"}</Text>
           <View className="flex-row items-center gap-2.5">
             <TouchableOpacity onPress={onClose} activeOpacity={0.7}
               className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white">

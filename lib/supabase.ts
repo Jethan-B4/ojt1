@@ -43,8 +43,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * ── Required Supabase tables ─────────────────────────────────────────────────
  *
  *  purchase_requests
- *  ┌─ pr_id              uuid        PK  default gen_random_uuid()
+ *  ┌─ id              uuid        PK  default gen_random_uuid()
  *  ├─ pr_no           text        UNIQUE NOT NULL
+ *  ├─ entity_name     text
+ *  ├─ fund_cluster    text
  *  ├─ office_section  text        NOT NULL
  *  ├─ resp_code       text
  *  ├─ purpose         text        NOT NULL
@@ -54,6 +56,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  ├─ budget_number   text
  *  ├─ pap_code        text
  *  ├─ proposal_file   text
+ *  ├─ req_name        text
+ *  ├─ req_desig       text
+ *  ├─ app_name        text
+ *  ├─ app_desig       text
  *  └─ created_at      timestamptz default now()
  *
  *  purchase_request_items
@@ -70,6 +76,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
 export interface PRRow {
+  entity_name: string;
+  fund_cluster: string;
   id: string;
   pr_no: string;
   office_section: string;
@@ -81,6 +89,11 @@ export interface PRRow {
   budget_number: string | null;
   pap_code: string | null;
   proposal_file: string | null;
+  req_name: string | null;
+  req_desig: string | null;
+  app_name: string | null;
+  app_desig: string | null;
+  app_no: string | null;
   created_at?: string;
 }
 
@@ -159,17 +172,23 @@ export async function insertPurchaseRequest(
 ): Promise<PRRow> {
   // Build payload with only defined, non-empty fields to avoid 400 from unknown/invalid values
   const base: Record<string, any> = {
-    pr_no: pr.pr_no,
+    pr_no:          pr.pr_no,
     office_section: pr.office_section,
-    purpose: pr.purpose,
-    total_cost: pr.total_cost,
-    is_high_value: pr.is_high_value,
-    status: pr.status,
+    purpose:        pr.purpose,
+    total_cost:     pr.total_cost,
+    is_high_value:  pr.is_high_value,
+    status:         pr.status,
   };
-  if (pr.resp_code)       base.resp_code = pr.resp_code;
-  if (pr.budget_number)   base.budget_number = pr.budget_number;
-  if (pr.pap_code)        base.pap_code = pr.pap_code;
-  if (pr.proposal_file)   base.proposal_file = pr.proposal_file;
+  if (pr.entity_name)    base.entity_name   = pr.entity_name;
+  if (pr.fund_cluster)   base.fund_cluster  = pr.fund_cluster;
+  if (pr.resp_code)      base.resp_code     = pr.resp_code;
+  if (pr.budget_number)  base.budget_number = pr.budget_number;
+  if (pr.pap_code)       base.pap_code      = pr.pap_code;
+  if (pr.proposal_file)  base.proposal_file = pr.proposal_file;
+  if (pr.req_name)       base.req_name      = pr.req_name;
+  if (pr.req_desig)      base.req_desig     = pr.req_desig;
+  if (pr.app_name)       base.app_name      = pr.app_name;
+  if (pr.app_desig)      base.app_desig     = pr.app_desig;
 
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -192,6 +211,29 @@ export async function insertPurchaseRequest(
   return data;
 }
 
+export async function insertProposalForPR(
+  prId: string,
+  proposalNo: string,
+  divisionId?: number
+): Promise<void> {
+  if (!proposalNo) return;
+  const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
+  if (typeof divisionId === "number") payload.division_id = divisionId;
+  const { error } = await supabase.from("proposals").insert(payload);
+  if (error) throw error;
+}
+
+export async function setPRNumber(prId: string, prNo: string): Promise<PRRow> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .update({ pr_no: prNo })
+    .eq("id", prId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as PRRow;
+}
+
 // ─── Update PR header + replace line items ────────────────────────────────────
 
 export async function updatePurchaseRequest(
@@ -201,15 +243,21 @@ export async function updatePurchaseRequest(
 ): Promise<PRRow> {
   // Build update payload — only include defined, non-empty fields
   const patch: Record<string, any> = {};
+  if (pr.entity_name    !== undefined) patch.entity_name   = pr.entity_name    || null;
+  if (pr.fund_cluster   !== undefined) patch.fund_cluster  = pr.fund_cluster   || null;
   if (pr.office_section !== undefined) patch.office_section = pr.office_section;
-  if (pr.resp_code      !== undefined) patch.resp_code      = pr.resp_code;
+  if (pr.resp_code      !== undefined) patch.resp_code      = pr.resp_code      || null;
   if (pr.purpose        !== undefined) patch.purpose        = pr.purpose;
   if (pr.total_cost     !== undefined) patch.total_cost     = pr.total_cost;
   if (pr.is_high_value  !== undefined) patch.is_high_value  = pr.is_high_value;
   if (pr.budget_number  !== undefined) patch.budget_number  = pr.budget_number  || null;
   if (pr.pap_code       !== undefined) patch.pap_code       = pr.pap_code       || null;
   if (pr.proposal_file  !== undefined) patch.proposal_file  = pr.proposal_file  || null;
-
+  if (pr.req_name       !== undefined) patch.req_name       = pr.req_name       || null;
+  if (pr.req_desig      !== undefined) patch.req_desig      = pr.req_desig      || null;
+  if (pr.app_name       !== undefined) patch.app_name       = pr.app_name       || null;
+  if (pr.app_desig      !== undefined) patch.app_desig      = pr.app_desig      || null;
+  if (pr.app_no         !== undefined) patch.app_no         = pr.app_no         || null;
   const { data, error } = await supabase
     .from("purchase_requests")
     .update(patch)

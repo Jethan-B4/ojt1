@@ -72,7 +72,6 @@ function buildPRHtml(record: PRRecord, items: LineItem[]): string {
     </tr>`;
   }).join("");
 
-  const totalCost = items.reduce((s, i) => s + (i.subtotal || 0), 0);
   const today = record.date || new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
 
   return `<!DOCTYPE html>
@@ -206,7 +205,17 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
     setLoading(true);
     fetchPRWithItemsById(record.id)
       .then(({ header, items }) => {
-        setHeader(toPRDisplay(header));
+        const display = toPRDisplay(header);
+        setHeader({
+          ...display,
+          entityName:  header.entity_name  ?? undefined,
+          fundCluster: header.fund_cluster ?? undefined,
+          respCode:    header.resp_code    ?? undefined,
+          reqName:     header.req_name     ?? undefined,
+          reqDesig:    header.req_desig    ?? undefined,
+          appName:     header.app_name     ?? undefined,
+          appDesig:    header.app_desig    ?? undefined,
+        });
         setItems(items.map(toLineItemDisplay));
       })
       .catch((e: any) => {
@@ -333,13 +342,25 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
       {/* Summary */}
       <View className="bg-white rounded-2xl border border-gray-200 p-4 mb-3"
         style={{ shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 }}>
-        <InfoRow label="PR Number"  value={record.prNo}          mono />
-        <InfoRow label="Date"       value={record.date} />
-        <InfoRow label="Section"    value={record.officeSection} />
-        <InfoRow label="Status"     value={record.status}
+        <InfoRow label="PR Number"    value={record.prNo}                      mono />
+        <InfoRow label="Date"         value={record.date} />
+        <InfoRow label="Entity Name"  value={record.entityName  || "DAR — CARAGA Region"} />
+        <InfoRow label="Fund Cluster" value={record.fundCluster || "—"} />
+        <InfoRow label="Section"      value={record.officeSection} />
+        <InfoRow label="Resp. Code"   value={record.respCode    || "—"} />
+        <InfoRow label="Status"       value={record.status}
           valueStyle={{ color: statusColor, fontWeight: "700", textTransform: "capitalize" }} />
-        <InfoRow label="Total Cost" value={`₱${fmt(record.totalCost)}`} mono />
+        <InfoRow label="Total Cost"   value={`₱${fmt(record.totalCost)}`}      mono />
       </View>
+
+      {/* Purpose */}
+      {!!record.purpose && (
+        <View className="bg-white rounded-2xl border border-gray-200 p-4 mb-3"
+          style={{ shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 }}>
+          <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">Purpose</Text>
+          <Text className="text-[13px] text-gray-700 leading-[20px]">{record.purpose}</Text>
+        </View>
+      )}
 
       {/* Items */}
       <View className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
@@ -351,7 +372,7 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
         </View>
         {items.length === 0 ? (
           <View className="px-4 py-5 items-center">
-            <Text className="text-[12.5px] text-gray-400 text-center">{record.purpose}</Text>
+            <Text className="text-[12.5px] text-gray-400 text-center">No items on record</Text>
           </View>
         ) : items.map((item, i) => (
           <View key={i} className={`px-4 py-3 border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
@@ -370,12 +391,36 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
       </View>
 
       {/* Total footer */}
-      <View className="bg-[#064E3B] rounded-2xl px-5 py-4 flex-row items-center justify-between">
+      <View className="bg-[#064E3B] rounded-2xl px-5 py-4 flex-row items-center justify-between mb-3">
         <Text className="text-[11px] font-bold uppercase tracking-widest text-white/50">Total Amount</Text>
         <Text className="text-[20px] font-black text-white" style={{ fontFamily: MONO }}>
           ₱{fmt(record.totalCost)}
         </Text>
       </View>
+
+      {/* Signatories */}
+      {(record.reqName || record.reqDesig || record.appName || record.appDesig) && (
+        <View className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
+          style={{ shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 }}>
+          <View className="bg-[#064E3B] px-4 py-3">
+            <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">Signatories</Text>
+          </View>
+          <View className="flex-row">
+            <View className="flex-1 px-4 py-3 border-r border-gray-100">
+              <Text className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 mb-2">Requested by</Text>
+              {record.reqName  ? <Text className="text-[12.5px] font-semibold text-gray-800">{record.reqName}</Text>  : null}
+              {record.reqDesig ? <Text className="text-[11.5px] text-gray-500 mt-0.5">{record.reqDesig}</Text> : null}
+              {!record.reqName && !record.reqDesig && <Text className="text-[12px] text-gray-300 italic">Not specified</Text>}
+            </View>
+            <View className="flex-1 px-4 py-3">
+              <Text className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 mb-2">Approved by</Text>
+              {record.appName  ? <Text className="text-[12.5px] font-semibold text-gray-800">{record.appName}</Text>  : null}
+              {record.appDesig ? <Text className="text-[11.5px] text-gray-500 mt-0.5">{record.appDesig}</Text> : null}
+              {!record.appName && !record.appDesig && <Text className="text-[12px] text-gray-300 italic">Not specified</Text>}
+            </View>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
