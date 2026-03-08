@@ -27,13 +27,21 @@ export interface PRLineItem {
 // Map DB header → display header
 export function toPRDisplay(row: PRRow): PRDisplay {
   const created = row.created_at ? new Date(row.created_at) : new Date();
+  const status: PRStatus =
+    (row as any).status
+      ? (row as any).status
+      : (row.status_id === 1
+          ? "pending"
+          : (row.status_id === 2 || row.status_id === 3 || row.status_id === 4 || row.status_id === 5)
+              ? "processing"
+              : "approved");
   return {
     id: (row as any).id ?? (row as any).pr_id ?? "",
     prNo: row.pr_no,
     officeSection: row.office_section,
     purpose: row.purpose,
     totalCost: row.total_cost,
-    status: row.status,
+    status,
     date: created.toLocaleDateString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric" }),
   };
 }

@@ -17,13 +17,14 @@
  *   />
  */
 
+import type { PRStatusRow } from "@/lib/supabase";
+import { fetchPRStatuses, fetchPRWithItemsById, supabase } from "@/lib/supabase";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView,
   Modal, Platform, ScrollView, Text, TextInput,
   TouchableOpacity, View,
 } from "react-native";
-import { fetchPRWithItemsById, supabase } from "../../lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,9 +43,10 @@ interface PRHeader {
   office_section: string;
   purpose:        string;
   total_cost:     number;
-  status:         string;
+  status_id:      number;   // FK → pr_status.id
   budget_number:  string | null;
   pap_code:       string | null;
+  proposal_no:    string | null;
 }
 
 // ─── Role metadata ────────────────────────────────────────────────────────────
@@ -55,27 +57,28 @@ const ROLE_META: Record<number, {
   accentColor:  string;
   bannerBg:     string;
   bannerBorder: string;
-  nextStatus:   string;
+  /** FK value written to purchase_requests.status_id on process */
+  nextStatusId: number;
 }> = {
   2: {
     step: "Step 2", title: "Division Head Review",
     accentColor: "#1d4ed8", bannerBg: "bg-blue-50",   bannerBorder: "border-blue-400",
-    nextStatus: "processing",
+    nextStatusId: 3, // → Processing (BAC)
   },
   3: {
     step: "Step 3", title: "BAC Certification",
     accentColor: "#7c3aed", bannerBg: "bg-violet-50", bannerBorder: "border-violet-400",
-    nextStatus: "processing",
+    nextStatusId: 4, // → Processing (Budget)
   },
   4: {
     step: "Step 4", title: "Budget Earmarking",
     accentColor: "#b45309", bannerBg: "bg-amber-50",  bannerBorder: "border-amber-400",
-    nextStatus: "processing",
+    nextStatusId: 5, // → Processing (PARPO)
   },
   5: {
     step: "Step 5", title: "PARPO Approval",
     accentColor: "#065f46", bannerBg: "bg-emerald-50", bannerBorder: "border-emerald-400",
-    nextStatus: "approved",
+    nextStatusId: 6, // → Approved (add id 6 if needed, or reuse 5 for final)
   },
 };
 
@@ -84,22 +87,29 @@ const ROLE_META: Record<number, {
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const fmt  = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Fetch PR header whenever the modal opens — mirrors ViewPRModal's useEffect pattern */
+/** Fetch PR header + status lookup table whenever the modal opens */
 function usePRFetch(visible: boolean, record: ProcessRecord | null, onClose: () => void) {
-  const [header,  setHeader]  = useState<PRHeader | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [header,   setHeader]   = useState<PRHeader | null>(null);
+  const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [loading,  setLoading]  = useState(false);
 
   useEffect(() => {
     if (!visible || !record) return;
     setHeader(null);
     setLoading(true);
-    fetchPRWithItemsById(record.id)
-      .then(({ header }) => setHeader(header as unknown as PRHeader))
+    Promise.all([
+      fetchPRWithItemsById(record.id),
+      fetchPRStatuses(),
+    ])
+      .then(([{ header }, statusRows]) => {
+        setHeader(header as unknown as PRHeader);
+        setStatuses(statusRows);
+      })
       .catch((e: any) => { Alert.alert("Error", e?.message ?? "Could not load PR."); onClose(); })
       .finally(() => setLoading(false));
   }, [visible, record]);
 
-  return { header, loading };
+  return { header, statuses, loading };
 }
 
 // ─── Micro-components ─────────────────────────────────────────────────────────
@@ -142,13 +152,18 @@ function InfoBanner({ bg, border, children }: { bg: string; border: string; chil
   );
 }
 
-function PRSummaryCard({ header }: { header: PRHeader }) {
+function PRSummaryCard({ header, statuses }: { header: PRHeader; statuses: PRStatusRow[] }) {
+  const statusLabel = statuses.find((s) => s.id === header.status_id)?.status_name
+    ?? `Status #${header.status_id}`;
   const rows = [
-    { label: "PR No.",  value: header.pr_no,               mono: true  },
-    { label: "Section", value: header.office_section,       mono: false },
-    { label: "Purpose", value: header.purpose,              mono: false },
-    { label: "Amount",  value: `₱${fmt(header.total_cost)}`, mono: true  },
-    { label: "Status",  value: header.status,               mono: false },
+    { label: "PR No.",    value: header.pr_no,               mono: true  },
+    { label: "Section",   value: header.office_section,      mono: false },
+    { label: "Purpose",   value: header.purpose,             mono: false },
+    { label: "Amount",    value: `₱${fmt(header.total_cost)}`, mono: true  },
+    { label: "Status",    value: statusLabel,                 mono: false },
+    ...(header.proposal_no
+      ? [{ label: "Proposal", value: header.proposal_no, mono: true }]
+      : []),
   ];
   return (
     <View className="bg-white rounded-2xl border border-gray-200 p-4 mb-4"
@@ -239,7 +254,7 @@ function ModalFooter({ onCancel, onConfirm, confirmLabel, confirmingLabel, disab
 
 function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta              = ROLE_META[2];
-  const { header, loading } = usePRFetch(visible, record, onClose);
+  const { header, statuses, loading } = usePRFetch(visible, record, onClose);
   const [remarks, setRemarks] = useState("");
   const [saving,  setSaving]  = useState(false);
 
@@ -250,9 +265,9 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
     setSaving(true);
     try {
       const { error } = await supabase
-        .from("purchase_requests").update({ status: meta.nextStatus }).eq("id", record.id);
+        .from("purchase_requests").update({ status_id: meta.nextStatusId }).eq("id", record.id);
       if (error) throw error;
-      onProcessed(record.id, meta.nextStatus);
+      onProcessed(record.id, String(meta.nextStatusId));
       onClose();
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not process the PR.");
@@ -272,7 +287,7 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
               As <Text className="font-bold">Division Head</Text>, review and sign this PR to forward it
               to BAC for numbering and APP certification (Step 3).
             </InfoBanner>
-            {header && <PRSummaryCard header={header} />}
+            {header && <PRSummaryCard header={header} statuses={statuses} />}
             <SectionLabel>Your Action</SectionLabel>
             <Field label="Remarks / Notes" required>
               <StyledInput value={remarks} onChangeText={setRemarks}
@@ -294,7 +309,7 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
 
 function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[3];
-  const { header, loading } = usePRFetch(visible, record, onClose);
+  const { header, statuses, loading } = usePRFetch(visible, record, onClose);
   const [assignedPR, setAssignedPR] = useState("");
   const [appNo,       setAppNo]     = useState("");
   const [certNotes, setCertNotes] = useState("");
@@ -308,10 +323,10 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
     try {
       const { error } = await supabase
         .from("purchase_requests")
-        .update({ status: meta.nextStatus, pr_no: assignedPR.trim(), app_no: appNo.trim() || null })
+        .update({ status_id: meta.nextStatusId, pr_no: assignedPR.trim(), app_no: appNo.trim() || null })
         .eq("id", record.id);
       if (error) throw error;
-      onProcessed(record.id, meta.nextStatus);
+      onProcessed(record.id, String(meta.nextStatusId));
       onClose();
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not certify the PR.");
@@ -331,7 +346,7 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
               As <Text className="font-bold">BAC</Text>, assign the PR number and certify inclusion
               in the Annual Procurement Plan before forwarding to Budget (Step 4).
             </InfoBanner>
-            {header && <PRSummaryCard header={header} />}
+            {header && <PRSummaryCard header={header} statuses={statuses} />}
             <SectionLabel>BAC Action</SectionLabel>
             <Field label="PR Number" required>
               <StyledInput value={assignedPR} onChangeText={setAssignedPR} placeholder="e.g. 2026-PR-0042" />
@@ -359,16 +374,14 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
 
 function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[4];
-  const { header, loading } = usePRFetch(visible, record, onClose);
+  const { header, statuses, loading } = usePRFetch(visible, record, onClose);
   const [budgetNo,    setBudgetNo]    = useState("");
   const [papCode,     setPapCode]     = useState("");
   const [earmarkNote, setEarmarkNote] = useState("");
   const [saving,      setSaving]      = useState(false);
 
-  // Reset on open
   useEffect(() => { if (visible) { setBudgetNo(""); setPapCode(""); setEarmarkNote(""); } }, [visible]);
 
-  // Pre-fill existing values once loaded
   useEffect(() => {
     if (!header) return;
     if (header.budget_number) setBudgetNo(header.budget_number);
@@ -381,10 +394,10 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
     try {
       const { error } = await supabase
         .from("purchase_requests")
-        .update({ status: meta.nextStatus, budget_number: budgetNo.trim(), pap_code: papCode.trim() })
+        .update({ status_id: meta.nextStatusId, budget_number: budgetNo.trim(), pap_code: papCode.trim() })
         .eq("id", record.id);
       if (error) throw error;
-      onProcessed(record.id, meta.nextStatus);
+      onProcessed(record.id, String(meta.nextStatusId));
       onClose();
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not earmark the PR.");
@@ -404,7 +417,7 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
               As <Text className="font-bold">Budget Office</Text>, record the PPMP budget number and
               PAP/Activity code to earmark funds, then forward to PARPO for approval (Step 5).
             </InfoBanner>
-            {header && <PRSummaryCard header={header} />}
+            {header && <PRSummaryCard header={header} statuses={statuses} />}
             <SectionLabel>Earmarking Details</SectionLabel>
             <Field label="Budget Number (from PPMP)" required>
               <StyledInput value={budgetNo} onChangeText={setBudgetNo} placeholder="e.g. 2026-PPMP-0042" />
@@ -432,7 +445,7 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
 
 function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[5];
-  const { header, loading } = usePRFetch(visible, record, onClose);
+  const { header, statuses, loading } = usePRFetch(visible, record, onClose);
   const [notes, setNotes]   = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -444,10 +457,10 @@ function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMod
     try {
       const { error } = await supabase
         .from("purchase_requests")
-        .update({ status: meta.nextStatus })
+        .update({ status_id: meta.nextStatusId })
         .eq("id", record.id);
       if (error) throw error;
-      onProcessed(record.id, meta.nextStatus);
+      onProcessed(record.id, String(meta.nextStatusId));
       onClose();
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not approve the PR.");
@@ -467,7 +480,7 @@ function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMod
               As <Text className="font-bold">PARPO</Text>, review and approve this PR to complete Phase 1 and
               advance to Canvassing (Steps 6–10).
             </InfoBanner>
-            {header && <PRSummaryCard header={header} />}
+            {header && <PRSummaryCard header={header} statuses={statuses} />}
             <SectionLabel>Approval</SectionLabel>
             <Field label="Approval Notes">
               <StyledInput value={notes} onChangeText={setNotes} placeholder="e.g. Approved. Proceed to canvassing." multiline />

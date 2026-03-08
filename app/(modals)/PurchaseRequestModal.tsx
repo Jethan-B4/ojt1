@@ -13,11 +13,11 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import React, {
-    useCallback, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import {
-    Alert, Animated, Easing, KeyboardAvoidingView, Modal,
-    Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
+  Alert, Animated, Easing, KeyboardAvoidingView, Modal,
+  Platform, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import WebView from "react-native-webview";
 import type { PRItemRow, PRRow } from "../../lib/supabase";
@@ -41,6 +41,8 @@ export interface PRModalProps {
   visible: boolean;
   onClose: () => void;
   onSubmit: (payload: PRSubmitPayload) => void;
+  /** Logged-in user — division_name is used to auto-fill the read-only Office/Section field */
+  currentUser?: { division_name?: string | null; division_id?: number | null; [key: string]: any };
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -73,7 +75,7 @@ interface FormState {
   items: LineItem[]; budgetNumber: string; papCode: string; proposalNumber: string;
 }
 const emptyForm = (): FormState => ({
-  entityName: "DAR — CARAGA Region", fundCluster: "",
+  entityName: "DAR — Camarines Sur 1", fundCluster: "",
   officeSection: "", responsibilityCode: "", purpose: "",
   reqName: "", reqDesig: "",
   appName: "", appDesig: "",
@@ -398,11 +400,6 @@ function HighValueSection({ visible, justUnlocked, form, setField }: {
         <StyledInput value={form.papCode} onChangeText={(v) => setField("papCode", v)}
           placeholder="e.g. ARBDSP-2026-001" />
       </Field>
-
-  <Field label="Proposal Number" required>
-    <StyledInput value={form.proposalNumber} onChangeText={(v) => setField("proposalNumber", v)}
-      placeholder="e.g. 2026-PROP-00123" />
-  </Field>
     </Animated.View>
   );
 }
@@ -536,7 +533,7 @@ function ModalHeader({ isHighValue, prNo, onClose, tab, onTabChange, onPrint, on
 
 // ─── PurchaseRequestModal ─────────────────────────────────────────────────────
 
-export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProps) {
+export function PurchaseRequestModal({ visible, onClose, onSubmit, currentUser }: PRModalProps) {
   const [form, setForm]                 = useState<FormState>(emptyForm);
   const [nextId, setNextId]             = useState(2);
   const [justUnlocked, setJustUnlocked] = useState(false);
@@ -544,6 +541,13 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
   const prevHighValue = useRef(false);
   const scrollRef     = useRef<ScrollView>(null);
   const webRef        = useRef<WebView>(null);
+
+  // Seed Office/Section from the logged-in user's division — read-only, cannot be overridden
+  useEffect(() => {
+    if (visible && currentUser?.division_name) {
+      setForm((f) => ({ ...f, officeSection: currentUser.division_name! }));
+    }
+  }, [visible, currentUser?.division_name]);
 
   const setField   = useCallback((field: keyof FormState, value: string) =>
     setForm((f) => ({ ...f, [field]: value })), []);
@@ -563,8 +567,8 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
   );
   const isHighValue = total >= HIGH_VALUE_THRESHOLD;
   const hasItems    = form.items.some((i) => i.desc && i.qty && i.price);
-  const hvComplete  = !isHighValue || (!!form.budgetNumber && !!form.papCode && !!form.proposalNumber);
-  const isValid     = hasItems && hvComplete && !!form.officeSection && !!form.purpose;
+  const hvComplete  = !isHighValue || (!!form.budgetNumber && !!form.papCode);
+  const isValid     = hasItems && hvComplete && !!form.officeSection && !!form.purpose && !!form.proposalNumber;
 
   useEffect(() => {
     if (isHighValue && !prevHighValue.current) {
@@ -585,6 +589,11 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
   }, [visible]);
 
   useEffect(() => { if (visible && form.items.length === 0) addItem(); }, [visible]);
+  useEffect(() => {
+    if (visible && currentUser?.division_name && !form.officeSection) {
+      setForm((f) => ({ ...f, officeSection: currentUser.division_name || "" }));
+    }
+  }, [visible, currentUser?.division_name, form.officeSection]);
 
   // Build PDF HTML from live form state so preview always reflects current input
   const html = useMemo(() => buildPRHtml(
@@ -637,13 +646,15 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
       req_desig:      form.reqDesig     || null,
       app_name:       form.appName      || null,
       app_desig:      form.appDesig     || null,
+      app_no:         null,
       purpose:        form.purpose,
       total_cost:     total,
       is_high_value:  isHighValue,
-      status:         "pending",
+      status_id:      1,                         // 1 = "Pending" in pr_status table
       budget_number:  form.budgetNumber   || null,
       pap_code:       form.papCode        || null,
       proposal_file:  null,
+      proposal_no:    form.proposalNumber,       // always required
     };
 
     const items: Omit<PRItemRow, "id" | "pr_id">[] = form.items
@@ -718,10 +729,14 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit }: PRModalProp
               </Field>
             </View>
           </View>
-          <Field label="Office / Section" required>
-            <SelectTrigger value={form.officeSection} options={SECTIONS}
-              placeholder="Select section…" title="Office / Section"
-              onSelect={(v) => setField("officeSection", v)} />
+          <Field label="Office / Section" required hint="From your division">
+            <ReadonlyInput value={form.officeSection || currentUser?.division_name || "—"} />
+          </Field>
+
+          <SectionLabel>Proposal</SectionLabel>
+          <Field label="Proposal Number" required hint="Required for all PRs">
+            <StyledInput value={form.proposalNumber} onChangeText={(v) => setField("proposalNumber", v)}
+              placeholder="e.g. 2026-PROP-00123" />
           </Field>
 
           <SectionLabel>Items Requested</SectionLabel>

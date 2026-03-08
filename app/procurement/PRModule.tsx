@@ -406,15 +406,16 @@ export default function PRModule() {
         record={processRecord}
         roleId={roleId}
         onClose={() => { setProcessVisible(false); setProcessRecord(null); }}
-        onProcessed={(id, newStatus) =>
-          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, status: newStatus as any } : r))
-        }
+        onProcessed={(id, newStatus) => {
+          const s = newStatus === "1" ? "pending" : newStatus === "6" ? "approved" : "processing";
+          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, status: s as any } : r));
+        }}
       />
 
       {/* Create PR modal */}
       {prModalOpen && (
         <PurchaseRequestModal visible={prModalOpen}
-          onClose={() => setPrModalOpen(false)} onSubmit={handlePRSubmit} />
+          onClose={() => setPrModalOpen(false)} onSubmit={handlePRSubmit} currentUser={currentUser as any} />
       )}
 
       {/* Saving overlay */}

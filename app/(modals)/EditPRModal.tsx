@@ -9,6 +9,8 @@
  *     onClose={() => setEditVisible(false)} onSave={handlePRSave} />
  */
 
+import { fetchPRWithItemsById, updatePurchaseRequest } from "@/lib/supabase";
+import { toLineItemDisplay, toPRDisplay } from "@/types/model";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,8 +19,6 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import WebView from "react-native-webview";
-import { fetchPRWithItemsById, updatePurchaseRequest } from "../../lib/supabase";
-import { toLineItemDisplay, toPRDisplay } from "../../types/model";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ export interface PREditPayload {
   reqName: string; reqDesig: string;
   appName: string; appDesig: string;
   budgetNumber: string; papCode: string; proposalFileName: string;
+  proposalNo: string;   // always required
   items: EditLineItem[];
   totalCost: number;
 }
@@ -49,6 +50,8 @@ interface EditPRModalProps {
   record: PREditRecord | null;
   onClose: () => void;
   onSave: (payload: PREditPayload) => void;
+  /** Logged-in user — division_name is used to auto-fill the read-only Office/Section field */
+  currentUser?: { division_name?: string | null; [key: string]: any };
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -330,7 +333,7 @@ function TotalBar({ total, isHighValue }: { total: number; isHighValue: boolean 
 
 // ─── EditPRModal ──────────────────────────────────────────────────────────────
 
-export default function EditPRModal({ visible, record, onClose, onSave }: EditPRModalProps) {
+export default function EditPRModal({ visible, record, onClose, onSave, currentUser }: EditPRModalProps) {
   const scrollRef = useRef<ScrollView>(null);
   const webRef    = useRef<WebView>(null);
 
@@ -347,39 +350,37 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
   const [budgetNumber,       setBudgetNumber]        = useState("");
   const [papCode,            setPapCode]            = useState("");
   const [proposalFileName,   setProposalFileName]   = useState("");
+  const [proposalNo,         setProposalNo]         = useState("");
   const [items,              setItems]              = useState<EditLineItem[]>([]);
   const [nextId,             setNextId]             = useState(1);
   const [fileOpen,           setFileOpen]           = useState(false);
   const [saving,             setSaving]             = useState(false);
   const [loading,            setLoading]            = useState(false);
 
-  // Fetch full PR + items from Supabase whenever the modal opens.
-  // toPRDisplay / toLineItemDisplay are the canonical converters — same ones used by
-  // ViewPRModal and PRModule — so field names stay consistent across the whole app.
   useEffect(() => {
     if (!visible || !record) return;
     setTab("form");
     setLoading(true);
     fetchPRWithItemsById(record.id)
       .then(({ header: raw, items: rawItems }) => {
-        // ── Header: canonical display fields ──────────────────────────────
         const pr = toPRDisplay(raw);
-        setOfficeSection(pr.officeSection);
+        // Office/Section: always use the logged-in user's division (read-only)
+        setOfficeSection(currentUser?.division_name ?? pr.officeSection);
         setPurpose(pr.purpose);
 
-        // ── Header: procurement-only columns not in PRDisplay ─────────────
         setEntityName(raw.entity_name   ?? "DAR — CARAGA Region");
         setFundCluster(raw.fund_cluster ?? "");
         setResponsibilityCode(raw.resp_code     ?? "");
         setBudgetNumber(raw.budget_number       ?? "");
         setPapCode(raw.pap_code                 ?? "");
         setProposalFileName(raw.proposal_file   ?? "");
+        // proposal_no is now a top-level column on PRRow
+        setProposalNo((raw as any).proposal_no  ?? "");
         setReqName(raw.req_name   ?? "");
         setReqDesig(raw.req_desig ?? "");
         setAppName(raw.app_name   ?? "");
         setAppDesig(raw.app_desig ?? "");
 
-        // ── Line items: canonical display fields ──────────────────────────
         const seeded: EditLineItem[] = rawItems.length
           ? rawItems.map((it, idx) => {
               const li = toLineItemDisplay(it);
@@ -420,8 +421,8 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
     [items],
   );
   const isHighValue = total >= HIGH_VALUE_THRESHOLD;
-  const hvComplete  = !isHighValue || (!!budgetNumber && !!papCode && !!proposalFileName);
-  const isValid     = !!officeSection && !!purpose && items.some((i) => i.desc && i.qty && i.price) && hvComplete;
+  const hvComplete  = !isHighValue || (!!budgetNumber && !!papCode);
+  const isValid     = !!officeSection && !!purpose && !!proposalNo && items.some((i) => i.desc && i.qty && i.price) && hvComplete;
 
   const handleSave = useCallback(async () => {
     if (!record) return;
@@ -440,6 +441,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
           budget_number:  budgetNumber   || null,
           pap_code:       papCode        || null,
           proposal_file:  proposalFileName || null,
+          proposal_no:    proposalNo,
           req_name:       reqName        || null,
           req_desig:      reqDesig       || null,
           app_name:       appName        || null,
@@ -461,7 +463,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
         entityName, fundCluster,
         officeSection, responsibilityCode, purpose,
         reqName, reqDesig, appName, appDesig,
-        budgetNumber, papCode, proposalFileName,
+        budgetNumber, papCode, proposalFileName, proposalNo,
         items, totalCost: total,
       });
       onClose();
@@ -470,7 +472,7 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
     } finally {
       setSaving(false);
     }
-  }, [record, entityName, fundCluster, officeSection, responsibilityCode, purpose, reqName, reqDesig, appName, appDesig, budgetNumber, papCode, proposalFileName, items, total, onSave, onClose]);
+  }, [record, entityName, fundCluster, officeSection, responsibilityCode, purpose, reqName, reqDesig, appName, appDesig, budgetNumber, papCode, proposalFileName, proposalNo, items, total, onSave, onClose]);
 
   // Build PDF HTML from live form state so the preview always reflects current edits
   const html = useMemo(() => buildPRHtml(
@@ -602,12 +604,20 @@ export default function EditPRModal({ visible, record, onClose, onSave }: EditPR
               </Field>
             </View>
             <View className="flex-1">
-              <Field label="Office / Section" required>
-                <SelectTrigger value={officeSection} options={SECTIONS}
-                  placeholder="Select…" title="Office / Section" onSelect={setOfficeSection} />
+              <Field label="Office / Section" hint="From your division">
+                <View className="bg-gray-100 border border-gray-200 rounded-xl px-3.5 py-2.5">
+                  <Text className="text-[12.5px] text-gray-500" numberOfLines={1}>
+                    {officeSection || currentUser?.division_name || "—"}
+                  </Text>
+                </View>
               </Field>
             </View>
           </View>
+
+          <Field label="Proposal Number" required hint="Required for all PRs">
+            <StyledInput value={proposalNo} onChangeText={setProposalNo}
+              placeholder="e.g. 2026-PROP-00123" />
+          </Field>
 
           <Field label="Entity Name" required>
             <StyledInput value={entityName} onChangeText={setEntityName}

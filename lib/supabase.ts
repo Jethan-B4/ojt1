@@ -43,24 +43,32 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * ── Required Supabase tables ─────────────────────────────────────────────────
  *
  *  purchase_requests
- *  ┌─ id              uuid        PK  default gen_random_uuid()
+ *  ┌─ id              int8        PK  identity
  *  ├─ pr_no           text        UNIQUE NOT NULL
  *  ├─ entity_name     text
  *  ├─ fund_cluster    text
  *  ├─ office_section  text        NOT NULL
  *  ├─ resp_code       text
  *  ├─ purpose         text        NOT NULL
- *  ├─ total_cost      numeric     NOT NULL
+ *  ├─ total_cost      int8        NOT NULL
  *  ├─ is_high_value   boolean     NOT NULL default false
- *  ├─ status          text        NOT NULL default 'pending'
+ *  ├─ status_id       int8        FK → pr_status(id)  NOT NULL default 1
  *  ├─ budget_number   text
  *  ├─ pap_code        text
  *  ├─ proposal_file   text
+ *  ├─ proposal_no     text        NOT NULL  (always required from the proposals table)
  *  ├─ req_name        text
  *  ├─ req_desig       text
  *  ├─ app_name        text
  *  ├─ app_desig       text
+ *  ├─ app_no          text
  *  └─ created_at      timestamptz default now()
+ *
+ *  pr_status
+ *  ┌─ id              int8        PK identity
+ *  └─ status_name     text        NOT NULL
+ *     (1=Pending, 2=Processing(Division Head), 3=Processing(BAC),
+ *      4=Processing(Budget), 5=Processing(PARPO))
  *
  *  purchase_request_items
  *  ┌─ pr_item_id           uuid    PK  default gen_random_uuid()
@@ -75,20 +83,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
+/** Lookup row from the pr_status table. */
+export interface PRStatusRow {
+  id: number;           // 1–5
+  status_name: string;  // e.g. "Pending", "Processing (Division Head)", …
+}
+
 export interface PRRow {
-  entity_name: string;
-  fund_cluster: string;
   id: string;
   pr_no: string;
+  entity_name: string;
+  fund_cluster: string;
   office_section: string;
   resp_code: string;
   purpose: string;
   total_cost: number;
   is_high_value: boolean;
-  status: "draft" | "pending" | "approved" | "overdue" | "processing";
+  /** FK → pr_status.id  (1=Pending, 2=Division Head, 3=BAC, 4=Budget, 5=PARPO) */
+  status_id: number;
   budget_number: string | null;
   pap_code: string | null;
   proposal_file: string | null;
+  /** Proposal number — always required regardless of PR value */
+  proposal_no: string;
   req_name: string | null;
   req_desig: string | null;
   app_name: string | null;
@@ -130,6 +147,26 @@ export async function fetchPurchaseRequestsByDivision(divisionId: number): Promi
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Fetch all rows from the pr_status lookup table.
+ * Used by any component that needs to display or resolve a status label.
+ *
+ * Returns rows ordered by id:
+ *   1 → Pending
+ *   2 → Processing (Division Head)
+ *   3 → Processing (BAC)
+ *   4 → Processing (Budget)
+ *   5 → Processing (PARPO)
+ */
+export async function fetchPRStatuses(): Promise<PRStatusRow[]> {
+  const { data, error } = await supabase
+    .from("pr_status")
+    .select("id, status_name")
+    .order("id");
+  if (error) throw error;
+  return data as PRStatusRow[];
 }
 
 // Fetch PR header and items by header id
@@ -177,7 +214,8 @@ export async function insertPurchaseRequest(
     purpose:        pr.purpose,
     total_cost:     pr.total_cost,
     is_high_value:  pr.is_high_value,
-    status:         pr.status,
+    status_id:      pr.status_id,   // FK → pr_status.id (1 = Pending on creation)
+    proposal_no:    pr.proposal_no, // always required
   };
   if (pr.entity_name)    base.entity_name   = pr.entity_name;
   if (pr.fund_cluster)   base.fund_cluster  = pr.fund_cluster;
@@ -243,13 +281,15 @@ export async function updatePurchaseRequest(
 ): Promise<PRRow> {
   // Build update payload — only include defined, non-empty fields
   const patch: Record<string, any> = {};
-  if (pr.entity_name    !== undefined) patch.entity_name   = pr.entity_name    || null;
-  if (pr.fund_cluster   !== undefined) patch.fund_cluster  = pr.fund_cluster   || null;
+  if (pr.entity_name    !== undefined) patch.entity_name    = pr.entity_name    || null;
+  if (pr.fund_cluster   !== undefined) patch.fund_cluster   = pr.fund_cluster   || null;
   if (pr.office_section !== undefined) patch.office_section = pr.office_section;
   if (pr.resp_code      !== undefined) patch.resp_code      = pr.resp_code      || null;
   if (pr.purpose        !== undefined) patch.purpose        = pr.purpose;
   if (pr.total_cost     !== undefined) patch.total_cost     = pr.total_cost;
   if (pr.is_high_value  !== undefined) patch.is_high_value  = pr.is_high_value;
+  if (pr.status_id      !== undefined) patch.status_id      = pr.status_id;  // FK → pr_status.id
+  if (pr.proposal_no    !== undefined) patch.proposal_no    = pr.proposal_no;
   if (pr.budget_number  !== undefined) patch.budget_number  = pr.budget_number  || null;
   if (pr.pap_code       !== undefined) patch.pap_code       = pr.pap_code       || null;
   if (pr.proposal_file  !== undefined) patch.proposal_file  = pr.proposal_file  || null;
