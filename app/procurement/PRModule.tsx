@@ -6,24 +6,35 @@ import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/
 import ProcessPRModal, { type ProcessRecord } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import { fetchPurchaseRequests, fetchPurchaseRequestsByDivision, insertProposalForPR, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
+import { fetchPRStatuses, fetchPurchaseRequests, fetchPurchaseRequestsByDivision, insertProposalForPR, insertPurchaseRequest, type PRRow, type PRStatusRow } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SubTab   = "pr" | "canvass" | "abstract_of_awards";
-type PRStatus = "approved" | "pending" | "overdue" | "processing" | "draft";
+type SubTab = "pr" | "canvass" | "abstract_of_awards";
 
 type PRRecord = ReturnType<typeof toPRDisplay> & { itemDescription: string; quantity: number; elapsedTime: string };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<PRStatus, { dotClass: string; bgClass: string; textClass: string; label: string }> = {
-  approved:   { dotClass: "bg-green-500",  bgClass: "bg-green-50",  textClass: "text-green-700",  label: "Approved"   },
-  pending:    { dotClass: "bg-yellow-400", bgClass: "bg-yellow-50", textClass: "text-yellow-700", label: "Pending"    },
-  overdue:    { dotClass: "bg-red-500",    bgClass: "bg-red-50",    textClass: "text-red-700",    label: "Overdue"    },
-  processing: { dotClass: "bg-blue-500",   bgClass: "bg-blue-50",   textClass: "text-blue-700",   label: "Processing" },
-  draft:      { dotClass: "bg-gray-400",   bgClass: "bg-gray-100",  textClass: "text-gray-500",   label: "Draft"      },
+/**
+ * Visual config keyed by status_id (FK from pr_status table).
+ * Labels come from the live pr_status lookup; these are fallback UI colours only.
+ *
+ *   1 = Pending
+ *   2 = Processing (Division Head)
+ *   3 = Processing (BAC)
+ *   4 = Processing (Budget)
+ *   5 = Processing (PARPO)
+ *
+ * Any unknown id falls back to STATUS_FALLBACK below.
+ */
+const STATUS_CONFIG: Record<number, { dotClass: string; bgClass: string; textClass: string }> = {
+  1: { dotClass: "bg-yellow-400", bgClass: "bg-yellow-50",  textClass: "text-yellow-700" }, // Pending
+  2: { dotClass: "bg-blue-500",   bgClass: "bg-blue-50",    textClass: "text-blue-700"   }, // Processing (Div. Head)
+  3: { dotClass: "bg-violet-500", bgClass: "bg-violet-50",  textClass: "text-violet-700" }, // Processing (BAC)
+  4: { dotClass: "bg-orange-500", bgClass: "bg-orange-50",  textClass: "text-orange-700" }, // Processing (Budget)
+  5: { dotClass: "bg-green-500",  bgClass: "bg-green-50",   textClass: "text-green-700"  }, // Processing (PARPO)
 };
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
@@ -112,13 +123,19 @@ const FilterChips: React.FC<{ active: string; onSelect: (s: string) => void }> =
   </View>
 );
 
-const StatStrip: React.FC<{ records: PRRecord[] }> = ({ records }) => {
+const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({ records, statuses }) => {
+  // Build a label→count map using the live status table so labels stay in sync.
+  const countByStatus = records.reduce<Record<number, number>>((acc, r) => {
+    acc[r.statusId] = (acc[r.statusId] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const stats = [
-    { label: "Total",    value: String(records.length),                                        color: "text-[#1a4d2e]", bg: "bg-emerald-50" },
-    { label: "Approved", value: String(records.filter((r) => r.status === "approved").length), color: "text-green-700",  bg: "bg-green-50"  },
-    { label: "Pending",  value: String(records.filter((r) => r.status === "pending").length),  color: "text-amber-700",  bg: "bg-amber-50"  },
-    { label: "Overdue",  value: String(records.filter((r) => r.status === "overdue").length),  color: "text-red-700",    bg: "bg-red-50"    },
-    { label: "Amount",   value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,       color: "text-blue-700",   bg: "bg-blue-50"   },
+    { label: "Total",      value: String(records.length),                                   color: "text-[#1a4d2e]", bg: "bg-emerald-50" },
+    { label: "Pending",    value: String(countByStatus[1] ?? 0),                            color: "text-amber-700",  bg: "bg-amber-50"  },
+    { label: "Processing", value: String([2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)),
+                                                                                              color: "text-blue-700",   bg: "bg-blue-50"   },
+    { label: "Amount",     value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,  color: "text-violet-700", bg: "bg-violet-50" },
   ];
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -139,23 +156,28 @@ const StatStrip: React.FC<{ records: PRRecord[] }> = ({ records }) => {
 
 const STATUS_FALLBACK = { dotClass: "bg-gray-400", bgClass: "bg-gray-100", textClass: "text-gray-500" };
 
-const StatusPill: React.FC<{ status: string; elapsed: string }> = ({ status, elapsed }) => {
-  const cfg = STATUS_CONFIG[status as PRStatus] ?? STATUS_FALLBACK;
+const StatusPill: React.FC<{ statusId: number; label: string; elapsed: string }> = ({ statusId, label, elapsed }) => {
+  const cfg = STATUS_CONFIG[statusId] ?? STATUS_FALLBACK;
   return (
     <View className={`flex-row items-center gap-1.5 self-start px-2.5 py-1 rounded-full ${cfg.bgClass}`}>
       <View className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
-      <Text className={`text-[10.5px] font-bold ${cfg.textClass}`}>{elapsed}</Text>
+      <Text className={`text-[10.5px] font-bold ${cfg.textClass}`}>{label}</Text>
+      <View className="w-px h-2.5 bg-current opacity-30" />
+      <Text className={`text-[10px] font-semibold ${cfg.textClass} opacity-70`}>{elapsed}</Text>
     </View>
   );
 };
 
 const RecordCard: React.FC<{
   record: PRRecord; isEven: boolean; roleId: number;
+  statuses: PRStatusRow[];
   onView:    (r: PRRecord) => void;
   onEdit:    (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
   onMore:    (r: PRRecord) => void;
-}> = ({ record, isEven, roleId, onView, onEdit, onProcess, onMore }) => (
+}> = ({ record, isEven, roleId, statuses, onView, onEdit, onProcess, onMore }) => {
+  const statusLabel = statuses.find((s) => s.id === record.statusId)?.status_name ?? `Status ${record.statusId}`;
+  return (
   <View className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
     style={{ shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}>
     <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
@@ -163,7 +185,7 @@ const RecordCard: React.FC<{
         <Text className="text-[13px] font-bold text-[#1a4d2e] mb-0.5" style={{ fontFamily: MONO }}>{record.prNo}</Text>
         <Text className="text-[12.5px] text-gray-700 leading-5" numberOfLines={2}>{record.itemDescription}</Text>
       </View>
-      <StatusPill status={record.status} elapsed={record.elapsedTime} />
+      <StatusPill statusId={record.statusId} label={statusLabel} elapsed={record.elapsedTime} />
     </View>
     <View className="h-px bg-gray-100 mx-4" />
     <View className="flex-row items-center gap-3 px-4 py-2.5">
@@ -201,7 +223,8 @@ const RecordCard: React.FC<{
       </TouchableOpacity>
     </View>
   </View>
-);
+  );
+};
 
 const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   <View className="flex-1 items-center justify-center py-24 px-8">
@@ -223,6 +246,7 @@ export default function PRModule() {
   const [sectionFilter, setSectionFilter] = useState("All");
   const [page,          setPage]          = useState(1);
   const [records,       setRecords]       = useState<PRRecord[]>([]);
+  const [statuses,      setStatuses]      = useState<PRStatusRow[]>([]);
 
   // View PR modal state
   const [viewRecord,  setViewRecord]  = useState<PRRecord | null>(null);
@@ -244,7 +268,14 @@ export default function PRModule() {
   const [prModalOpen,   setPrModalOpen]   = useState(false);
   const [saving,        setSaving]        = useState(false);
 
-  // Load PRs — end-users see only their division's PRs; processing roles/admin see all
+  // Load PR status lookup table once — labels come from DB, not hardcoded strings.
+  useEffect(() => {
+    fetchPRStatuses()
+      .then(setStatuses)
+      .catch(() => {}); // non-fatal; StatusPill falls back to "Status N"
+  }, []);
+
+  // Load PRs — end-users see only their division's PRs; processing roles/admin see all.
   useEffect(() => {
     const load = async () => {
       try {
@@ -287,7 +318,7 @@ export default function PRModule() {
         officeSection: payload.pr.office_section,
         purpose: payload.pr.purpose,
         totalCost: payload.pr.total_cost,
-        status: "pending",
+        statusId: 1, // Pending — status_id 1 per pr_status table
         date: new Date().toLocaleDateString("en-PH"),
         // Extra display-only fields
         itemDescription: payload.pr.purpose,
@@ -335,7 +366,7 @@ export default function PRModule() {
     <View className="flex-1 bg-gray-50">
       <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
       <SearchBar value={searchQuery} onChange={(t) => { setSearchQuery(t); setPage(1); }} onCreatePress={handleOpenCreate} />
-      <StatStrip records={filtered} />
+      <StatStrip records={filtered} statuses={statuses} />
       <FilterChips active={sectionFilter} onSelect={(s) => { setSectionFilter(s); setPage(1); }} />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}
@@ -345,6 +376,7 @@ export default function PRModule() {
           ? <EmptyState label="No records found" />
           : paged.map((record, idx) => (
               <RecordCard key={record.id} record={record} isEven={idx % 2 === 0} roleId={roleId}
+                statuses={statuses}
                 onView={(r)    => { setViewRecord(r); setViewVisible(true); }}
                 onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
                 onProcess={(r) => { setProcessRecord({ id: r.id, prNo: r.prNo }); setProcessVisible(true); }}
@@ -414,9 +446,10 @@ export default function PRModule() {
         record={processRecord}
         roleId={roleId}
         onClose={() => { setProcessVisible(false); setProcessRecord(null); }}
-        onProcessed={(id, newStatus) => {
-          const s = newStatus === "1" ? "pending" : newStatus === "6" ? "approved" : "processing";
-          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, status: s as any } : r));
+        onProcessed={(id, newStatusId) => {
+          // newStatusId is the raw status_id integer from pr_status.
+          // Update the record in-place so the list reflects the new state immediately.
+          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, statusId: Number(newStatusId) } : r));
         }}
       />
 

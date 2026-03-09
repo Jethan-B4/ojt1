@@ -1,16 +1,16 @@
 import type { PRItemRow, PRRow } from "../lib/supabase";
 
-// Canonical PR status as stored in DB
-export type PRStatus = "draft" | "pending" | "approved" | "overdue" | "processing";
-
-// Minimal, canonical PR header for UI and PDFs
+// Minimal, canonical PR header for UI and PDFs.
+// statusId is the FK integer from pr_status (1=Pending … 5=Processing(PARPO)).
+// The human-readable label is resolved at render time from the live pr_status lookup.
 export interface PRDisplay {
   id: string;
   prNo: string;
   officeSection: string;
   purpose: string;
   totalCost: number;
-  status: PRStatus;
+  /** FK → pr_status.id  (1=Pending, 2=Div Head, 3=BAC, 4=Budget, 5=PARPO) */
+  statusId: number;
   date: string; // Derived from created_at (MM-DD-YYYY)
 }
 
@@ -27,21 +27,13 @@ export interface PRLineItem {
 // Map DB header → display header
 export function toPRDisplay(row: PRRow): PRDisplay {
   const created = row.created_at ? new Date(row.created_at) : new Date();
-  const status: PRStatus =
-    (row as any).status
-      ? (row as any).status
-      : (row.status_id === 1
-          ? "pending"
-          : (row.status_id === 2 || row.status_id === 3 || row.status_id === 4 || row.status_id === 5)
-              ? "processing"
-              : "approved");
   return {
     id: (row as any).id ?? (row as any).pr_id ?? "",
     prNo: row.pr_no,
     officeSection: row.office_section,
     purpose: row.purpose,
     totalCost: row.total_cost,
-    status,
+    statusId: row.status_id,
     date: created.toLocaleDateString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric" }),
   };
 }

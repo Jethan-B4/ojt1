@@ -24,7 +24,7 @@ import {
   Text, TouchableOpacity, View,
 } from "react-native";
 import WebView from "react-native-webview";
-import { fetchPRWithItemsById } from "../../lib/supabase";
+import { fetchPRStatuses, fetchPRWithItemsById, type PRStatusRow } from "../../lib/supabase";
 import { PRDisplay, PRLineItem, toLineItemDisplay, toPRDisplay } from "../../types/model";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -46,10 +46,24 @@ type LineItem = PRLineItem;
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const fmt  = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const STATUS_COLOR: Record<string, string> = {
-  approved: "#15803d", pending: "#b45309", overdue: "#dc2626",
-  processing: "#2563eb", draft: "#6b7280",
+/**
+ * Visual config keyed by status_id — mirrors PRModule exactly.
+ * Labels are never hardcoded here; they come from the live pr_status fetch.
+ *
+ *   1 = Pending
+ *   2 = Processing (Division Head)
+ *   3 = Processing (BAC)
+ *   4 = Processing (Budget)
+ *   5 = Processing (PARPO)
+ */
+const STATUS_CONFIG: Record<number, { dot: string; bg: string; text: string; hex: string }> = {
+  1: { dot: "#fbbf24", bg: "#fffbeb", text: "#92400e", hex: "#fbbf24" }, // yellow  — Pending
+  2: { dot: "#3b82f6", bg: "#eff6ff", text: "#1e40af", hex: "#3b82f6" }, // blue    — Div. Head
+  3: { dot: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6", hex: "#8b5cf6" }, // violet  — BAC
+  4: { dot: "#f97316", bg: "#fff7ed", text: "#9a3412", hex: "#f97316" }, // orange  — Budget
+  5: { dot: "#22c55e", bg: "#f0fdf4", text: "#166534", hex: "#22c55e" }, // green   — PARPO
 };
+const STATUS_FALLBACK = { dot: "#9ca3af", bg: "#f3f4f6", text: "#6b7280", hex: "#9ca3af" };
 
 // ─── Appendix 60 HTML builder (matches PRPreview.tsx / official template) ───────
 
@@ -192,11 +206,17 @@ interface ViewPRModalProps {
 }
 
 export default function ViewPRModal({ visible, record, onClose }: ViewPRModalProps) {
-  const [tab,     setTab]     = useState<"details" | "pdf">("details");
-  const [header,  setHeader]  = useState<PRRecord | null>(null);
-  const [items,   setItems]   = useState<LineItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [tab,      setTab]      = useState<"details" | "pdf">("details");
+  const [header,   setHeader]   = useState<PRRecord | null>(null);
+  const [items,    setItems]    = useState<LineItem[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
   const webRef = useRef<WebView>(null);
+
+  // Fetch status lookup once (non-blocking — labels fall back to "Status N")
+  useEffect(() => {
+    fetchPRStatuses().then(setStatuses).catch(() => {});
+  }, []);
 
   // Fetch line items whenever a new record is opened
   useEffect(() => {
@@ -230,9 +250,10 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
 
   if (!record) return null;
 
-  const hdr         = header ?? record;
-  const html        = buildPRHtml(hdr, items);
-  const statusColor = STATUS_COLOR[hdr.status] ?? "#6b7280";
+  const hdr        = header ?? record;
+  const html       = buildPRHtml(hdr, items);
+  const statusCfg  = STATUS_CONFIG[hdr.statusId] ?? STATUS_FALLBACK;
+  const statusLabel = statuses.find((s) => s.id === hdr.statusId)?.status_name ?? `Status ${hdr.statusId}`;
 
   const handlePrint = async () => {
     try { await Print.printAsync({ html }); } catch {}
@@ -273,8 +294,11 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
               </Text>
             </View>
             <View className="flex-row items-center gap-2">
-              <View className="px-3 py-1.5 rounded-full" style={{ backgroundColor: statusColor + "40" }}>
-                <Text className="text-[11px] font-bold text-white capitalize">{hdr.status}</Text>
+              {/* Status pill — colours and label driven by pr_status table */}
+              <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full"
+                style={{ backgroundColor: statusCfg.hex + "33" }}>
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusCfg.dot }} />
+                <Text className="text-[11px] font-bold text-white">{statusLabel}</Text>
               </View>
               <TouchableOpacity onPress={onClose} hitSlop={10}
                 className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
@@ -319,7 +343,7 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
             <Text className="text-[13px] text-gray-400">Loading PR details…</Text>
           </View>
         ) : tab === "details" ? (
-          <DetailsView record={hdr} items={items} />
+          <DetailsView record={hdr} items={items} statuses={statuses} />
         ) : (
           <WebView ref={webRef} source={{ html }} style={{ flex: 1 }}
             originWhitelist={["*"]} showsVerticalScrollIndicator={false} />
@@ -332,8 +356,9 @@ export default function ViewPRModal({ visible, record, onClose }: ViewPRModalPro
 
 // ─── Details tab ──────────────────────────────────────────────────────────────
 
-function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] }) {
-  const statusColor = STATUS_COLOR[record.status] ?? "#6b7280";
+function DetailsView({ record, items, statuses }: { record: PRRecord; items: LineItem[]; statuses: PRStatusRow[] }) {
+  const statusCfg   = STATUS_CONFIG[record.statusId] ?? STATUS_FALLBACK;
+  const statusLabel = statuses.find((s) => s.id === record.statusId)?.status_name ?? `Status ${record.statusId}`;
   return (
     <ScrollView className="flex-1 bg-gray-50"
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
@@ -348,8 +373,13 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
         <InfoRow label="Fund Cluster" value={record.fundCluster || "—"} />
         <InfoRow label="Section"      value={record.officeSection} />
         <InfoRow label="Resp. Code"   value={record.respCode    || "—"} />
-        <InfoRow label="Status"       value={record.status}
-          valueStyle={{ color: statusColor, fontWeight: "700", textTransform: "capitalize" }} />
+        <InfoRow label="Status" last={false}>
+          <View className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full self-start"
+            style={{ backgroundColor: statusCfg.bg }}>
+            <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusCfg.dot }} />
+            <Text className="text-[11.5px] font-bold" style={{ color: statusCfg.text }}>{statusLabel}</Text>
+          </View>
+        </InfoRow>
         <InfoRow label="Total Cost"   value={`₱${fmt(record.totalCost)}`}      mono />
       </View>
 
@@ -427,16 +457,19 @@ function DetailsView({ record, items }: { record: PRRecord; items: LineItem[] })
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 
-function InfoRow({ label, value, mono, last, valueStyle }: {
-  label: string; value: string; mono?: boolean; last?: boolean; valueStyle?: object;
+function InfoRow({ label, value, mono, last, valueStyle, children }: {
+  label: string; value?: string; mono?: boolean; last?: boolean; valueStyle?: object;
+  children?: React.ReactNode;
 }) {
   return (
     <View className={`flex-row items-center justify-between py-2.5 ${last ? "" : "border-b border-gray-100"}`}>
       <Text className="text-[11.5px] font-semibold text-gray-400">{label}</Text>
-      <Text className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
-        style={[mono ? { fontFamily: MONO } as object : {}, valueStyle ?? {}]}>
-        {value}
-      </Text>
+      {children ?? (
+        <Text className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
+          style={[mono ? { fontFamily: MONO } as object : {}, valueStyle ?? {}]}>
+          {value}
+        </Text>
+      )}
     </View>
   );
 }

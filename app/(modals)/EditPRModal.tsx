@@ -9,7 +9,7 @@
  *     onClose={() => setEditVisible(false)} onSave={handlePRSave} />
  */
 
-import { fetchPRWithItemsById, updatePurchaseRequest } from "@/lib/supabase";
+import { fetchPRStatuses, fetchPRWithItemsById, updatePurchaseRequest, type PRStatusRow } from "@/lib/supabase";
 import { toLineItemDisplay, toPRDisplay } from "@/types/model";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -79,6 +79,25 @@ const CLR  = {
 
 const makeItem = (id: number): EditLineItem => ({ id, desc: "", stock: "", unit: "", qty: "", price: "" });
 const fmtPHP   = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Visual config keyed by status_id — mirrors PRModule exactly.
+ * Labels are resolved at render time from the live pr_status fetch.
+ *
+ *   1 = Pending
+ *   2 = Processing (Division Head)
+ *   3 = Processing (BAC)
+ *   4 = Processing (Budget)
+ *   5 = Processing (PARPO)
+ */
+const STATUS_CONFIG: Record<number, { dot: string; bg: string; text: string; hex: string }> = {
+  1: { dot: "#fbbf24", bg: "#fffbeb", text: "#92400e", hex: "#fbbf24" }, // yellow  — Pending
+  2: { dot: "#3b82f6", bg: "#eff6ff", text: "#1e40af", hex: "#3b82f6" }, // blue    — Div. Head
+  3: { dot: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6", hex: "#8b5cf6" }, // violet  — BAC
+  4: { dot: "#f97316", bg: "#fff7ed", text: "#9a3412", hex: "#f97316" }, // orange  — Budget
+  5: { dot: "#22c55e", bg: "#f0fdf4", text: "#166534", hex: "#22c55e" }, // green   — PARPO
+};
+const STATUS_FALLBACK = { dot: "#9ca3af", bg: "#f3f4f6", text: "#6b7280", hex: "#9ca3af" };
 
 // ─── PDF HTML builder (mirrors ViewPRModal exactly) ───────────────────────────
 
@@ -356,6 +375,14 @@ export default function EditPRModal({ visible, record, onClose, onSave, currentU
   const [fileOpen,           setFileOpen]           = useState(false);
   const [saving,             setSaving]             = useState(false);
   const [loading,            setLoading]            = useState(false);
+  // Status — fetched from pr_status table; statusId comes from the PR row itself
+  const [statusId,           setStatusId]           = useState<number>(1);
+  const [statuses,           setStatuses]           = useState<PRStatusRow[]>([]);
+
+  // Fetch status lookup once — labels are never hardcoded
+  useEffect(() => {
+    fetchPRStatuses().then(setStatuses).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!visible || !record) return;
@@ -364,6 +391,8 @@ export default function EditPRModal({ visible, record, onClose, onSave, currentU
     fetchPRWithItemsById(record.id)
       .then(({ header: raw, items: rawItems }) => {
         const pr = toPRDisplay(raw);
+        // Seed status from the fetched PR row
+        setStatusId(raw.status_id ?? 1);
         // Office/Section: always use the logged-in user's division (read-only)
         setOfficeSection(currentUser?.division_name ?? pr.officeSection);
         setPurpose(pr.purpose);
@@ -537,17 +566,34 @@ export default function EditPRModal({ visible, record, onClose, onSave, currentU
             </TouchableOpacity>
           </View>
 
-          {/* PR number + value badge */}
+          {/* PR number · value badge · status pill */}
           <View className="flex-row items-center justify-between mb-3">
-            <View className="flex-row items-center gap-2 px-3 py-1.5 rounded-full"
+            {/* Value badge */}
+            <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full"
               style={{ backgroundColor: isHighValue ? "rgba(16,185,129,0.2)" : "rgba(82,183,136,0.25)" }}>
               <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CLR.brand100 }} />
               <Text className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: CLR.brand100 }}>
                 {isHighValue ? "High-Value · > ₱10,000" : "Standard · ≤ ₱10,000"}
               </Text>
             </View>
-            <View className="px-2.5 py-1 rounded-md bg-white/10 border border-white/20">
-              <Text className="text-[10.5px] text-white/50" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
+
+            <View className="flex-row items-center gap-2">
+              {/* Live status pill — colour + label from pr_status table */}
+              {(() => {
+                const cfg   = STATUS_CONFIG[statusId] ?? STATUS_FALLBACK;
+                const label = statuses.find((s) => s.id === statusId)?.status_name ?? `Status ${statusId}`;
+                return (
+                  <View className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full"
+                    style={{ backgroundColor: cfg.hex + "33" }}>
+                    <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
+                    <Text className="text-[10.5px] font-bold text-white">{label}</Text>
+                  </View>
+                );
+              })()}
+              {/* PR number */}
+              <View className="px-2.5 py-1 rounded-md bg-white/10 border border-white/20">
+                <Text className="text-[10.5px] text-white/50" style={{ fontFamily: MONO }}>{record?.prNo || "N/A"}</Text>
+              </View>
             </View>
           </View>
 
