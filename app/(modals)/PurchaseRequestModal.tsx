@@ -35,6 +35,7 @@ export interface PRSubmitPayload {
   items: Omit<PRItemRow, "id" | "pr_id">[];
   prNo: string;
   proposalNo: string;
+  divisionId: number;
 }
 
 export interface PRModalProps {
@@ -634,11 +635,12 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, currentUser }
   // ── Build Supabase-ready payload on submit ────────────────────────────────
 
   const handleSubmit = useCallback(() => {
-    const prNo = `DRAFT-${Date.now()}`;
+    const prNo = `DRAFT-${Date.now().toString(36).toUpperCase()}`;
 
     const pr: Omit<PRRow, "id" | "created_at"> = {
       pr_no:          prNo,
       office_section: form.officeSection,
+      division_id:    currentUser?.division_id || 0,
       resp_code:      form.responsibilityCode,
       entity_name:    form.entityName,
       fund_cluster:   form.fundCluster,
@@ -668,7 +670,7 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, currentUser }
         subtotal:    parseFloat(i.qty) * parseFloat(i.price),
       }));
 
-    onSubmit({ pr, items, prNo, proposalNo: form.proposalNumber });
+    onSubmit({ pr, items, prNo, proposalNo: form.proposalNumber, divisionId: currentUser?.division_id || 0 });
     onClose();
   }, [form, total, isHighValue, onSubmit, onClose]);
 

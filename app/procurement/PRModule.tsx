@@ -6,7 +6,7 @@ import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/
 import ProcessPRModal, { type ProcessRecord } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import { fetchPurchaseRequests, insertProposalForPR, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
+import { fetchPurchaseRequests, fetchPurchaseRequestsByDivision, insertProposalForPR, insertPurchaseRequest, type PRRow } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -244,12 +244,20 @@ export default function PRModule() {
   const [prModalOpen,   setPrModalOpen]   = useState(false);
   const [saving,        setSaving]        = useState(false);
 
-  // Load on mount
+  // Load PRs — end-users see only their division's PRs; processing roles/admin see all
   useEffect(() => {
-    fetchPurchaseRequests()
-      .then((rows) => { if (rows.length > 0) setRecords(rows.map((r) => rowToRecord(r))); })
-      .catch(() => {});
-  }, []);
+    const load = async () => {
+      try {
+        const rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
+          ? await fetchPurchaseRequests()
+          : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
+        if (rows.length > 0) setRecords(rows.map((r) => rowToRecord(r)));
+      } catch {
+        // ignore
+      }
+    };
+    load();
+  }, [roleId, currentUser?.division_id]);
 
   // Navigate to Canvassing sub-tab
   useEffect(() => {
@@ -263,10 +271,10 @@ export default function PRModule() {
 
   const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
     setSaving(true);
-      try {
+    try {
       const saved = await insertPurchaseRequest(payload.pr, payload.items);
       try {
-        await insertProposalForPR(saved.id, payload.proposalNo, currentUser?.division_id);
+        await insertProposalForPR(saved.id, payload.proposalNo, payload.divisionId);
       } catch {}
       setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
       setPage(1);

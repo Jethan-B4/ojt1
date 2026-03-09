@@ -94,6 +94,7 @@ export interface PRRow {
   pr_no: string;
   entity_name: string;
   fund_cluster: string;
+  division_id?: number | null;
   office_section: string;
   resp_code: string;
   purpose: string;
@@ -216,6 +217,7 @@ export async function insertPurchaseRequest(
     is_high_value:  pr.is_high_value,
     status_id:      pr.status_id,   // FK → pr_status.id (1 = Pending on creation)
     proposal_no:    pr.proposal_no, // always required
+    division_id:    pr.division_id,
   };
   if (pr.entity_name)    base.entity_name   = pr.entity_name;
   if (pr.fund_cluster)   base.fund_cluster  = pr.fund_cluster;
@@ -281,6 +283,7 @@ export async function updatePurchaseRequest(
 ): Promise<PRRow> {
   // Build update payload — only include defined, non-empty fields
   const patch: Record<string, any> = {};
+  if (pr.division_id   !== undefined) patch.division_id   = pr.division_id;
   if (pr.entity_name    !== undefined) patch.entity_name    = pr.entity_name    || null;
   if (pr.fund_cluster   !== undefined) patch.fund_cluster   = pr.fund_cluster   || null;
   if (pr.office_section !== undefined) patch.office_section = pr.office_section;
