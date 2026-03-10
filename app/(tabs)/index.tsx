@@ -5,7 +5,6 @@ import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
 import { useAuth } from '../AuthContext';
 
 export default function ReactScreen() {
@@ -56,7 +55,9 @@ export default function ReactScreen() {
         </ThemedText>
       </ThemedView>
       <ThemedView className="mb-2 gap-2">
-        <Link href="/modal">
+
+        {/* Sample Modal - DELETED */}
+        {/* <Link href="/modal">
           <Link.Trigger>
             <ThemedText type="subtitle">Step 2: Explore</ThemedText>
           </Link.Trigger>
@@ -77,7 +78,7 @@ export default function ReactScreen() {
               />
             </Link.Menu>
           </Link.Menu>
-        </Link>
+        </Link> */}
 
         <ThemedText>
           {`Tap the Explore tab to learn more about what's included in this starter app.`}

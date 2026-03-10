@@ -9,7 +9,6 @@ import { Image } from "expo-image";
 import React, { useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 
-import type { CanvassingPR } from "@/types/canvassing";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
 import CanvassingModule from "./CanvassingModule";
@@ -18,21 +17,21 @@ import ReactScreen from "./index";
 import ProcurementScreen from "./procurement";
 
 // ─── CanvassingScreen wrapper ─────────────────────────────────────────────────
-// Adapts the Drawer's navigation system to CanvassingModule's props.
+// Bridges the Drawer navigation system to CanvassingModule.
 //
-// Called from ProcurementContent after a PR is approved:
-//   navigation.navigate("Canvassing", { prRecord: <CanvassingPR> })
+// Navigate here from PRModule / ProcessPRModal when a PR reaches status_id 6:
+//   navigation.navigate("Canvassing", { prNo: row.pr_no })
 //
-// Called directly from the Drawer (no params) → uses built-in placeholder.
+// Opening from the Drawer with no params shows the built-in placeholder PR.
 function CanvassingScreen({ navigation, route }: any) {
-  const prRecord: CanvassingPR | undefined = route?.params?.prRecord;
+  const prNo: string | undefined = route?.params?.prNo;
   return (
     <CanvassingModule
-      prRecord={prRecord}
+      prNo={prNo}
       onBack={() => navigation.goBack()}
       onComplete={(payload) => {
-        // Surface completed session back to ProcurementContent so it can
-        // advance the PR from Phase 1 → Phase 2.
+        // Surface completed canvass payload back to Procurement so it can
+        // advance the PR from Canvassing (status_id 6) → AAA (status_id 7).
         navigation.navigate("Procurement", { canvassPayload: payload });
       }}
     />

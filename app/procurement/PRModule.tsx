@@ -6,7 +6,7 @@ import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/
 import ProcessPRModal, { type ProcessRecord } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import { fetchPRStatuses, fetchPurchaseRequests, fetchPurchaseRequestsByDivision, insertProposalForPR, insertPurchaseRequest, type PRRow, type PRStatusRow } from "../../lib/supabase";
+import { fetchCanvassablePRs, fetchCanvassablePRsByDivision, fetchPRStatuses, fetchPurchaseRequests, fetchPurchaseRequestsByDivision, insertProposalForPR, insertPurchaseRequest, type PRRow, type PRStatusRow } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +35,8 @@ const STATUS_CONFIG: Record<number, { dotClass: string; bgClass: string; textCla
   3: { dotClass: "bg-violet-500", bgClass: "bg-violet-50",  textClass: "text-violet-700" }, // Processing (BAC)
   4: { dotClass: "bg-orange-500", bgClass: "bg-orange-50",  textClass: "text-orange-700" }, // Processing (Budget)
   5: { dotClass: "bg-green-500",  bgClass: "bg-green-50",   textClass: "text-green-700"  }, // Processing (PARPO)
+  6: { dotClass: "bg-emerald-500",bgClass: "bg-emerald-50", textClass: "text-emerald-700"}, // Canvassing & Resolution
+  7: { dotClass: "bg-teal-500",   bgClass: "bg-teal-50",    textClass: "text-teal-700"   }, // AAA
 };
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
@@ -275,26 +277,29 @@ export default function PRModule() {
       .catch(() => {}); // non-fatal; StatusPill falls back to "Status N"
   }, []);
 
-  // Load PRs — end-users see only their division's PRs; processing roles/admin see all.
+  // Load PRs by subtab
   useEffect(() => {
     const load = async () => {
       try {
-        const rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
-          ? await fetchPurchaseRequests()
-          : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
-        if (rows.length > 0) setRecords(rows.map((r) => rowToRecord(r)));
-      } catch {
-        // ignore
-      }
+        let rows: PRRow[] = [];
+        if (activeSubTab === "pr") {
+          rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
+            ? await fetchPurchaseRequests()
+            : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
+        } else if (activeSubTab === "canvass") {
+          rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
+            ? await fetchCanvassablePRs()
+            : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
+        } else {
+          rows = []; // Abstract of awards subtab will populate later
+        }
+        setRecords(rows.map((r) => rowToRecord(r)));
+      } catch {}
     };
     load();
-  }, [roleId, currentUser?.division_id]);
+  }, [activeSubTab, roleId, currentUser?.division_id]);
 
-  // Navigate to Canvassing sub-tab
-  useEffect(() => {
-    if (activeSubTab === "canvass")
-      (navigation as any).navigate("Canvassing" as never, { role: "bac" } as never);
-  }, [activeSubTab, navigation]);
+  // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
   const handleOpenCreate = useCallback(() => {
     setPrModalOpen(true);
@@ -379,7 +384,22 @@ export default function PRModule() {
                 statuses={statuses}
                 onView={(r)    => { setViewRecord(r); setViewVisible(true); }}
                 onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
-                onProcess={(r) => { setProcessRecord({ id: r.id, prNo: r.prNo }); setProcessVisible(true); }}
+                onProcess={(r) => {
+                  if (activeSubTab === "canvass") {
+                    const mapRole = (id: number) => id === 3 ? "bac" : id === 7 ? "canvasser" : "enduser";
+                    (navigation as any).navigate("Canvassing" as never, { role: mapRole(roleId), prRecord: {
+                      prNo: r.prNo,
+                      date: r.date,
+                      officeSection: r.officeSection,
+                      responsibilityCode: "", // optional
+                      purpose: r.itemDescription,
+                      isHighValue: false,
+                      items: [], // load inside Canvassing via Supabase if needed
+                    } } as never);
+                  } else {
+                    setProcessRecord({ id: r.id, prNo: r.prNo }); setProcessVisible(true);
+                  }
+                }}
                 onMore={(r)    => { setMoreRecord(r); setMoreVisible(true); }} />
             ))}
       </ScrollView>

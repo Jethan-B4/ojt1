@@ -80,6 +80,65 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  ├─ unit_price   numeric NOT NULL
  *  └─ subtotal     numeric NOT NULL
  */
+ /**
+  * Canvassing (Phase 2) — proposed tables (inputs and outputs)
+  *
+  * canvass_sessions
+  * ┌─ id             int8      PK  identity
+  * ├─ pr_id          int8      FK → purchase_requests.id
+  * ├─ stage          text      ENUM-like: "pr_received" | "release_canvass" | "collect_canvass" | "bac_resolution" | "aaa_preparation"
+  * ├─ released_by    int8      FK → users.id (BAC staff who released)
+  * ├─ deadline       timestamptz  due date for canvass return (Step 7/8)
+  * ├─ status         text      "open" | "closed" | "draft"
+  * ├─ created_at     timestamptz default now()
+  * ├─ updated_at     timestamptz
+  *
+  * canvasser_assignments
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ division_id    int8      FK → divisions.division_id
+  * ├─ canvasser_id   int8      FK → users.id (per division canvasser)
+  * ├─ released_at    timestamptz (Step 7)
+  * ├─ returned_at    timestamptz (Step 8)
+  * ├─ status         text      "released" | "returned"
+  *
+  * canvass_entries  (supplier quotations)
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ item_no        int8      index in PR items
+  * ├─ description    text
+  * ├─ unit           text
+  * ├─ quantity       numeric
+  * ├─ supplier_name  text
+  * ├─ unit_price     numeric
+  * ├─ total_price    numeric
+  * ├─ is_winning     boolean   resolved at Step 9/10
+  * ├─ created_at     timestamptz
+  *
+  * bac_resolution
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ resolution_no  text
+  * ├─ prepared_by    int8      FK → users.id
+  * ├─ resolved_at    timestamptz (Step 9)
+  * ├─ notes          text
+  *
+  * aaa_documents
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ aaa_no         text
+  * ├─ prepared_by    int8      FK → users.id
+  * ├─ prepared_at    timestamptz (Step 10)
+  * ├─ file_url       text (optional storage link)
+  *
+  * Inputs (from Phase 1 → Phase 2):
+  *  • purchase_requests header (id, pr_no, purpose, division_id, items)
+  * Outputs (Phase 2):
+  *  • canvasser_assignments release records (Step 7/8)
+  *  • canvass_entries supplier quotations (Step 8)
+  *  • bac_resolution decision (Step 9)
+  *  • aaa_documents prepared AAA (Step 10)
+  */
 
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
@@ -148,6 +207,25 @@ export async function fetchPurchaseRequestsByDivision(divisionId: number): Promi
 
   if (error) throw error;
   return data;
+}
+
+export async function fetchCanvassablePRs(): Promise<PRRow[]> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("status_id", 6);
+  if (error) throw error;
+  return data as PRRow[];
+}
+
+export async function fetchCanvassablePRsByDivision(divisionId: number): Promise<PRRow[]> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("status_id", 6)
+    .eq("division_id", divisionId);
+  if (error) throw error;
+  return data as PRRow[];
 }
 
 /**
@@ -327,4 +405,230 @@ export async function updatePurchaseRequest(
   }
 
   return data;
+}
+
+// ─── Canvassing · Types & Helpers (Phase 2 scaffolding) ───────────────────────
+
+export interface CanvassSessionRow {
+  id: string;
+  pr_id: string;
+  stage: string;
+  status: string;
+  released_by?: number | null;
+  deadline?: string | null;
+  bac_no?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CanvasserAssignmentRow {
+  id: string;
+  session_id: string;
+  division_id: number;
+  canvasser_id?: number | null;
+  released_at?: string | null;
+  returned_at?: string | null;
+  status: "released" | "returned";
+}
+
+export interface CanvassEntryRow {
+  id: string;
+  session_id: string;
+  item_no: number;
+  description: string;
+  unit: string;
+  quantity: number;
+  supplier_name: string;
+  unit_price: number;
+  total_price: number;
+  is_winning?: boolean | null;
+  created_at?: string;
+}
+
+export interface BACResolutionRow {
+  id: string;
+  session_id: string;
+  resolution_no: string;
+  prepared_by: number;
+  mode?: string | null;
+  resolved_at?: string | null;
+  notes?: string | null;
+}
+
+export interface AAADocumentRow {
+  id: string;
+  session_id: string;
+  aaa_no: string;
+  prepared_by: number;
+  prepared_at?: string | null;
+  file_url?: string | null;
+}
+
+export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("id")
+    .eq("pr_no", prNo)
+    .single();
+  if (error) return null;
+  return (data as any)?.id ?? null;
+}
+
+export async function ensureCanvassSession(
+  prId: string,
+  initial?: Partial<CanvassSessionRow>
+): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .select("*")
+    .eq("pr_id", prId);
+  if (error) throw error;
+  if (Array.isArray(data) && data.length > 0) return data[0] as CanvassSessionRow;
+  const payload: Record<string, any> = {
+    pr_id: prId,
+    stage: initial?.stage ?? "pr_received",
+    status: initial?.status ?? "open",
+  };
+  if (initial?.released_by !== undefined) payload.released_by = initial.released_by;
+  if (initial?.deadline     !== undefined) payload.deadline     = initial.deadline;
+  if (initial?.bac_no       !== undefined) payload.bac_no       = initial.bac_no;
+  const { data: created, error: insErr } = await supabase
+    .from("canvass_sessions")
+    .insert(payload)
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return created as CanvassSessionRow;
+}
+
+export async function updateCanvassStage(sessionId: string, stage: string): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .update({ stage, updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvassSessionRow;
+}
+
+export async function updateCanvassSessionMeta(
+  sessionId: string,
+  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>
+): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvassSessionRow;
+}
+
+export async function fetchDivisionIdByName(name: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("division_id")
+    .eq("division_name", name)
+    .single();
+  if (error) return null;
+  return (data as any)?.division_id ?? null;
+}
+
+export async function insertAssignmentsForDivisions(
+  sessionId: string,
+  assignments: Array<{ division_id: number; canvasser_id?: number; released_at?: string }>
+): Promise<CanvasserAssignmentRow[]> {
+  if (!assignments.length) return [];
+  const rows = assignments.map(a => ({
+    session_id: sessionId,
+    division_id: a.division_id,
+    canvasser_id: a.canvasser_id ?? null,
+    released_at: a.released_at ?? new Date().toISOString(),
+    status: "released" as const,
+  }));
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow[];
+}
+
+export async function markAssignmentReturned(
+  sessionId: string,
+  division_id: number,
+  returned_at?: string
+): Promise<CanvasserAssignmentRow> {
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .update({
+      returned_at: returned_at ?? new Date().toISOString(),
+      status: "returned",
+    })
+    .eq("session_id", sessionId)
+    .eq("division_id", division_id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow;
+}
+
+export async function insertSupplierQuotesForSession(
+  sessionId: string,
+  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>
+): Promise<CanvassEntryRow[]> {
+  if (!quotes.length) return [];
+  const rows = quotes.map(q => ({ ...q, session_id: sessionId }));
+  const { data, error } = await supabase
+    .from("canvass_entries")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data as CanvassEntryRow[];
+}
+
+export async function fetchAssignmentsForSession(sessionId: string): Promise<CanvasserAssignmentRow[]> {
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  return data as CanvasserAssignmentRow[];
+}
+
+export async function fetchQuotesForSession(sessionId: string): Promise<CanvassEntryRow[]> {
+  const { data, error } = await supabase
+    .from("canvass_entries")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  return data as CanvassEntryRow[];
+}
+
+export async function insertBACResolution(
+  sessionId: string,
+  payload: Omit<BACResolutionRow, "id" | "session_id">
+): Promise<BACResolutionRow> {
+  const { data, error } = await supabase
+    .from("bac_resolution")
+    .insert({ ...payload, session_id: sessionId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as BACResolutionRow;
+}
+
+export async function insertAAAForSession(
+  sessionId: string,
+  payload: Omit<AAADocumentRow, "id" | "session_id">
+): Promise<AAADocumentRow> {
+  const { data, error } = await supabase
+    .from("aaa_documents")
+    .insert({ ...payload, session_id: sessionId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AAADocumentRow;
 }
