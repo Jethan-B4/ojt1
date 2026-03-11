@@ -11,9 +11,9 @@ import { Pressable, Text, TouchableOpacity, View } from "react-native";
 
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
+import BudgetScreen from "./budget";
 import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
-import ReactScreen from "./index";
 import ProcurementScreen from "./procurement";
 
 // ─── CanvassingScreen wrapper ─────────────────────────────────────────────────
@@ -68,10 +68,12 @@ export default function TabLayout() {
           options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="space-dashboard" size={size} color={color} /> }} />
         <Drawer.Screen name="Procurement" component={ProcurementScreen}
           options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="shopping-bag" size={size} color={color} /> }} />
-        <Drawer.Screen name="React" component={ReactScreen}
-          options={{ title: "Explore", drawerIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} /> }} />
-        <Drawer.Screen name="Canvassing" component={CanvassingScreen}
-          options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} />
+        <Drawer.Screen name="Budget" component={BudgetScreen}
+          options={{ title: "Budget", drawerIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} /> }} />
+        {/* <Drawer.Screen name="React" component={ReactScreen}
+          options={{ title: "Explore", drawerIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} /> }} /> */}
+        {/* <Drawer.Screen name="Canvassing" component={CanvassingScreen}
+          options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} /> */}
 
       </Drawer.Navigator>
 

@@ -632,3 +632,169 @@ export async function insertAAAForSession(
   if (error) throw error;
   return data as AAADocumentRow;
 }
+
+
+// ──── Budget additions ────────────────────────────────────────────────────────────────
+// ─── Budget Module · Types & Helpers ─────────────────────────────────────────
+// Append these exports to the bottom of lib/supabase.ts
+
+export interface DivisionBudgetRow {
+  id: string;
+  division_id: number;
+  fiscal_year: number;
+  allocated: number;
+  utilized: number;        // auto-updated by DB trigger from approved ORS entries
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined from divisions table (select with division_name)
+  division_name?: string;
+}
+
+export interface OrsEntryRow {
+  id: string;
+  ors_no: string;          // e.g. ORS-2026-0145
+  pr_id: string | null;
+  pr_no: string | null;
+  division_id: number | null;
+  fiscal_year: number;
+  amount: number;
+  status: "Pending" | "Processing" | "Approved" | "Rejected";
+  prepared_by: number | null;
+  approved_by: number | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined
+  division_name?: string;
+}
+
+// ── Fetch all budget rows for a fiscal year, joined with division name ────────
+
+export async function fetchBudgets(fiscalYear: number): Promise<DivisionBudgetRow[]> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .select("*, divisions(division_name)")
+    .eq("fiscal_year", fiscalYear)
+    .order("division_id");
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  })) as DivisionBudgetRow[];
+}
+
+export async function fetchBudgetByDivision(
+  divisionId: number,
+  fiscalYear: number
+): Promise<DivisionBudgetRow | null> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .select("*, divisions(division_name)")
+    .eq("division_id", divisionId)
+    .eq("fiscal_year", fiscalYear)
+    .single();
+  if (error) return null;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+// ── Upsert a division's allocated budget (Budget / Admin only) ────────────────
+
+export async function upsertDivisionBudget(
+  divisionId: number,
+  fiscalYear: number,
+  allocated: number,
+  notes?: string
+): Promise<DivisionBudgetRow> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .upsert(
+      { division_id: divisionId, fiscal_year: fiscalYear, allocated, notes: notes ?? null },
+      { onConflict: "division_id, fiscal_year" }
+    )
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+// ── ORS helpers ───────────────────────────────────────────────────────────────
+
+export async function fetchOrsEntries(
+  fiscalYear: number,
+  divisionId?: number
+): Promise<OrsEntryRow[]> {
+  let q = supabase
+    .from("ors_entries")
+    .select("*, divisions(division_name)")
+    .eq("fiscal_year", fiscalYear)
+    .order("created_at", { ascending: false });
+  if (divisionId !== undefined) q = q.eq("division_id", divisionId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  })) as OrsEntryRow[];
+}
+
+export async function insertOrsEntry(
+  entry: Omit<OrsEntryRow, "id" | "created_at" | "updated_at" | "division_name">
+): Promise<OrsEntryRow> {
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .insert(entry)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function updateOrsStatus(
+  orsId: string,
+  status: OrsEntryRow["status"],
+  approvedBy?: number
+): Promise<OrsEntryRow> {
+  const patch: Record<string, any> = { status };
+  if (approvedBy !== undefined) patch.approved_by = approvedBy;
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .update(patch)
+    .eq("id", orsId)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function updateOrsEntry(
+  orsId: string,
+  patch: Partial<Pick<OrsEntryRow, "ors_no" | "pr_no" | "amount" | "status" | "notes" | "approved_by">>
+): Promise<OrsEntryRow> {
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .update(patch)
+    .eq("id", orsId)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function deleteOrsEntry(orsId: string): Promise<void> {
+  const { error } = await supabase.from("ors_entries").delete().eq("id", orsId);
+  if (error) throw error;
+}
+
+// ── Generate next ORS number for current year ─────────────────────────────────
+
+export async function generateOrsNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { count, error } = await supabase
+    .from("ors_entries")
+    .select("*", { count: "exact", head: true })
+    .like("ors_no", `ORS-${year}-%`);
+  if (error) throw error;
+  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  return `ORS-${year}-${seq}`;
+}

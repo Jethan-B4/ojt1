@@ -372,7 +372,9 @@ export default function PRModule() {
       <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
       <SearchBar value={searchQuery} onChange={(t) => { setSearchQuery(t); setPage(1); }} onCreatePress={handleOpenCreate} />
       <StatStrip records={filtered} statuses={statuses} />
-      <FilterChips active={sectionFilter} onSelect={(s) => { setSectionFilter(s); setPage(1); }} />
+      {roleId !== 6 && (
+        <FilterChips active={sectionFilter} onSelect={(s) => { setSectionFilter(s); setPage(1); }} />
+      )}
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 16 }}
