@@ -19,12 +19,14 @@
 
 import type { PRStatusRow } from "@/lib/supabase";
 import { fetchPRStatuses, fetchPRWithItemsById, supabase } from "@/lib/supabase";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView,
   Modal, Platform, ScrollView, Text, TextInput,
   TouchableOpacity, View,
 } from "react-native";
+import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,204 @@ const ROLE_META: Record<number, {
     nextStatusId: 6, // → Approved (add id 6 if needed, or reuse 5 for final)
   },
 };
+
+// ─── Status flags ─────────────────────────────────────────────────────────────
+
+export type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
+
+interface FlagMeta {
+  label:       string;
+  desc:        string;
+  icon:        keyof typeof MaterialIcons.glyphMap;
+  bg:          string;   // NativeWind bg class
+  text:        string;   // NativeWind text class
+  border:      string;   // NativeWind border class
+  dot:         string;   // hex for the indicator dot
+}
+
+export const STATUS_FLAGS: Record<StatusFlag, FlagMeta> = {
+  complete: {
+    label: "Complete",
+    desc:  "All information is correct and complete.",
+    icon:  "check-circle",
+    bg: "bg-emerald-50",  text: "text-emerald-800", border: "border-emerald-300", dot: "#10b981",
+  },
+  incomplete_info: {
+    label: "Incomplete Info",
+    desc:  "Required fields or attachments are missing.",
+    icon:  "info",
+    bg: "bg-amber-50",    text: "text-amber-800",   border: "border-amber-300",   dot: "#f59e0b",
+  },
+  wrong_information: {
+    label: "Wrong Information",
+    desc:  "Submitted data contains errors that must be corrected.",
+    icon:  "cancel",
+    bg: "bg-red-50",      text: "text-red-800",     border: "border-red-300",     dot: "#ef4444",
+  },
+  needs_revision: {
+    label: "Needs Revision",
+    desc:  "Minor corrections needed before forwarding.",
+    icon:  "edit",
+    bg: "bg-blue-50",     text: "text-blue-800",    border: "border-blue-300",    dot: "#3b82f6",
+  },
+  on_hold: {
+    label: "On Hold",
+    desc:  "Processing paused pending clarification.",
+    icon:  "pause-circle-filled",
+    bg: "bg-gray-100",    text: "text-gray-700",    border: "border-gray-300",    dot: "#6b7280",
+  },
+  urgent: {
+    label: "Urgent",
+    desc:  "Requires immediate attention.",
+    icon:  "priority-high",
+    bg: "bg-orange-50",   text: "text-orange-800",  border: "border-orange-300",  dot: "#f97316",
+  },
+};
+
+const FLAG_ORDER: StatusFlag[] = [
+  "complete", "incomplete_info", "wrong_information",
+  "needs_revision", "on_hold", "urgent",
+];
+
+// ─── Remark insert helper ─────────────────────────────────────────────────────
+
+export async function insertRemark(
+  prId:       string,
+  userId:     number | string,
+  remark:     string,
+  statusFlag: StatusFlag | null,
+): Promise<void> {
+  const { error } = await supabase.from("remarks").insert({
+    pr_id:       prId,
+    user_id:     userId,
+    remark:      remark.trim(),
+    status_flag: statusFlag ?? null,
+  });
+  if (error) throw error;
+}
+
+// ─── StatusFlagPicker ─────────────────────────────────────────────────────────
+
+export function StatusFlagPicker({
+  visible, selected, onSelect, onClose,
+}: {
+  visible:  boolean;
+  selected: StatusFlag | null;
+  onSelect: (f: StatusFlag | null) => void;
+  onClose:  () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity
+        className="flex-1 justify-center items-center bg-black/50"
+        activeOpacity={1} onPress={onClose}>
+        {/* Stop tap-through to backdrop */}
+        <TouchableOpacity activeOpacity={1}>
+          <View className="bg-white rounded-3xl overflow-hidden"
+            style={{ width: 300, shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.18, shadowRadius: 16, elevation: 12 }}>
+
+            {/* Header */}
+            <View className="bg-gray-900 px-4 py-3">
+              <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
+                Processing Flag
+              </Text>
+              <Text className="text-[16px] font-extrabold text-white">Select Status Flag</Text>
+            </View>
+
+            {/* None option */}
+            <TouchableOpacity
+              onPress={() => { onSelect(null); onClose(); }}
+              activeOpacity={0.7}
+              className={`flex-row items-center gap-3 px-4 py-3 ${selected === null ? "bg-gray-50" : ""}`}
+              style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
+              <View className="w-7 h-7 rounded-full bg-gray-100 items-center justify-center">
+                <MaterialIcons name="remove" size={14} color="#6b7280" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-[13px] font-semibold text-gray-500">No flag</Text>
+                <Text className="text-[10.5px] text-gray-400">Leave flag unset</Text>
+              </View>
+              {selected === null && <MaterialIcons name="check" size={15} color="#10b981" />}
+            </TouchableOpacity>
+
+            {/* Flag options */}
+            {FLAG_ORDER.map((key) => {
+              const m          = STATUS_FLAGS[key];
+              const isSelected = selected === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  onPress={() => { onSelect(key); onClose(); }}
+                  activeOpacity={0.7}
+                  className={`flex-row items-center gap-3 px-4 py-3 ${isSelected ? m.bg : ""}`}
+                  style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
+                  {/* Colored icon */}
+                  <View className={`w-7 h-7 rounded-full items-center justify-center ${isSelected ? "" : "bg-gray-100"}`}
+                    style={isSelected ? { backgroundColor: m.dot + "22" } : undefined}>
+                    <MaterialIcons name={m.icon} size={15}
+                      color={isSelected ? m.dot : "#9ca3af"} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className={`text-[13px] font-bold ${isSelected ? m.text : "text-gray-700"}`}>
+                      {m.label}
+                    </Text>
+                    <Text className="text-[10.5px] text-gray-400 leading-4" numberOfLines={1}>
+                      {m.desc}
+                    </Text>
+                  </View>
+                  {isSelected && <MaterialIcons name="check" size={15} color={m.dot} />}
+                </TouchableOpacity>
+              );
+            })}
+
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── FlagButton — the trigger shown inside each modal form ────────────────────
+
+export function FlagButton({
+  selected, onPress,
+}: {
+  selected: StatusFlag | null;
+  onPress:  () => void;
+}) {
+  const m = selected ? STATUS_FLAGS[selected] : null;
+  return (
+    <TouchableOpacity
+      onPress={onPress} activeOpacity={0.8}
+      className={`flex-row items-center justify-between rounded-xl px-3.5 py-2.5 border ${
+        m ? `${m.bg} ${m.border}` : "bg-white border-gray-200"
+      }`}>
+      <View className="flex-row items-center gap-2.5">
+        {m ? (
+          <View className="w-6 h-6 rounded-full items-center justify-center"
+            style={{ backgroundColor: m.dot + "22" }}>
+            <MaterialIcons name={m.icon} size={13} color={m.dot} />
+          </View>
+        ) : (
+          <View className="w-6 h-6 rounded-full bg-gray-100 items-center justify-center">
+            <MaterialIcons name="flag" size={13} color="#9ca3af" />
+          </View>
+        )}
+        <Text className={`text-[13px] font-semibold ${m ? m.text : "text-gray-400"}`}>
+          {m ? m.label : "No flag set"}
+        </Text>
+      </View>
+      <MaterialIcons name="keyboard-arrow-down" size={16} color={m ? m.dot : "#9ca3af"} />
+    </TouchableOpacity>
+  );
+}
 
 // ─── Shared utilities ─────────────────────────────────────────────────────────
 
@@ -254,16 +454,20 @@ function ModalFooter({ onCancel, onConfirm, confirmLabel, confirmingLabel, disab
 
 function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta              = ROLE_META[2];
+  const { currentUser }   = useAuth();
   const { header, statuses, loading } = usePRFetch(visible, record, onClose);
-  const [remarks, setRemarks] = useState("");
-  const [saving,  setSaving]  = useState(false);
+  const [remarks,    setRemarks]    = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen,   setFlagOpen]   = useState(false);
+  const [saving,     setSaving]     = useState(false);
 
-  useEffect(() => { if (visible) setRemarks(""); }, [visible]);
+  useEffect(() => { if (visible) { setRemarks(""); setStatusFlag(null); } }, [visible]);
 
   const handleSign = async () => {
     if (!record || !remarks.trim()) return;
     setSaving(true);
     try {
+      await insertRemark(record.id, currentUser!.id, remarks, statusFlag);
       const { error } = await supabase
         .from("purchase_requests").update({ status_id: meta.nextStatusId }).eq("id", record.id);
       if (error) throw error;
@@ -276,32 +480,41 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
 
   if (!record) return null;
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
-        {loading ? <LoadingBody color={meta.accentColor} /> : (
-          <ScrollView className="flex-1 bg-gray-50"
-            contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-              As <Text className="font-bold">Division Head</Text>, review and sign this PR to forward it
-              to BAC for numbering and APP certification (Step 3).
-            </InfoBanner>
-            {header && <PRSummaryCard header={header} statuses={statuses} />}
-            <SectionLabel>Your Action</SectionLabel>
-            <Field label="Remarks / Notes" required>
-              <StyledInput value={remarks} onChangeText={setRemarks}
-                placeholder="e.g. Approved for procurement. Forward to BAC." multiline />
-            </Field>
-          </ScrollView>
-        )}
-        <ModalFooter
-          onCancel={onClose} onConfirm={handleSign}
-          confirmLabel="Sign & Forward to BAC" confirmingLabel="Signing…"
-          disabled={!remarks.trim() || loading} saving={saving} color={meta.accentColor}
-        />
-      </KeyboardAvoidingView>
-    </Modal>
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
+          {loading ? <LoadingBody color={meta.accentColor} /> : (
+            <ScrollView className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
+                As <Text className="font-bold">Division Head</Text>, review and sign this PR to forward it
+                to BAC for numbering and APP certification (Step 3).
+              </InfoBanner>
+              {header && <PRSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>Your Action</SectionLabel>
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="Remarks / Notes" required>
+                <StyledInput value={remarks} onChangeText={setRemarks}
+                  placeholder="e.g. Approved for procurement. Forward to BAC." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose} onConfirm={handleSign}
+            confirmLabel="Sign & Forward to BAC" confirmingLabel="Signing…"
+            disabled={!remarks.trim() || loading} saving={saving} color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen} selected={statusFlag}
+        onSelect={setStatusFlag} onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
 
@@ -309,18 +522,26 @@ function DivisionHeadModal({ visible, record, onClose, onProcessed }: Omit<Proce
 
 function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[3];
+  const { currentUser }     = useAuth();
   const { header, statuses, loading } = usePRFetch(visible, record, onClose);
-  const [assignedPR, setAssignedPR] = useState("");
-  const [appNo,       setAppNo]     = useState("");
-  const [certNotes, setCertNotes] = useState("");
-  const [saving,    setSaving]    = useState(false);
+  const [assignedPR,  setAssignedPR]  = useState("");
+  const [appNo,       setAppNo]       = useState("");
+  const [certNotes,   setCertNotes]   = useState("");
+  const [statusFlag,  setStatusFlag]  = useState<StatusFlag | null>(null);
+  const [flagOpen,    setFlagOpen]    = useState(false);
+  const [saving,      setSaving]      = useState(false);
 
-  useEffect(() => { if (visible) { setAssignedPR(""); setAppNo(""); setCertNotes(""); } }, [visible]);
+  useEffect(() => {
+    if (visible) { setAssignedPR(""); setAppNo(""); setCertNotes(""); setStatusFlag(null); }
+  }, [visible]);
 
   const handleCertify = async () => {
     if (!record || !assignedPR.trim()) return;
     setSaving(true);
     try {
+      if (certNotes.trim()) {
+        await insertRemark(record.id, currentUser!.id, certNotes, statusFlag);
+      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({ status_id: meta.nextStatusId, pr_no: assignedPR.trim(), app_no: appNo.trim() || null })
@@ -335,38 +556,47 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
 
   if (!record) return null;
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
-        {loading ? <LoadingBody color={meta.accentColor} /> : (
-          <ScrollView className="flex-1 bg-gray-50"
-            contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-              As <Text className="font-bold">BAC</Text>, assign the PR number and certify inclusion
-              in the Annual Procurement Plan before forwarding to Budget (Step 4).
-            </InfoBanner>
-            {header && <PRSummaryCard header={header} statuses={statuses} />}
-            <SectionLabel>BAC Action</SectionLabel>
-            <Field label="PR Number" required>
-              <StyledInput value={assignedPR} onChangeText={setAssignedPR} placeholder="e.g. 2026-PR-0042" />
-            </Field>
-            <Field label="APP Number">
-              <StyledInput value={appNo} onChangeText={setAppNo} placeholder="e.g. 2026-APP-0042" />
-            </Field>
-            <Field label="Certification Notes">
-              <StyledInput value={certNotes} onChangeText={setCertNotes}
-                placeholder="e.g. Included in APP Q1 2026. Forwarding to Budget." multiline />
-            </Field>
-          </ScrollView>
-        )}
-        <ModalFooter
-          onCancel={onClose} onConfirm={handleCertify}
-          confirmLabel="Assign PR & Forward to Budget" confirmingLabel="Certifying…"
-          disabled={!assignedPR.trim() || loading} saving={saving} color={meta.accentColor}
-        />
-      </KeyboardAvoidingView>
-    </Modal>
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
+          {loading ? <LoadingBody color={meta.accentColor} /> : (
+            <ScrollView className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
+                As <Text className="font-bold">BAC</Text>, assign the PR number and certify inclusion
+                in the Annual Procurement Plan before forwarding to Budget (Step 4).
+              </InfoBanner>
+              {header && <PRSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>BAC Action</SectionLabel>
+              <Field label="PR Number" required>
+                <StyledInput value={assignedPR} onChangeText={setAssignedPR} placeholder="e.g. 2026-PR-0042" />
+              </Field>
+              <Field label="APP Number">
+                <StyledInput value={appNo} onChangeText={setAppNo} placeholder="e.g. 2026-APP-0042" />
+              </Field>
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="Certification Notes">
+                <StyledInput value={certNotes} onChangeText={setCertNotes}
+                  placeholder="e.g. Included in APP Q1 2026. Forwarding to Budget." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose} onConfirm={handleCertify}
+            confirmLabel="Assign PR & Forward to Budget" confirmingLabel="Certifying…"
+            disabled={!assignedPR.trim() || loading} saving={saving} color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen} selected={statusFlag}
+        onSelect={setStatusFlag} onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
 
@@ -374,13 +604,18 @@ function BACModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModal
 
 function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[4];
+  const { currentUser }     = useAuth();
   const { header, statuses, loading } = usePRFetch(visible, record, onClose);
   const [budgetNo,    setBudgetNo]    = useState("");
   const [papCode,     setPapCode]     = useState("");
   const [earmarkNote, setEarmarkNote] = useState("");
+  const [statusFlag,  setStatusFlag]  = useState<StatusFlag | null>(null);
+  const [flagOpen,    setFlagOpen]    = useState(false);
   const [saving,      setSaving]      = useState(false);
 
-  useEffect(() => { if (visible) { setBudgetNo(""); setPapCode(""); setEarmarkNote(""); } }, [visible]);
+  useEffect(() => {
+    if (visible) { setBudgetNo(""); setPapCode(""); setEarmarkNote(""); setStatusFlag(null); }
+  }, [visible]);
 
   useEffect(() => {
     if (!header) return;
@@ -392,6 +627,9 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
     if (!record || !budgetNo.trim() || !papCode.trim()) return;
     setSaving(true);
     try {
+      if (earmarkNote.trim()) {
+        await insertRemark(record.id, currentUser!.id, earmarkNote, statusFlag);
+      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({ status_id: meta.nextStatusId, budget_number: budgetNo.trim(), pap_code: papCode.trim() })
@@ -406,38 +644,47 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
 
   if (!record) return null;
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
-        {loading ? <LoadingBody color={meta.accentColor} /> : (
-          <ScrollView className="flex-1 bg-gray-50"
-            contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-              As <Text className="font-bold">Budget Office</Text>, record the PPMP budget number and
-              PAP/Activity code to earmark funds, then forward to PARPO for approval (Step 5).
-            </InfoBanner>
-            {header && <PRSummaryCard header={header} statuses={statuses} />}
-            <SectionLabel>Earmarking Details</SectionLabel>
-            <Field label="Budget Number (from PPMP)" required>
-              <StyledInput value={budgetNo} onChangeText={setBudgetNo} placeholder="e.g. 2026-PPMP-0042" />
-            </Field>
-            <Field label="PAP / Activity Code" required>
-              <StyledInput value={papCode} onChangeText={setPapCode} placeholder="e.g. ARBDSP-2026-001" />
-            </Field>
-            <Field label="Earmarking Notes">
-              <StyledInput value={earmarkNote} onChangeText={setEarmarkNote}
-                placeholder="e.g. Funds available under MFO 2. Forwarding to PARPO." multiline />
-            </Field>
-          </ScrollView>
-        )}
-        <ModalFooter
-          onCancel={onClose} onConfirm={handleEarmark}
-          confirmLabel="Earmark & Forward to PARPO" confirmingLabel="Recording…"
-          disabled={!budgetNo.trim() || !papCode.trim() || loading} saving={saving} color={meta.accentColor}
-        />
-      </KeyboardAvoidingView>
-    </Modal>
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
+          {loading ? <LoadingBody color={meta.accentColor} /> : (
+            <ScrollView className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
+                As <Text className="font-bold">Budget Office</Text>, record the PPMP budget number and
+                PAP/Activity code to earmark funds, then forward to PARPO for approval (Step 5).
+              </InfoBanner>
+              {header && <PRSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>Earmarking Details</SectionLabel>
+              <Field label="Budget Number (from PPMP)" required>
+                <StyledInput value={budgetNo} onChangeText={setBudgetNo} placeholder="e.g. 2026-PPMP-0042" />
+              </Field>
+              <Field label="PAP / Activity Code" required>
+                <StyledInput value={papCode} onChangeText={setPapCode} placeholder="e.g. ARBDSP-2026-001" />
+              </Field>
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="Earmarking Notes">
+                <StyledInput value={earmarkNote} onChangeText={setEarmarkNote}
+                  placeholder="e.g. Funds available under MFO 2. Forwarding to PARPO." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose} onConfirm={handleEarmark}
+            confirmLabel="Earmark & Forward to PARPO" confirmingLabel="Recording…"
+            disabled={!budgetNo.trim() || !papCode.trim() || loading} saving={saving} color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen} selected={statusFlag}
+        onSelect={setStatusFlag} onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
 
@@ -445,16 +692,22 @@ function BudgetModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMo
 
 function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRModalProps, "roleId">) {
   const meta                = ROLE_META[5];
+  const { currentUser }     = useAuth();
   const { header, statuses, loading } = usePRFetch(visible, record, onClose);
-  const [notes, setNotes]   = useState("");
-  const [saving, setSaving] = useState(false);
+  const [notes,      setNotes]      = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen,   setFlagOpen]   = useState(false);
+  const [saving,     setSaving]     = useState(false);
 
-  useEffect(() => { if (visible) setNotes(""); }, [visible]);
+  useEffect(() => { if (visible) { setNotes(""); setStatusFlag(null); } }, [visible]);
 
   const handleApprove = async () => {
     if (!record) return;
     setSaving(true);
     try {
+      if (notes.trim()) {
+        await insertRemark(record.id, currentUser!.id, notes, statusFlag);
+      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({ status_id: meta.nextStatusId })
@@ -469,31 +722,41 @@ function PARPOModal({ visible, record, onClose, onProcessed }: Omit<ProcessPRMod
 
   if (!record) return null;
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
-        {loading ? <LoadingBody color={meta.accentColor} /> : (
-          <ScrollView className="flex-1 bg-gray-50"
-            contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-            keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-              As <Text className="font-bold">PARPO</Text>, review and approve this PR to complete Phase 1 and
-              advance to Canvassing (Steps 6–10).
-            </InfoBanner>
-            {header && <PRSummaryCard header={header} statuses={statuses} />}
-            <SectionLabel>Approval</SectionLabel>
-            <Field label="Approval Notes">
-              <StyledInput value={notes} onChangeText={setNotes} placeholder="e.g. Approved. Proceed to canvassing." multiline />
-            </Field>
-          </ScrollView>
-        )}
-        <ModalFooter
-          onCancel={onClose} onConfirm={handleApprove}
-          confirmLabel="Approve PR" confirmingLabel="Approving…"
-          disabled={loading} saving={saving} color={meta.accentColor}
-        />
-      </KeyboardAvoidingView>
-    </Modal>
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
+          {loading ? <LoadingBody color={meta.accentColor} /> : (
+            <ScrollView className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
+                As <Text className="font-bold">PARPO</Text>, review and approve this PR to complete Phase 1 and
+                advance to Canvassing (Steps 6–10).
+              </InfoBanner>
+              {header && <PRSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>Approval</SectionLabel>
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="Approval Notes">
+                <StyledInput value={notes} onChangeText={setNotes}
+                  placeholder="e.g. Approved. Proceed to canvassing." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose} onConfirm={handleApprove}
+            confirmLabel="Approve PR" confirmingLabel="Approving…"
+            disabled={loading} saving={saving} color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen} selected={statusFlag}
+        onSelect={setStatusFlag} onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
 

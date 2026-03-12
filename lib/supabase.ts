@@ -56,29 +56,83 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  ├─ budget_number   text
  *  ├─ pap_code        text
  *  ├─ proposal_file   text
- *  ├─ proposal_no     text        NOT NULL  (always required from the proposals table)
+ *  ├─ proposal_no     text        NOT NULL
  *  ├─ req_name        text
  *  ├─ req_desig       text
  *  ├─ app_name        text
  *  ├─ app_desig       text
  *  ├─ app_no          text
+ *  ├─ division_id     int8        FK → divisions(division_id)
  *  └─ created_at      timestamptz default now()
  *
  *  pr_status
  *  ┌─ id              int8        PK identity
  *  └─ status_name     text        NOT NULL
  *     (1=Pending, 2=Processing(Division Head), 3=Processing(BAC),
- *      4=Processing(Budget), 5=Processing(PARPO))
+ *      4=Processing(Budget), 5=Processing(PARPO),
+ *      6=Canvassing & Resolution, 7=AAA)
  *
  *  purchase_request_items
- *  ┌─ pr_item_id           uuid    PK  default gen_random_uuid()
- *  ├─ pr_id        uuid    NOT NULL references purchase_requests(pr_id) on delete cascade
- *  ├─ description  text    NOT NULL
+ *  ┌─ id           int8     PK  identity
+ *  ├─ pr_id        int8     FK → purchase_requests(id) ON DELETE CASCADE
+ *  ├─ description  text     NOT NULL
  *  ├─ stock_no     text
  *  ├─ unit         text
- *  ├─ quantity     numeric NOT NULL
- *  ├─ unit_price   numeric NOT NULL
- *  └─ subtotal     numeric NOT NULL
+ *  ├─ quantity     numeric  NOT NULL
+ *  ├─ unit_price   numeric  NOT NULL
+ *  └─ subtotal     numeric  NOT NULL
+ *
+ *  divisions
+ *  ┌─ division_id    int8   PK identity
+ *  └─ division_name  text   NOT NULL
+ *
+ *  users
+ *  ┌─ id          int8   PK identity
+ *  ├─ username    text   NOT NULL
+ *  ├─ email       text
+ *  ├─ role_id     int8   FK → roles(role_id)
+ *  └─ division_id int8   FK → divisions(division_id)
+ *
+ *  roles
+ *  ┌─ role_id    int8  PK
+ *  └─ role_name  text  NOT NULL
+ *     (1=Admin, 2=Division Head, 3=BAC, 4=Budget, 5=PARPO, 6=End User, 7=Canvasser)
+ *
+ *  remarks
+ *  ┌─ id           int8        PK identity
+ *  ├─ pr_id        int8        FK → purchase_requests(id)   NOT NULL
+ *  ├─ user_id      int8        FK → users(id)               NOT NULL
+ *  ├─ remark       text        NOT NULL
+ *  ├─ status_flag  text        CHECK(status_flag IN (
+ *  │                'complete','incomplete_info','wrong_information',
+ *  │                'needs_revision','on_hold','urgent'))   nullable
+ *  └─ created_at   timestamptz default now()
+ *
+ *  division_budgets
+ *  ┌─ id           int8        PK identity
+ *  ├─ division_id  int8        FK → divisions(division_id)  NOT NULL
+ *  ├─ fiscal_year  int4        NOT NULL
+ *  ├─ allocated    numeric     NOT NULL default 0
+ *  ├─ utilized     numeric     NOT NULL default 0  (auto via trigger from approved ORS)
+ *  ├─ notes        text
+ *  ├─ created_at   timestamptz default now()
+ *  ├─ updated_at   timestamptz
+ *  └─ UNIQUE(division_id, fiscal_year)
+ *
+ *  ors_entries
+ *  ┌─ id           int8        PK identity
+ *  ├─ ors_no       text        UNIQUE NOT NULL
+ *  ├─ pr_id        int8        FK → purchase_requests(id)   nullable
+ *  ├─ pr_no        text        nullable
+ *  ├─ division_id  int8        FK → divisions(division_id)  nullable
+ *  ├─ fiscal_year  int4        NOT NULL
+ *  ├─ amount       numeric     NOT NULL
+ *  ├─ status       text        CHECK('Pending'|'Processing'|'Approved'|'Rejected')
+ *  ├─ prepared_by  int8        FK → users(id)               nullable
+ *  ├─ approved_by  int8        FK → users(id)               nullable
+ *  ├─ notes        text        nullable
+ *  ├─ created_at   timestamptz default now()
+ *  └─ updated_at   timestamptz
  */
  /**
   * Canvassing (Phase 2) — proposed tables (inputs and outputs)
@@ -634,9 +688,7 @@ export async function insertAAAForSession(
 }
 
 
-// ──── Budget additions ────────────────────────────────────────────────────────────────
 // ─── Budget Module · Types & Helpers ─────────────────────────────────────────
-// Append these exports to the bottom of lib/supabase.ts
 
 export interface DivisionBudgetRow {
   id: string;
@@ -700,18 +752,43 @@ export async function fetchBudgetByDivision(
 
 // ── Upsert a division's allocated budget (Budget / Admin only) ────────────────
 
-export async function upsertDivisionBudget(
+/** Create a brand-new division budget allocation row (from CreateAllocModal). */
+export async function insertDivisionBudget(
   divisionId: number,
   fiscalYear: number,
   allocated: number,
-  notes?: string
+  notes?: string,
 ): Promise<DivisionBudgetRow> {
   const { data, error } = await supabase
     .from("division_budgets")
-    .upsert(
-      { division_id: divisionId, fiscal_year: fiscalYear, allocated, notes: notes ?? null },
-      { onConflict: "division_id, fiscal_year" }
-    )
+    .insert({
+      division_id: divisionId,
+      fiscal_year: fiscalYear,
+      allocated,
+      notes: notes ?? null,
+    })
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+/** Update an existing allocation row by its primary key (from AllocModal). */
+export async function updateDivisionBudget(
+  id: string,
+  fiscalYear: number,
+  allocated: number,
+  notes?: string,
+): Promise<DivisionBudgetRow> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .update({
+      fiscal_year: fiscalYear,
+      allocated,
+      notes: notes ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
@@ -797,4 +874,123 @@ export async function generateOrsNumber(): Promise<string> {
   if (error) throw error;
   const seq = String((count ?? 0) + 1).padStart(4, "0");
   return `ORS-${year}-${seq}`;
+}
+
+// ─── Divisions ────────────────────────────────────────────────────────────────
+
+export interface DivisionRow {
+  division_id:   number;
+  division_name: string | null;
+}
+
+/** Fetch all divisions ordered by name. Used by CreateAllocModal and any
+ *  component that needs the full division list regardless of budget data. */
+export async function fetchAllDivisions(): Promise<DivisionRow[]> {
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("division_id, division_name")
+    .order("division_name");
+  if (error) throw error;
+  return (data ?? []) as DivisionRow[];
+}
+
+// ─── Remarks ──────────────────────────────────────────────────────────────────
+
+/** Valid status_flag values — must match the CHECK constraint in the DB. */
+export type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
+
+export interface RemarkRow {
+  id:          number;
+  pr_id:       number | string;   // FK → purchase_requests.id
+  user_id:     number;            // FK → users.id
+  remark:      string;
+  status_flag: StatusFlag | null;
+  created_at:  string;
+  // Joined from users table when fetched with select("*, users(username)")
+  username?:   string;
+}
+
+/**
+ * Insert a single remark for a PR.
+ * Called by ProcessPRModal (on process/sign) and PRModule RemarkSheet (ad-hoc).
+ */
+export async function insertRemark(
+  prId:       number | string,
+  userId:     number | string,
+  remark:     string,
+  statusFlag: StatusFlag | null,
+): Promise<RemarkRow> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .insert({
+      pr_id:       prId,
+      user_id:     userId,
+      remark:      remark.trim(),
+      status_flag: statusFlag ?? null,
+    })
+    .select("id, pr_id, user_id, remark, status_flag, created_at")
+    .single();
+  if (error) throw error;
+  return data as RemarkRow;
+}
+
+/**
+ * Fetch all remarks for a given PR, newest first.
+ * Joins users(username) so callers don't need a second query.
+ */
+export async function fetchRemarksByPR(prId: number | string): Promise<RemarkRow[]> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id:          r.id,
+    pr_id:       r.pr_id,
+    user_id:     r.user_id,
+    remark:      r.remark,
+    status_flag: r.status_flag as StatusFlag | null,
+    created_at:  r.created_at,
+    username:    r.users?.username ?? undefined,
+  })) as RemarkRow[];
+}
+
+/**
+ * Fetch the most recent remark for a PR (e.g. to show the latest flag on a card).
+ * Returns null if none exist.
+ */
+export async function fetchLatestRemarkByPR(prId: number | string): Promise<RemarkRow | null> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id:          (data as any).id,
+    pr_id:       (data as any).pr_id,
+    user_id:     (data as any).user_id,
+    remark:      (data as any).remark,
+    status_flag: (data as any).status_flag as StatusFlag | null,
+    created_at:  (data as any).created_at,
+    username:    (data as any).users?.username ?? undefined,
+  };
+}
+
+/**
+ * Delete a remark by id. Only the author or an Admin should call this;
+ * enforce that in the UI layer — RLS handles it on the DB side.
+ */
+export async function deleteRemark(remarkId: number): Promise<void> {
+  const { error } = await supabase.from("remarks").delete().eq("id", remarkId);
+  if (error) throw error;
 }

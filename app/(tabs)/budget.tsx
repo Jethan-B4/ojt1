@@ -18,9 +18,11 @@ import {
   fetchBudgets,
   fetchOrsEntries,
   generateOrsNumber,
+  insertDivisionBudget,
   insertOrsEntry,
+  supabase,
+  updateDivisionBudget,
   updateOrsEntry,
-  upsertDivisionBudget,
   type DivisionBudgetRow,
   type OrsEntryRow
 } from "@/lib/supabase";
@@ -212,7 +214,7 @@ function AllocModal({
 }: {
   row: DivisionBudgetRow;
   onClose: () => void;
-  onSave: (divId: number, year: number, amount: number, notes: string) => Promise<void>;
+  onSave: (id: string, year: number, amount: number, notes: string) => Promise<void>;
 }) {
   const [amount,       setAmount]       = useState(String(row.allocated));
   const [notes,        setNotes]        = useState(row.notes ?? "");
@@ -228,7 +230,7 @@ function AllocModal({
     }
     setSaving(true);
     try {
-      await onSave(row.division_id, selectedYear, parsed, notes);
+      await onSave(row.id, selectedYear, parsed, notes);
       onClose();
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not update allocation");
@@ -312,6 +314,188 @@ function AllocModal({
       </Modal>
 
       {/* Nested year picker — renders above the sheet */}
+      <YearPickerModal
+        visible={yearOpen}
+        selected={selectedYear}
+        onSelect={setSelectedYear}
+        onClose={() => setYearOpen(false)}
+      />
+    </>
+  );
+}
+
+// ─── Create allocation modal (new division+year record) ───────────────────────
+
+interface DivisionOption { division_id: number; division_name: string | null; }
+
+function CreateAllocModal({
+  defaultYear, onClose, onSave,
+}: {
+  defaultYear: number;
+  onClose: () => void;
+  onSave: (divId: number, year: number, amount: number, notes: string) => Promise<void>;
+}) {
+  const [divisions,    setDivisions]    = useState<DivisionOption[]>([]);
+  const [divLoading,   setDivLoading]   = useState(true);
+  const [selectedDiv,  setSelectedDiv]  = useState<DivisionOption | null>(null);
+  const [selectedYear, setSelectedYear] = useState(defaultYear);
+  const [yearOpen,     setYearOpen]     = useState(false);
+  const [amount,       setAmount]       = useState("");
+  const [notes,        setNotes]        = useState("");
+  const [saving,       setSaving]       = useState(false);
+
+  // Fetch all divisions once on mount
+  useEffect(() => {
+    supabase
+      .from("divisions")
+      .select("division_id, division_name")
+      .order("division_name")
+      .then(({ data, error }) => {
+        if (!error && data) setDivisions(data as DivisionOption[]);
+      })
+      .then(() => setDivLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (!selectedDiv) { Alert.alert("Required", "Select a division."); return; }
+    const parsed = parseFloat(amount.replace(/,/g, ""));
+    if (isNaN(parsed) || parsed < 0) {
+      Alert.alert("Invalid amount", "Enter a valid positive number.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(selectedDiv.division_id, selectedYear, parsed, notes);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Save failed", e?.message ?? "Could not create allocation");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+        <TouchableOpacity className="flex-1 bg-black/50" activeOpacity={1} onPress={onClose} />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ScrollView
+            className="bg-white rounded-t-3xl"
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled">
+
+            {/* Handle + title */}
+            <View className="w-10 h-1 rounded-full bg-gray-300 self-center mb-4" />
+            <View className="flex-row items-center gap-2 mb-1">
+              <View className="w-7 h-7 rounded-full bg-emerald-100 items-center justify-center">
+                <MaterialIcons name="account-balance-wallet" size={14} color="#064E3B" />
+              </View>
+              <Text className="text-[17px] font-extrabold text-[#1a4d2e]">
+                New Budget Allocation
+              </Text>
+            </View>
+            <Text className="text-[12px] text-gray-400 mb-5">
+              Set a budget allocation for a division and fiscal year.
+            </Text>
+
+            {/* ── Division picker ── */}
+            <Text className="text-[12px] font-semibold text-gray-700 mb-1.5">
+              Division <Text className="text-red-500">*</Text>
+            </Text>
+            {divLoading ? (
+              <View className="items-center py-4">
+                <ActivityIndicator size="small" color="#064E3B" />
+              </View>
+            ) : (
+              <View className="flex-row flex-wrap gap-2 mb-4">
+                {divisions.map(d => {
+                  const active = selectedDiv?.division_id === d.division_id;
+                  return (
+                    <TouchableOpacity
+                      key={d.division_id}
+                      onPress={() => setSelectedDiv(d)}
+                      activeOpacity={0.8}
+                      className={`px-3 py-1.5 rounded-xl border ${
+                        active
+                          ? "bg-[#064E3B] border-[#064E3B]"
+                          : "bg-white border-gray-200"
+                      }`}>
+                      <Text className={`text-[12px] font-bold ${
+                        active ? "text-white" : "text-gray-600"
+                      }`}>
+                        {d.division_name ?? `Div ${d.division_id}`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* ── Fiscal Year picker ── */}
+            <Text className="text-[12px] font-semibold text-gray-700 mb-1">
+              Fiscal Year <Text className="text-red-500">*</Text>
+            </Text>
+            <TouchableOpacity
+              onPress={() => setYearOpen(true)}
+              activeOpacity={0.8}
+              className="flex-row items-center justify-between bg-gray-50 rounded-xl px-3 py-2.5 mb-4"
+              style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}>
+              <View className="flex-row items-center gap-2">
+                <MaterialIcons name="calendar-today" size={15} color="#6b7280" />
+                <Text className="text-[14px] font-bold text-gray-900" style={{ fontFamily: MONO }}>
+                  FY {selectedYear}
+                </Text>
+                {selectedYear === CURRENT_YEAR && (
+                  <View className="bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                    <Text className="text-[9px] font-bold text-emerald-700">Current</Text>
+                  </View>
+                )}
+                {selectedYear > CURRENT_YEAR && (
+                  <View className="bg-amber-100 px-1.5 py-0.5 rounded-md">
+                    <Text className="text-[9px] font-bold text-amber-700">Planning</Text>
+                  </View>
+                )}
+              </View>
+              <MaterialIcons name="keyboard-arrow-down" size={18} color="#6b7280" />
+            </TouchableOpacity>
+
+            {/* ── Allocated amount ── */}
+            <Text className="text-[12px] font-semibold text-gray-700 mb-1">
+              Allocated Budget (₱) <Text className="text-red-500">*</Text>
+            </Text>
+            <TextInput
+              value={amount} onChangeText={setAmount}
+              keyboardType="decimal-pad" placeholder="e.g. 2500000"
+              placeholderTextColor="#9ca3af"
+              className="bg-gray-50 rounded-xl px-3 py-2.5 text-[14px] text-gray-900 mb-4"
+              style={{ borderWidth: 1.5, borderColor: "#e5e7eb", fontFamily: MONO }}
+            />
+
+            {/* ── Notes ── */}
+            <Text className="text-[12px] font-semibold text-gray-700 mb-1">Notes</Text>
+            <TextInput
+              value={notes} onChangeText={setNotes}
+              placeholder="e.g. Annual Procurement Plan 2026"
+              placeholderTextColor="#9ca3af" multiline numberOfLines={2}
+              className="bg-gray-50 rounded-xl px-3 py-2.5 text-[13px] text-gray-900 mb-6"
+              style={{ borderWidth: 1.5, borderColor: "#e5e7eb",
+                minHeight: 60, textAlignVertical: "top" }}
+            />
+
+            <View className="flex-row gap-2.5 justify-end">
+              <Btn ghost label="Cancel" onPress={onClose} />
+              <Btn
+                label={saving ? "Saving…" : "Create Allocation"}
+                disabled={saving || !selectedDiv || !amount.trim()}
+                onPress={handleSave}
+                icon="add"
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Year picker rendered as sibling to avoid Android nested Modal issue */}
       <YearPickerModal
         visible={yearOpen}
         selected={selectedYear}
@@ -484,6 +668,7 @@ export default function BudgetScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [editBudget,   setEditBudget]   = useState<DivisionBudgetRow | null>(null);
+  const [createAllocOpen, setCreateAllocOpen] = useState(false);
   const [editOrs,      setEditOrs]      = useState<OrsEntryRow | null | undefined>(undefined);
   // undefined = modal closed, null = new entry, OrsEntryRow = editing existing
 
@@ -522,10 +707,19 @@ export default function BudgetScreen() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleSaveAllocation = async (
+  /** Called by AllocModal (edit) — routes to UPDATE by primary key. */
+  const handleUpdateAllocation = async (
+    id: string, yr: number, amount: number, notes: string
+  ) => {
+    await updateDivisionBudget(id, yr, amount, notes);
+    await load(true);
+  };
+
+  /** Called by CreateAllocModal (new) — routes to INSERT. */
+  const handleInsertAllocation = async (
     divId: number, yr: number, amount: number, notes: string
   ) => {
-    await upsertDivisionBudget(divId, yr, amount, notes);
+    await insertDivisionBudget(divId, yr, amount, notes);
     await load(true);
   };
 
@@ -699,8 +893,17 @@ export default function BudgetScreen() {
                 <Text className="text-[11px] text-gray-400">Allocation and utilization breakdown</Text>
               </View>
               {canEdit && (
-                <View className="bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  <Text className="text-[10px] font-bold text-emerald-700">Tap row to edit</Text>
+                <View className="flex-row items-center gap-2">
+                  <View className="bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                    <Text className="text-[10px] font-bold text-emerald-700">Tap row to edit</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setCreateAllocOpen(true)}
+                    activeOpacity={0.8}
+                    className="flex-row items-center gap-1 bg-[#064E3B] px-3 py-1.5 rounded-xl">
+                    <MaterialIcons name="add" size={14} color="#fff" />
+                    <Text className="text-[11.5px] font-bold text-white">Add</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -708,9 +911,20 @@ export default function BudgetScreen() {
             <View className="h-px bg-gray-100 my-2.5" />
 
             {budgets.length === 0 ? (
-              <Text className="text-[13px] text-gray-400 text-center py-4">
-                No budget data for FY {year}.
-              </Text>
+              <View className="items-center py-6 gap-2">
+                <Text className="text-[13px] text-gray-400 text-center">
+                  No budget data for FY {year}.
+                </Text>
+                {canEdit && (
+                  <TouchableOpacity
+                    onPress={() => setCreateAllocOpen(true)}
+                    activeOpacity={0.8}
+                    className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2 rounded-xl mt-1">
+                    <MaterialIcons name="add" size={14} color="#fff" />
+                    <Text className="text-[12px] font-bold text-white">Create First Allocation</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             ) : (
               budgets.map((row, i) => {
                 const pct = row.allocated > 0
@@ -861,7 +1075,16 @@ export default function BudgetScreen() {
         <AllocModal
           row={editBudget}
           onClose={() => setEditBudget(null)}
-          onSave={handleSaveAllocation}
+          onSave={handleUpdateAllocation}
+        />
+      )}
+
+      {/* ── Create new allocation modal ── */}
+      {canEdit && createAllocOpen && (
+        <CreateAllocModal
+          defaultYear={year}
+          onClose={() => setCreateAllocOpen(false)}
+          onSave={handleInsertAllocation}
         />
       )}
 
