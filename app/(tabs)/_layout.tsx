@@ -8,108 +8,88 @@ import {
 import { Image } from "expo-image";
 import React, { useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
+import { useStatusBar } from "../StatusBarContext";
 
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
 import BudgetScreen from "./budget";
-import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
 import ProcurementScreen from "./procurement";
+import ProcurementLog from "./ProcurementLog";
 
-// ─── CanvassingScreen wrapper ─────────────────────────────────────────────────
-// Bridges the Drawer navigation system to CanvassingModule.
-//
-// Navigate here from PRModule / ProcessPRModal when a PR reaches status_id 6:
-//   navigation.navigate("Canvassing", { prNo: row.pr_no })
-//
-// Opening from the Drawer with no params shows the built-in placeholder PR.
-function CanvassingScreen({ navigation, route }: any) {
-  const prNo: string | undefined = route?.params?.prNo;
-  return (
-    <CanvassingModule
-      prNo={prNo}
-      onBack={() => navigation.goBack()}
-      onComplete={(payload) => {
-        // Surface completed canvass payload back to Procurement so it can
-        // advance the PR from Canvassing (status_id 6) → AAA (status_id 7).
-        navigation.navigate("Procurement", { canvassPayload: payload });
-      }}
-    />
-  );
-}
 
 // ─── Drawer navigator ─────────────────────────────────────────────────────────
 
 export default function TabLayout() {
   const { handleSignOut } = useAuth();
   const Drawer = createDrawerNavigator();
-  const [calendarOpen, setCalendarOpen] = useState(false);
-
   return (
-    <>
-      <Drawer.Navigator
-        initialRouteName="Dashboard"
-        screenOptions={{
-          drawerActiveTintColor:       "#ffffff",
-          drawerActiveBackgroundColor: "#10B981",
-          drawerLabelStyle:   { color: "#CBD5E1" },
-          drawerStyle:        { borderRadius: 0, backgroundColor: "#064E3B" },
-          drawerContentStyle: { paddingBottom: 12 },
-          headerShown: true,
-          headerStyle: { height: 60 },
-          headerTitle: "",
-          header: ({ navigation }) => (
-            <BrandHeader navigation={navigation} onCalendarPress={() => setCalendarOpen(true)} />
-          ),
-        }}
-        drawerContent={(props) => <CustomDrawer {...props} onSignOut={handleSignOut} />}
-      >
-        <Drawer.Screen name="Dashboard" component={DashboardScreen}
-          options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="space-dashboard" size={size} color={color} /> }} />
-        <Drawer.Screen name="Procurement" component={ProcurementScreen}
-          options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="shopping-bag" size={size} color={color} /> }} />
-        <Drawer.Screen name="Budget" component={BudgetScreen}
-          options={{ title: "Budget", drawerIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} /> }} />
-        {/* <Drawer.Screen name="React" component={ReactScreen}
-          options={{ title: "Explore", drawerIcon: ({ color, size }) => <MaterialIcons name="explore" size={size} color={color} /> }} /> */}
-        {/* <Drawer.Screen name="Canvassing" component={CanvassingScreen}
-          options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} /> */}
-
-      </Drawer.Navigator>
-
-      <CalendarModal visible={calendarOpen} onClose={() => setCalendarOpen(false)}
-        onSelectDate={(date) => { console.log("Selected:", date.toISOString()); setCalendarOpen(false); }} />
-    </>
+    <Drawer.Navigator
+      initialRouteName="Dashboard"
+      screenOptions={{
+        drawerActiveTintColor:       "#ffffff",
+        drawerActiveBackgroundColor: "#10B981",
+        drawerLabelStyle:   { color: "#CBD5E1" },
+        drawerStyle:        { borderRadius: 0, backgroundColor: "#064E3B" },
+        drawerContentStyle: { paddingBottom: 12 },
+        headerShown: true,
+        headerStyle: { height: 60 },
+        headerTitle: "",
+        header: ({ navigation }) => (
+          <BrandHeader navigation={navigation} />
+        ),
+      }}
+      drawerContent={(props) => <CustomDrawer {...props} onSignOut={handleSignOut} />}
+    >
+      <Drawer.Screen name="Dashboard" component={DashboardScreen}
+        options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="space-dashboard" size={size} color={color} /> }} />
+      <Drawer.Screen name="Procurement" component={ProcurementScreen}
+        options={{ drawerIcon: ({ color, size }) => <MaterialIcons name="shopping-bag" size={size} color={color} /> }} />
+      <Drawer.Screen name="Budget" component={BudgetScreen}
+        options={{ title: "Budget", drawerIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} /> }} />
+      <Drawer.Screen name="ProcurementLog" component={ProcurementLog}
+        options={{ title: "Procurement Log", drawerIcon: ({ color, size }) => <MaterialIcons name="history" size={size} color={color} /> }} />
+    </Drawer.Navigator>
   );
 }
 
 
-function BrandHeader({ navigation, onCalendarPress }: { navigation: any; onCalendarPress: () => void }) {
+function BrandHeader({ navigation }: { navigation: any }) {
+  const [calendarOpen, setCalendarOpen] = useState(false);
   return (
-    <View style={{ backgroundColor: "#064E3B", paddingHorizontal: 12, paddingVertical: 10 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <Pressable onPress={() => navigation?.openDrawer?.()}
-          style={{ height: 40, width: 40, alignItems: "center", justifyContent: "center" }}>
-          <MaterialIcons name="menu" size={24} color="#ffffff" />
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        <Pressable onPress={onCalendarPress}
-          style={{ height: 40, width: 40, borderRadius: 20, backgroundColor: "#ffffff",
+    <>
+      <View style={{ backgroundColor: "#064E3B", paddingHorizontal: 12, paddingVertical: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable onPress={() => navigation?.openDrawer?.()}
+            style={{ height: 40, width: 40, alignItems: "center", justifyContent: "center" }}>
+            <MaterialIcons name="menu" size={24} color="#ffffff" />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Pressable onPress={() => setCalendarOpen(true)}
+            style={{ height: 40, width: 40, borderRadius: 20, backgroundColor: "#ffffff",
+              alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#e5e7eb" }}>
+            <MaterialIcons name="calendar-month" size={22} color="#064E3B" />
+          </Pressable>
+          <Pressable style={{ height: 40, width: 40, borderRadius: 20, backgroundColor: "#ffffff",
             alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#e5e7eb" }}>
-          <MaterialIcons name="calendar-month" size={22} color="#064E3B" />
-        </Pressable>
-        <Pressable style={{ height: 40, width: 40, borderRadius: 20, backgroundColor: "#ffffff",
-          alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#e5e7eb" }}>
-          <MaterialIcons name="notifications" size={22} color="#064E3B" />
-        </Pressable>
+            <MaterialIcons name="notifications" size={22} color="#064E3B" />
+          </Pressable>
+        </View>
       </View>
-    </View>
+
+      <CalendarModal
+        visible={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        onSelectDate={(date) => { console.log("Selected:", date.toISOString()); setCalendarOpen(false); }}
+      />
+    </>
   );
 }
 
 function CustomDrawer(props: any & { onSignOut: () => void }) {
   const { currentUser } = useAuth();
   const { onSignOut } = props;
+  const { visible: statusBarVisible, setVisible: setStatusBarVisible } = useStatusBar();
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={{ backgroundColor: "#064E3B", flexGrow: 1 }}>
       {/* ── App branding ── */}
@@ -180,6 +160,22 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
           </View>
         </View>
       )}
+
+      {/* ── UI toggles ── */}
+      {/* <View style={{ marginHorizontal: 12, marginTop: 4, marginBottom: 8, padding: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "#047857" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }}>
+            Status Bar
+          </Text>
+          <Switch
+            value={statusBarVisible}
+            onValueChange={setStatusBarVisible}
+            ios_backgroundColor="#065f46"
+            trackColor={{ false: "#065f46", true: "#10B981" }}
+            thumbColor={statusBarVisible ? "#ffffff" : "#ffffff"}
+          />
+        </View>
+      </View> */}
 
       {/* ── Logout button ── */}
       <TouchableOpacity

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '../global.css';
 import { AuthProvider, useAuth } from './AuthContext';
+import { StatusBarProvider, useStatusBar } from './StatusBarContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -13,6 +14,7 @@ export const unstable_settings = {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const { isAuthenticated } = useAuth();
+  const { visible } = useStatusBar();
 
   return (
     <ThemeProvider value={colorScheme === 'light' ? DarkTheme : DefaultTheme}>
@@ -26,7 +28,7 @@ function RootLayoutNav() {
           <Stack.Screen name="modal" options={{ headerShown: false }} />
         </Stack>
       )}
-      <StatusBar style="auto" />
+      <StatusBar style="auto" hidden={!visible} />
     </ThemeProvider>
   );
 }
@@ -34,8 +36,9 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <StatusBarProvider>
+        <RootLayoutNav />
+      </StatusBarProvider>
     </AuthProvider>
   );
 }
-

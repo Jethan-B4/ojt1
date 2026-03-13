@@ -36,7 +36,7 @@ export default function AuthScreen(): JSX.Element {
       if (result.success) {
         setUserID('');
         setPassword('');
-        router.navigate('./(tabs)');
+        router.navigate('./(tabs)/dashboard');
       } else {
         setErrorMessage(result.message || 'Sign in failed');
       }
