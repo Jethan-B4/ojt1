@@ -13,6 +13,7 @@ import { useStatusBar } from "../StatusBarContext";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
 import BudgetScreen from "./budget";
+import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
 import ProcurementScreen from "./procurement";
 import ProcurementLog from "./ProcurementLog";
@@ -49,7 +50,20 @@ export default function TabLayout() {
         options={{ title: "Budget", drawerIcon: ({ color, size }) => <MaterialIcons name="account-balance-wallet" size={size} color={color} /> }} />
       <Drawer.Screen name="ProcurementLog" component={ProcurementLog}
         options={{ title: "Procurement Log", drawerIcon: ({ color, size }) => <MaterialIcons name="history" size={size} color={color} /> }} />
+      <Drawer.Screen name="Canvassing" component={CanvassingScreen}
+        options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} />
     </Drawer.Navigator>
+  );
+}
+
+function CanvassingScreen({ navigation, route }: any) {
+  const prNo: string | undefined = route?.params?.prNo;
+  return (
+    <CanvassingModule
+      prNo={prNo}
+      onBack={() => navigation.goBack()}
+      onComplete={(payload) => navigation.navigate("Procurement", { canvassPayload: payload })}
+    />
   );
 }
 
@@ -126,7 +140,7 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 {currentUser.username}
               </Text>
               <Text style={{ fontSize: 11, color: "#A7F3D0", marginTop: 1 }} numberOfLines={1}>
-                {currentUser.email ?? currentUser.user_id}
+                {currentUser.designation ?? currentUser.user_id}
               </Text>
             </View>
           </View>

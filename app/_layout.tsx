@@ -24,8 +24,8 @@ function RootLayoutNav() {
         </Stack>
       ) : (
         <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(canvassing)" options={{ title: 'Canvassing' }} />
           <Stack.Screen name="(tabs)" options={{ title: 'Dashboard' }} />
-          <Stack.Screen name="modal" options={{ headerShown: false }} />
         </Stack>
       )}
       <StatusBar style="auto" hidden={!visible} />

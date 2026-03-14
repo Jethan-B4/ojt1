@@ -673,18 +673,10 @@ export default function PRModule() {
                 onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
                 onProcess={(r) => {
                   if (activeSubTab === "canvass") {
-                    const mapRole = (id: number) => id === 3 ? "bac" : id === 7 ? "canvasser" : "enduser";
-                    (navigation as any).navigate("Canvassing" as never, { role: mapRole(roleId), prRecord: {
-                      prNo: r.prNo,
-                      date: r.date,
-                      officeSection: r.officeSection,
-                      responsibilityCode: "", // optional
-                      purpose: r.itemDescription,
-                      isHighValue: false,
-                      items: [], // load inside Canvassing via Supabase if needed
-                    } } as never);
+                    (navigation as any).navigate("Canvassing" as never, { prNo: r.prNo } as never);
                   } else {
-                    setProcessRecord({ id: r.id, prNo: r.prNo }); setProcessVisible(true);
+                    setProcessRecord({ id: r.id, prNo: r.prNo });
+                    setProcessVisible(true);
                   }
                 }}
                 onMore={(r)    => { setMoreRecord(r); setMoreVisible(true); }} />
