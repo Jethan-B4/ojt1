@@ -179,8 +179,12 @@ export default function CanvasserView({ pr, onBack }: {
           .select("*")
           .eq("session_id", session.id);
 
+        // Match by canvasser_id (user.id) first — BAC now assigns by user record.
+        // Fall back to division_id match for backwards compatibility.
         const mine = (assignments ?? []).find(
-          (a: any) => a.division_id === (currentUser?.division_id ?? -1),
+          (a: any) =>
+            a.canvasser_id === (currentUser?.id ?? -1) ||
+            a.division_id  === (currentUser?.division_id ?? -1),
         );
         if (!mine) {
           setAssigned(false);
@@ -230,6 +234,7 @@ export default function CanvasserView({ pr, onBack }: {
 
       await insertSupplierQuotesForSession(sessionId, rows);
 
+      // Mark the assignment returned — match by both canvasser_id and division_id
       if (currentUser?.division_id) {
         await markAssignmentReturned(sessionId, currentUser.division_id);
       }

@@ -26,12 +26,11 @@ import {
   ActivityIndicator,
   Dimensions,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import type { PRRow, PRStatusRow } from "../../lib/supabase";
 import {
@@ -721,8 +720,8 @@ function ApprovalFunnelChart({
 
 /** Shared green welcome header bar */
 function WelcomeHeader({
-  roleLabel, username, onNewPR,
-}: { roleLabel: string; username: string; onNewPR: () => void }) {
+  roleLabel, username
+}: { roleLabel: string; username: string; }) {
   return (
     <View style={{
       backgroundColor: CLR.brand900,
@@ -752,23 +751,6 @@ function WelcomeHeader({
             })}
           </Text>
         </View>
-        <Pressable
-          onPress={onNewPR}
-          style={({ pressed }) => ({
-            flexDirection: "row", alignItems: "center", gap: 6,
-            backgroundColor: pressed ? "#ffffff" : "rgba(255,255,255,0.15)",
-            paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-            borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
-          })}>
-          {({ pressed }) => (
-            <>
-              <MaterialIcons name="add" size={16} color={pressed ? CLR.brand900 : "#ffffff"} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: pressed ? CLR.brand900 : "#ffffff" }}>
-                New PR
-              </Text>
-            </>
-          )}
-        </Pressable>
       </View>
     </View>
   );
@@ -816,7 +798,6 @@ function AdminDashboard({ navigation }: any) {
       <WelcomeHeader
         roleLabel="Admin · System Overview"
         username={currentUser?.username ?? "Administrator"}
-        onNewPR={() => navigation?.navigate?.("Procurement")}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -903,10 +884,6 @@ function AdminDashboard({ navigation }: any) {
       {/* ── Admin quick actions ── */}
       <SectionHeader title="Admin Actions" />
       <QuickActionGrid navigation={navigation} roleId={1} />
-
-      {/* ── Process guide ── */}
-      {/* <SectionHeader title="Procurement Process Guide" />
-      <ProcessGuide isAdmin /> */}
     </ScrollView>
   );
 }
@@ -945,7 +922,6 @@ function ProcessorDashboard({ navigation, roleId }: { navigation: any; roleId: n
       <WelcomeHeader
         roleLabel={roleLabel}
         username={currentUser?.username ?? roleLabel}
-        onNewPR={() => navigation?.navigate?.("Procurement")}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1035,10 +1011,6 @@ function ProcessorDashboard({ navigation, roleId }: { navigation: any; roleId: n
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={roleId} />
-
-      {/* ── Process guide ── */}
-      {/* <SectionHeader title="Procurement Process Guide" />
-      <ProcessGuide isAdmin={false} /> */}
     </ScrollView>
   );
 }
@@ -1075,7 +1047,7 @@ function EndUserDashboard({ navigation }: any) {
       <WelcomeHeader
         roleLabel={currentUser?.division_name ?? "End User"}
         username={currentUser?.username ?? "Welcome"}
-        onNewPR={() => navigation?.navigate?.("Procurement")}
+        // onNewPR={() => navigation?.navigate?.("Procurement")}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1106,7 +1078,7 @@ function EndUserDashboard({ navigation }: any) {
           <Text style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
             You haven't submitted any PRs yet.{"\n"}Tap "New PR" to get started.
           </Text>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             onPress={() => navigation?.navigate?.("Procurement")}
             activeOpacity={0.8}
             style={{
@@ -1116,7 +1088,7 @@ function EndUserDashboard({ navigation }: any) {
             <Text style={{ fontSize: 13, fontWeight: "700", color: "#ffffff" }}>
               Create First PR
             </Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       ) : (
         recent.map((pr) => (
@@ -1130,10 +1102,6 @@ function EndUserDashboard({ navigation }: any) {
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={6} />
-
-      {/* ── How it works ── */}
-      {/* <SectionHeader title="How Your PR Moves" /> */}
-      {/* <ProcessGuide isAdmin={false} /> */}
     </ScrollView>
   );
 }
@@ -1216,52 +1184,3 @@ function QuickActionGrid({ navigation, roleId }: { navigation: any; roleId: numb
     </View>
   );
 }
-
-// ─── Process guide ────────────────────────────────────────────────────────────
-
-// function ProcessGuide({ isAdmin }: { isAdmin: boolean }) {
-//   const phases = isAdmin
-//     ? [
-//         { p: 1, title: "Request & Approval", steps: "Steps 1–5",   detail: "PR → Div. Head → BAC → Budget → PARPO",  color: "#3b82f6" },
-//         { p: 2, title: "Canvass & Awards",   steps: "Steps 6–10",  detail: "Canvass release → AAA → BAC resolution",  color: "#f59e0b" },
-//         { p: 3, title: "Order & Delivery",   steps: "Steps 11–31", detail: "PO → ORS → Accounting → Delivery → IAR", color: "#10b981" },
-//         { p: 4, title: "Payment & Closure",  steps: "Steps 32–48", detail: "DV → Accounting → PARPO → Check/LLDAP",  color: "#8b5cf6" },
-//       ]
-//     : [
-//         { p: 1, title: "You Submit",       steps: "Step 1",    detail: "Fill in items, purpose, and submit your PR",        color: "#3b82f6" },
-//         { p: 2, title: "Approvals",         steps: "Steps 2–5", detail: "Div. Head → BAC → Budget Office → PARPO signs off", color: "#f59e0b" },
-//         { p: 3, title: "Order & Delivery",  steps: "Steps 6+",  detail: "PO issued, items delivered, IAR completed",         color: "#10b981" },
-//         { p: 4, title: "Payment",           steps: "Final",     detail: "DV processed and payment released",                 color: "#8b5cf6" },
-//       ];
-
-//   return (
-//     <ScrollView
-//       horizontal showsHorizontalScrollIndicator={false}
-//       contentContainerStyle={{ paddingHorizontal: 12, gap: 8, paddingBottom: 4 }}>
-//       {phases.map((ph) => (
-//         <View key={ph.p} style={{
-//           width: isAdmin ? 200 : 180, borderRadius: 14,
-//           borderWidth: 1, borderColor: ph.color + "40",
-//           backgroundColor: ph.color + "0d", padding: 14, gap: 6,
-//         }}>
-//           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-//             <View style={{
-//               backgroundColor: ph.color, paddingHorizontal: 8,
-//               paddingVertical: 3, borderRadius: 999,
-//             }}>
-//               <Text style={{
-//                 fontSize: 9.5, fontWeight: "800", color: "#fff",
-//                 textTransform: "uppercase", letterSpacing: 0.5,
-//               }}>
-//                 Phase {ph.p}
-//               </Text>
-//             </View>
-//             <Text style={{ fontSize: 10, color: ph.color, fontWeight: "600" }}>{ph.steps}</Text>
-//           </View>
-//           <Text style={{ fontSize: 13, fontWeight: "800", color: "#111827" }}>{ph.title}</Text>
-//           <Text style={{ fontSize: 11, color: "#6b7280", lineHeight: 16 }}>{ph.detail}</Text>
-//         </View>
-//       ))}
-//     </ScrollView>
-//   );
-// }

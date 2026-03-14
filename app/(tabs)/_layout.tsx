@@ -51,10 +51,11 @@ export default function TabLayout() {
       <Drawer.Screen name="ProcurementLog" component={ProcurementLog}
         options={{ title: "Procurement Log", drawerIcon: ({ color, size }) => <MaterialIcons name="history" size={size} color={color} /> }} />
       <Drawer.Screen name="Canvassing" component={CanvassingScreen}
-        options={{ title: "Canvassing", drawerIcon: ({ color, size }) => <MaterialIcons name="create" size={size} color={color} /> }} />
+        options={{ title: "Canvassing", drawerItemStyle: { display: 'none' } }} />
     </Drawer.Navigator>
   );
 }
+
 
 function CanvassingScreen({ navigation, route }: any) {
   const prNo: string | undefined = route?.params?.prNo;

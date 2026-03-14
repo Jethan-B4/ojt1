@@ -101,8 +101,9 @@ const SubTabRow: React.FC<{ active: SubTab; onSelect: (s: SubTab) => void }> = (
   </View>
 );
 
-const SearchBar: React.FC<{ value: string; onChange: (t: string) => void; onCreatePress: () => void }> =
-  ({ value, onChange, onCreatePress }) => (
+const SearchBar: React.FC<{
+  value: string; onChange: (t: string) => void; onCreatePress: () => void; canCreate?: boolean;
+}> = ({ value, onChange, onCreatePress, canCreate = true }) => (
   <View className="flex-row items-center gap-2.5 px-4 py-3 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <Text className="text-gray-400 text-sm">🔍</Text>
@@ -115,12 +116,14 @@ const SearchBar: React.FC<{ value: string; onChange: (t: string) => void; onCrea
         </TouchableOpacity>
       )}
     </View>
-    <Pressable onPress={onCreatePress}
-      className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-      style={({ pressed }) => pressed ? { opacity: 0.82 } : undefined}>
-      <Text className="text-white text-[18px] leading-none font-light">+</Text>
-      <Text className="text-white text-[13px] font-bold">Create</Text>
-    </Pressable>
+    {canCreate && (
+      <Pressable onPress={onCreatePress}
+        className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
+        style={({ pressed }) => pressed ? { opacity: 0.82 } : undefined}>
+        <Text className="text-white text-[18px] leading-none font-light">+</Text>
+        <Text className="text-white text-[13px] font-bold">Create</Text>
+      </Pressable>
+    )}
   </View>
 );
 
@@ -655,7 +658,12 @@ export default function PRModule() {
   return (
     <View className="flex-1 bg-gray-50">
       <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
-      <SearchBar value={searchQuery} onChange={(t) => { setSearchQuery(t); setPage(1); }} onCreatePress={handleOpenCreate} />
+      <SearchBar
+        value={searchQuery}
+        onChange={(t) => { setSearchQuery(t); setPage(1); }}
+        onCreatePress={handleOpenCreate}
+        canCreate={roleId === 6}
+      />
       <StatStrip records={filtered} statuses={statuses} />
       {roleId !== 6 && (
         <FilterChips active={sectionFilter} onSelect={(s) => { setSectionFilter(s); setPage(1); }} />

@@ -173,6 +173,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   * ┌─ id             int8      PK
   * ├─ session_id     int8      FK → canvass_sessions.id
   * ├─ resolution_no  text
+  * ├─ mode           text      ENUM-like: "SVP" | "Direct"
   * ├─ prepared_by    int8      FK → users.id
   * ├─ resolved_at    timestamptz (Step 9)
   * ├─ notes          text
@@ -894,7 +895,43 @@ export async function fetchAllDivisions(): Promise<DivisionRow[]> {
   return (data ?? []) as DivisionRow[];
 }
 
-// ─── Remarks ──────────────────────────────────────────────────────────────────
+// ─── Canvass user helpers ─────────────────────────────────────────────────────
+
+/**
+ * A user row enriched with their division name, used for canvass assignment.
+ * role_id 6 = End User (the submitting division rep)
+ * role_id 7 = Canvasser (designated canvass collector per division)
+ */
+export interface CanvassUserRow {
+  id:            number;
+  username:      string;
+  role_id:       number;
+  division_id:   number | null;
+  division_name: string | null;
+}
+
+/**
+ * Fetch users whose role_id is in the provided list, joined with their division name.
+ * Used by BACView to populate the release/return canvass assignment table
+ * with actual End Users (role 6) and Canvassers (role 7) from the DB.
+ */
+export async function fetchUsersByRole(roleIds: number[]): Promise<CanvassUserRow[]> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, username, role_id, division_id, divisions(division_name)")
+    .in("role_id", roleIds)
+    .order("username");
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id:            r.id,
+    username:      r.username,
+    role_id:       r.role_id,
+    division_id:   r.division_id ?? null,
+    division_name: r.divisions?.division_name ?? null,
+  })) as CanvassUserRow[];
+}
+
+
 
 /** Valid status_flag values — must match the CHECK constraint in the DB. */
 export type StatusFlag =

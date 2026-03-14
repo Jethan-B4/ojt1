@@ -4,15 +4,17 @@
  */
 
 import {
-  ensureCanvassSession, fetchDivisionIdByName, fetchPRIdByNo, fetchPRWithItemsById,
+  ensureCanvassSession, fetchPRIdByNo, fetchPRWithItemsById,
+  fetchUsersByRole,
   insertAAAForSession, insertAssignmentsForDivisions, insertBACResolution,
   insertSupplierQuotesForSession, updateCanvassSessionMeta, updateCanvassStage,
+  type CanvassUserRow,
 } from "@/lib/supabase";
 import type {
-  BACMember, CanvassStage, CanvassingPR, CanvassingPRItem, DivAssign, SupplierQ,
+  BACMember, CanvassStage, CanvassingPR, CanvassingPRItem, SupplierQ,
 } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   Text, TextInput, TouchableOpacity, View,
@@ -48,12 +50,10 @@ const PROC_MODES = [
   "Direct Contracting", "Shopping", "Negotiated Procurement",
 ];
 
-const DIVISIONS = ["STOD","LTSP","ARBDSP","Legal","PARPO","PARAD","TDG Unit","Budget","Accounting"];
-
-const CANVASSERS: Record<string, string> = {
-  STOD: "Yvonne M.", LTSP: "Mariel T.", ARBDSP: "Robert A.",
-  Legal: "Angel D.", PARPO: "Nessie P.", PARAD: "Viviene S.",
-};
+// Role IDs for users involved in the canvassing process (from DB roles table):
+// role_id 6 = End User  (division representative who submitted the PR)
+// role_id 7 = Canvasser (designated canvass collector per division)
+const CANVASS_ROLE_IDS = [6, 7];
 
 // ─── Inlined UI atoms (NativeWind className) ──────────────────────────────────
 
@@ -181,31 +181,43 @@ const Btn = ({ label, onPress, disabled, ghost }: {
   </TouchableOpacity>
 );
 
-const StageStrip = ({ current, completed }: {
-  current: CanvassStage; completed: Set<CanvassStage>;
+const StageStrip = ({ current, completed, onNavigate }: {
+  current: CanvassStage;
+  completed: Set<CanvassStage>;
+  onNavigate?: (stage: CanvassStage) => void;
 }) => (
   <ScrollView horizontal showsHorizontalScrollIndicator={false}
     className="bg-[#064E3B]"
     contentContainerStyle={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 10, gap: 4 }}>
     {STAGE_ORDER.map((s, i) => {
-      const meta   = STAGE_META[s];
-      const isDone = completed.has(s);
-      const active = s === current;
+      const meta     = STAGE_META[s];
+      const isDone   = completed.has(s);
+      const active   = s === current;
+      const tappable = isDone && !active && !!onNavigate;
       return (
         <React.Fragment key={s}>
-          <View className="items-center gap-1">
+          <TouchableOpacity
+            onPress={tappable ? () => onNavigate!(s) : undefined}
+            activeOpacity={tappable ? 0.65 : 1}
+            className="items-center gap-1">
             <View className={`w-7 h-7 rounded-full items-center justify-center ${
               isDone ? "bg-[#52b788]" : active ? "bg-white" : "bg-white/15"
-            }`}>
+            }`}
+              style={tappable ? { borderWidth: 1.5, borderColor: "#a7f3d0" } : undefined}>
               <MaterialIcons
-                name={isDone ? "check" : meta.icon} size={13}
+                name={isDone ? (tappable ? "replay" : "check") : meta.icon} size={13}
                 color={isDone ? "#1a4d2e" : active ? "#064E3B" : "rgba(255,255,255,0.4)"} />
             </View>
             <Text className="text-[9px] font-bold text-center" style={{ maxWidth: 54,
               color: active ? "#fff" : isDone ? "#52b788" : "rgba(255,255,255,0.35)" }}>
               {meta.label}
             </Text>
-          </View>
+            {tappable && (
+              <Text style={{ fontSize: 7, color: "rgba(167,243,208,0.7)", textAlign: "center", maxWidth: 54 }}>
+                tap to edit
+              </Text>
+            )}
+          </TouchableOpacity>
           {i < STAGE_ORDER.length - 1 && (
             <View className="w-5 h-px bg-white/15 self-center -mt-3" />
           )}
@@ -311,12 +323,6 @@ const ItemsTable = ({ items }: { items: CanvassingPRItem[] }) => (
 
 // ─── Local state factories ────────────────────────────────────────────────────
 
-const mkDivisions = (): DivAssign[] =>
-  DIVISIONS.map(sec => ({
-    section: sec, canvasser: CANVASSERS[sec] ?? "—",
-    releaseDate: "", returnDate: "", status: "pending",
-  }));
-
 const mkBACMembers = (): BACMember[] => [
   { name: "Yvonne M.", designation: "BAC Chairperson",  signed: false, signedAt: "" },
   { name: "Mariel T.", designation: "BAC Member",       signed: false, signedAt: "" },
@@ -338,7 +344,13 @@ export default function BACView({ pr, onComplete, onBack }: {
   const [stage,     setStage]     = useState<CanvassStage>("pr_received");
   const [done,      setDone]      = useState<Set<CanvassStage>>(new Set());
   const [members,   setMembers]   = useState<BACMember[]>(mkBACMembers);
-  const [divs,      setDivs]      = useState<DivAssign[]>(mkDivisions);
+  // canvassUsers: End Users (role 6) + Canvassers (role 7) from DB,
+  // each with a local release/return status tracked in canvassStatuses
+  const [canvassUsers,    setCanvassUsers]    = useState<CanvassUserRow[]>([]);
+  const [canvassStatuses, setCanvassStatuses] = useState<
+    Record<number, { status: "pending" | "released" | "returned"; releaseDate: string; returnDate: string }>
+  >({});
+  const [usersLoading, setUsersLoading] = useState(true);
   const [supps,     setSupps]     = useState<SupplierQ[]>([mkSupplier(1)]);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -348,14 +360,55 @@ export default function BACView({ pr, onComplete, onBack }: {
   const [aaaNo,     setAaaNo]     = useState("");
   const sessionRef = useRef<any>({ pr_no: pr.prNo });
 
+  // ── Back-navigation: jump to any previously completed stage ──────────────
+  const goToStage = useCallback((target: CanvassStage) => {
+    Alert.alert(
+      "Go back to this stage?",
+      `Return to "${STAGE_META[target].label}"? You can re-submit from there.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Go Back",
+          onPress: () => {
+            // Remove the target and all stages after it from completed set
+            const targetIdx = STAGE_ORDER.indexOf(target);
+            setDone(prev => {
+              const next = new Set(prev);
+              STAGE_ORDER.forEach((s, i) => { if (i >= targetIdx) next.delete(s); });
+              return next;
+            });
+            setStage(target);
+          },
+        },
+      ]
+    );
+  }, []);
+
   const advance = useCallback((current: CanvassStage) => {
     setDone(s => new Set([...s, current]));
     const idx = STAGE_ORDER.indexOf(current);
     if (idx < STAGE_ORDER.length - 1) setStage(STAGE_ORDER[idx + 1]);
   }, []);
 
-  // Load existing session on mount
-  React.useEffect(() => {
+  // ── Load canvass users (End Users + Canvassers) from DB ──────────────────
+  useEffect(() => {
+    setUsersLoading(true);
+    fetchUsersByRole(CANVASS_ROLE_IDS)
+      .then(users => {
+        setCanvassUsers(users);
+        // Seed statuses map: one entry per user id
+        setCanvassStatuses(
+          Object.fromEntries(
+            users.map(u => [u.id, { status: "pending" as const, releaseDate: "", returnDate: "" }])
+          )
+        );
+      })
+      .catch(() => {}) // silently fall back to empty list
+      .finally(() => setUsersLoading(false));
+  }, []);
+
+  // ── Load existing session on mount ───────────────────────────────────────
+  useEffect(() => {
     (async () => {
       try {
         const prId = await fetchPRIdByNo(pr.prNo);
@@ -392,19 +445,24 @@ export default function BACView({ pr, onComplete, onBack }: {
   const handleStep8 = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const released = divs.filter(d => d.status !== "pending");
-      const rows = await Promise.all(released.map(async d => ({
-        division_id: (await fetchDivisionIdByName(d.section)) ?? 0,
-        canvasser_id: 0,
-        released_at: new Date().toISOString(),
-      })));
+      // Build assignment rows from users who have been released
+      const released = canvassUsers.filter(
+        u => canvassStatuses[u.id]?.status !== "pending" && u.division_id !== null
+      );
+      const rows = released.map(u => ({
+        division_id:  u.division_id!,
+        canvasser_id: u.id,               // actual user id from the DB users table
+        released_at:  canvassStatuses[u.id]?.releaseDate
+          ? new Date(canvassStatuses[u.id].releaseDate).toISOString()
+          : new Date().toISOString(),
+      }));
       if (rows.length) await insertAssignmentsForDivisions(sessionId, rows);
       await updateCanvassStage(sessionId, "collect_canvass");
       advance("release_canvass");
     } catch (e: any) {
       Alert.alert("Release failed", e?.message ?? "Could not record canvass releases");
     }
-  }, [sessionId, divs, advance]);
+  }, [sessionId, canvassUsers, canvassStatuses, advance]);
 
   const handleStep9 = useCallback(async () => {
     if (!sessionId) return;
@@ -464,6 +522,17 @@ export default function BACView({ pr, onComplete, onBack }: {
     }
   }, [sessionId, aaaNo, currentUser?.id, mode, pr.prNo, onComplete]);
 
+  // Helper to toggle a user's release/return status
+  const toggleUserStatus = useCallback((userId: number) => {
+    setCanvassStatuses(prev => {
+      const cur = prev[userId] ?? { status: "pending", releaseDate: "", returnDate: "" };
+      const now = new Date().toLocaleDateString("en-PH");
+      if (cur.status === "pending")   return { ...prev, [userId]: { ...cur, status: "released", releaseDate: now } };
+      if (cur.status === "released")  return { ...prev, [userId]: { ...cur, status: "returned",  returnDate: now } };
+      return prev; // "returned" — no further toggle
+    });
+  }, []);
+
   const allSigned = members.every(m => m.signed);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -493,7 +562,7 @@ export default function BACView({ pr, onComplete, onBack }: {
             <Text className="text-[10.5px] font-bold text-amber-800">⏱ 7-day window</Text>
           </View>
         </View>
-        <StageStrip current={stage} completed={done} />
+        <StageStrip current={stage} completed={done} onNavigate={goToStage} />
       </View>
 
       <ScrollView className="flex-1"
@@ -531,59 +600,78 @@ export default function BACView({ pr, onComplete, onBack }: {
         {stage === "release_canvass" && (
           <View>
             <StepHeader stage="release_canvass" title="Release Canvass to Divisions"
-              desc="Release canvass sheets (RFQs) to canvassers per division." />
-            <Banner type="warning" text="Verify canvassers are available before releasing." />
+              desc="Release canvass sheets (RFQs) to the End Users and Canvassers per division." />
+            <Banner type="warning" text="Verify availability before releasing. End Users (role 6) and Canvassers (role 7) are listed." />
             <Card>
               <View className="px-4 pt-3 pb-2">
-                <Divider label="Canvassers by Division" />
-                {divs.map((div, i) => (
-                  <View key={div.section}
-                    className={`flex-row items-center justify-between p-2.5 mb-1.5 rounded-2xl border ${
-                      div.status !== "pending" ? "bg-emerald-50 border-emerald-200" : "bg-white border-gray-200"
-                    }`}>
-                    {/* Section badge */}
-                    <View className="w-16 bg-emerald-100 px-1.5 py-0.5 rounded-md">
-                      <Text className="text-[10.5px] font-bold text-emerald-800 text-center">
-                        {div.section}
-                      </Text>
-                    </View>
-                    <Text className="flex-1 text-[12.5px] text-gray-700 px-2">
-                      {div.canvasser || "—"}
-                    </Text>
-                    {/* Status pill */}
-                    <View className={`px-2 py-0.5 rounded-full mr-2 ${
-                      div.status === "pending"  ? "bg-amber-100" :
-                      div.status === "released" ? "bg-emerald-100" : "bg-blue-100"
-                    }`}>
-                      <Text className={`text-[10px] font-bold ${
-                        div.status === "pending"  ? "text-amber-800" :
-                        div.status === "released" ? "text-emerald-700" : "text-blue-700"
-                      }`}>
-                        {div.status === "pending" ? "Pending" :
-                         div.status === "released" ? "Released" : "Returned"}
-                      </Text>
-                    </View>
-                    {div.status !== "returned" && (
-                      <TouchableOpacity onPress={() =>
-                        setDivs(d => d.map((x, idx) => idx !== i ? x : {
-                          ...x,
-                          status: x.status === "pending" ? "released" : "returned",
-                          releaseDate: x.status === "pending"
-                            ? new Date().toLocaleDateString("en-PH") : x.releaseDate,
-                          returnDate: x.status === "released"
-                            ? new Date().toLocaleDateString("en-PH") : x.returnDate,
-                        }))
-                      } activeOpacity={0.8}
-                        className={`px-2.5 py-1 rounded-lg ${
-                          div.status === "pending" ? "bg-emerald-600" : "bg-blue-600"
-                        }`}>
-                        <Text className="text-[11px] font-bold text-white">
-                          {div.status === "pending" ? "📤 Release" : "📥 Receive"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                <Divider label="Canvassers & End Users by Division" />
+                {usersLoading ? (
+                  <View className="items-center py-6">
+                    <Text className="text-[13px] text-gray-400">Loading users…</Text>
                   </View>
-                ))}
+                ) : canvassUsers.length === 0 ? (
+                  <View className="items-center py-6">
+                    <Text className="text-[13px] text-gray-400">
+                      No End Users or Canvassers found in the system.
+                    </Text>
+                  </View>
+                ) : (
+                  canvassUsers.map((user) => {
+                    const st = canvassStatuses[user.id] ?? { status: "pending", releaseDate: "", returnDate: "" };
+                    const roleLabel = user.role_id === 7 ? "Canvasser" : "End User";
+                    const roleBg    = user.role_id === 7 ? "bg-violet-100" : "bg-blue-100";
+                    const roleText  = user.role_id === 7 ? "text-violet-800" : "text-blue-800";
+                    return (
+                      <View key={user.id}
+                        className={`flex-row items-center justify-between p-2.5 mb-1.5 rounded-2xl border ${
+                          st.status !== "pending" ? "bg-emerald-50 border-emerald-200" : "bg-white border-gray-200"
+                        }`}>
+                        {/* Division badge */}
+                        <View className="w-16 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                          <Text className="text-[9.5px] font-bold text-emerald-800 text-center" numberOfLines={1}>
+                            {user.division_name ?? "—"}
+                          </Text>
+                        </View>
+
+                        {/* Name + role */}
+                        <View className="flex-1 px-2">
+                          <Text className="text-[12.5px] text-gray-700 font-semibold" numberOfLines={1}>
+                            {user.username}
+                          </Text>
+                          <View className={`self-start px-1.5 py-0.5 rounded-md ${roleBg} mt-0.5`}>
+                            <Text className={`text-[9px] font-bold ${roleText}`}>{roleLabel}</Text>
+                          </View>
+                        </View>
+
+                        {/* Status pill */}
+                        <View className={`px-2 py-0.5 rounded-full mr-2 ${
+                          st.status === "pending"  ? "bg-amber-100" :
+                          st.status === "released" ? "bg-emerald-100" : "bg-blue-100"
+                        }`}>
+                          <Text className={`text-[10px] font-bold ${
+                            st.status === "pending"  ? "text-amber-800" :
+                            st.status === "released" ? "text-emerald-700" : "text-blue-700"
+                          }`}>
+                            {st.status === "pending" ? "Pending" :
+                             st.status === "released" ? "Released" : "Returned"}
+                          </Text>
+                        </View>
+
+                        {/* Action button */}
+                        {st.status !== "returned" && (
+                          <TouchableOpacity onPress={() => toggleUserStatus(user.id)} activeOpacity={0.8}
+                            className={`px-2.5 py-1 rounded-lg ${
+                              st.status === "pending" ? "bg-emerald-600" : "bg-blue-600"
+                            }`}>
+                            <Text className="text-[11px] font-bold text-white">
+                              {st.status === "pending" ? "📤 Release" : "📥 Receive"}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })
+                )}
               </View>
             </Card>
             <View className="flex-row justify-end gap-2.5 mt-1">
