@@ -5,7 +5,7 @@ export type AuthUser = User;
 export interface DatabaseUser {
   id: number;
   username: string;
-  email: string;
+  designation: string;
   password: string;
   user_id: string;
   role_id: number;

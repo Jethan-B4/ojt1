@@ -40,6 +40,26 @@ export interface DivAssign {
   status: "pending" | "released" | "returned";
 }
 
+export interface RFQForm {
+  quotationNo:    string;
+  quotationDate:  string;
+  deadlineDate:   string;
+  bacChairperson: string;
+  entity:         string;
+  companyName:    string;
+  companyAddress: string;
+  // Per-item supplier response (keyed by item id)
+  unitPrices:     Record<number, string>;
+  // Supplier fields (filled by supplier / canvasser)
+  printedName:    string;
+  telNo:          string;
+  philGeps:       string;
+  birTin:         string;
+  vatType:        "vat" | "non-vat" | "";
+  remarks:        string;
+  canvasserRef:   string;   // ECT/asa style reference
+}
+
 export interface SupplierQ {
   id: number;
   name: string;

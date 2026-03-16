@@ -56,30 +56,144 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  ├─ budget_number   text
  *  ├─ pap_code        text
  *  ├─ proposal_file   text
- *  ├─ proposal_no     text        NOT NULL  (always required from the proposals table)
+ *  ├─ proposal_no     text        NOT NULL
  *  ├─ req_name        text
  *  ├─ req_desig       text
  *  ├─ app_name        text
  *  ├─ app_desig       text
  *  ├─ app_no          text
+ *  ├─ division_id     int8        FK → divisions(division_id)
  *  └─ created_at      timestamptz default now()
  *
  *  pr_status
  *  ┌─ id              int8        PK identity
  *  └─ status_name     text        NOT NULL
  *     (1=Pending, 2=Processing(Division Head), 3=Processing(BAC),
- *      4=Processing(Budget), 5=Processing(PARPO))
+ *      4=Processing(Budget), 5=Processing(PARPO),
+ *      6=Canvassing & Resolution, 7=AAA)
  *
  *  purchase_request_items
- *  ┌─ pr_item_id           uuid    PK  default gen_random_uuid()
- *  ├─ pr_id        uuid    NOT NULL references purchase_requests(pr_id) on delete cascade
- *  ├─ description  text    NOT NULL
+ *  ┌─ id           int8     PK  identity
+ *  ├─ pr_id        int8     FK → purchase_requests(id) ON DELETE CASCADE
+ *  ├─ description  text     NOT NULL
  *  ├─ stock_no     text
  *  ├─ unit         text
- *  ├─ quantity     numeric NOT NULL
- *  ├─ unit_price   numeric NOT NULL
- *  └─ subtotal     numeric NOT NULL
+ *  ├─ quantity     numeric  NOT NULL
+ *  ├─ unit_price   numeric  NOT NULL
+ *  └─ subtotal     numeric  NOT NULL
+ *
+ *  divisions
+ *  ┌─ division_id    int8   PK identity
+ *  └─ division_name  text   NOT NULL
+ *
+ *  users
+ *  ┌─ id          int8   PK identity
+ *  ├─ username    text   NOT NULL
+ *  ├─ email       text
+ *  ├─ role_id     int8   FK → roles(role_id)
+ *  └─ division_id int8   FK → divisions(division_id)
+ *
+ *  roles
+ *  ┌─ role_id    int8  PK
+ *  └─ role_name  text  NOT NULL
+ *     (1=Admin, 2=Division Head, 3=BAC, 4=Budget, 5=PARPO, 6=End User, 7=Canvasser)
+ *
+ *  remarks
+ *  ┌─ id           int8        PK identity
+ *  ├─ pr_id        int8        FK → purchase_requests(id)   NOT NULL
+ *  ├─ user_id      int8        FK → users(id)               NOT NULL
+ *  ├─ remark       text        NOT NULL
+ *  ├─ status_flag  text        CHECK(status_flag IN (
+ *  │                'complete','incomplete_info','wrong_information',
+ *  │                'needs_revision','on_hold','urgent'))   nullable
+ *  └─ created_at   timestamptz default now()
+ *
+ *  division_budgets
+ *  ┌─ id           int8        PK identity
+ *  ├─ division_id  int8        FK → divisions(division_id)  NOT NULL
+ *  ├─ fiscal_year  int4        NOT NULL
+ *  ├─ allocated    numeric     NOT NULL default 0
+ *  ├─ utilized     numeric     NOT NULL default 0  (auto via trigger from approved ORS)
+ *  ├─ notes        text
+ *  ├─ created_at   timestamptz default now()
+ *  ├─ updated_at   timestamptz
+ *  └─ UNIQUE(division_id, fiscal_year)
+ *
+ *  ors_entries
+ *  ┌─ id           int8        PK identity
+ *  ├─ ors_no       text        UNIQUE NOT NULL
+ *  ├─ pr_id        int8        FK → purchase_requests(id)   nullable
+ *  ├─ pr_no        text        nullable
+ *  ├─ division_id  int8        FK → divisions(division_id)  nullable
+ *  ├─ fiscal_year  int4        NOT NULL
+ *  ├─ amount       numeric     NOT NULL
+ *  ├─ status       text        CHECK('Pending'|'Processing'|'Approved'|'Rejected')
+ *  ├─ prepared_by  int8        FK → users(id)               nullable
+ *  ├─ approved_by  int8        FK → users(id)               nullable
+ *  ├─ notes        text        nullable
+ *  ├─ created_at   timestamptz default now()
+ *  └─ updated_at   timestamptz
  */
+ /**
+  * Canvassing (Phase 2) — proposed tables (inputs and outputs)
+  *
+  * canvass_sessions
+  * ┌─ id             int8      PK  identity
+  * ├─ pr_id          int8      FK → purchase_requests.id
+  * ├─ stage          text      ENUM-like: "pr_received" | "release_canvass" | "collect_canvass" | "bac_resolution" | "aaa_preparation"
+  * ├─ released_by    int8      FK → users.id (BAC staff who released)
+  * ├─ deadline       timestamptz  due date for canvass return (Step 7/8)
+  * ├─ status         text      "open" | "closed" | "draft"
+  * ├─ created_at     timestamptz default now()
+  * ├─ updated_at     timestamptz
+  *
+  * canvasser_assignments
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ division_id    int8      FK → divisions.division_id
+  * ├─ canvasser_id   int8      FK → users.id (per division canvasser)
+  * ├─ released_at    timestamptz (Step 7)
+  * ├─ returned_at    timestamptz (Step 8)
+  * ├─ status         text      "released" | "returned"
+  *
+  * canvass_entries  (supplier quotations)
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ item_no        int8      index in PR items
+  * ├─ description    text
+  * ├─ unit           text
+  * ├─ quantity       numeric
+  * ├─ supplier_name  text
+  * ├─ unit_price     numeric
+  * ├─ total_price    numeric
+  * ├─ is_winning     boolean   resolved at Step 9/10
+  * ├─ created_at     timestamptz
+  *
+  * bac_resolution
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ resolution_no  text
+  * ├─ mode           text      ENUM-like: "SVP" | "Direct"
+  * ├─ prepared_by    int8      FK → users.id
+  * ├─ resolved_at    timestamptz (Step 9)
+  * ├─ notes          text
+  *
+  * aaa_documents
+  * ┌─ id             int8      PK
+  * ├─ session_id     int8      FK → canvass_sessions.id
+  * ├─ aaa_no         text
+  * ├─ prepared_by    int8      FK → users.id
+  * ├─ prepared_at    timestamptz (Step 10)
+  * ├─ file_url       text (optional storage link)
+  *
+  * Inputs (from Phase 1 → Phase 2):
+  *  • purchase_requests header (id, pr_no, purpose, division_id, items)
+  * Outputs (Phase 2):
+  *  • canvasser_assignments release records (Step 7/8)
+  *  • canvass_entries supplier quotations (Step 8)
+  *  • bac_resolution decision (Step 9)
+  *  • aaa_documents prepared AAA (Step 10)
+  */
 
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
@@ -148,6 +262,25 @@ export async function fetchPurchaseRequestsByDivision(divisionId: number): Promi
 
   if (error) throw error;
   return data;
+}
+
+export async function fetchCanvassablePRs(): Promise<PRRow[]> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .gt("status_id", 5);
+  if (error) throw error;
+  return data as PRRow[];
+}
+
+export async function fetchCanvassablePRsByDivision(divisionId: number): Promise<PRRow[]> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .gt("status_id", 5)
+    .eq("division_id", divisionId);
+  if (error) throw error;
+  return data as PRRow[];
 }
 
 /**
@@ -327,4 +460,625 @@ export async function updatePurchaseRequest(
   }
 
   return data;
+}
+
+// ─── Canvassing · Types & Helpers (Phase 2 scaffolding) ───────────────────────
+
+export interface CanvassSessionRow {
+  id: string;
+  pr_id: string;
+  stage: string;
+  status: string;
+  released_by?: number | null;
+  deadline?: string | null;
+  bac_no?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CanvasserAssignmentRow {
+  id: string;
+  session_id: string;
+  division_id: number;
+  canvasser_id?: number | null;
+  released_at?: string | null;
+  returned_at?: string | null;
+  status: "released" | "returned";
+}
+
+export interface CanvassEntryRow {
+  id: string;
+  session_id: string;
+  item_no: number;
+  description: string;
+  unit: string;
+  quantity: number;
+  supplier_name: string;
+  unit_price: number;
+  total_price: number;
+  is_winning?: boolean | null;
+  created_at?: string;
+}
+
+export interface BACResolutionRow {
+  id: string;
+  session_id: string;
+  resolution_no: string;
+  prepared_by: number;
+  mode?: string | null;
+  resolved_at?: string | null;
+  notes?: string | null;
+}
+
+export interface AAADocumentRow {
+  id: string;
+  session_id: string;
+  aaa_no: string;
+  prepared_by: number;
+  prepared_at?: string | null;
+  file_url?: string | null;
+}
+
+export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("id")
+    .eq("pr_no", prNo)
+    .single();
+  if (error) return null;
+  return (data as any)?.id ?? null;
+}
+
+/**
+ * Fetch a PR's id and current status_id in a single query.
+ * Used by BACView on mount so it can cache the prId AND restore
+ * the correct canvass stage from pr_status.id without a second query.
+ */
+export async function fetchPRMetaByNo(
+  prNo: string
+): Promise<{ id: string; status_id: number } | null> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("id, status_id")
+    .eq("pr_no", prNo)
+    .single();
+  if (error || !data) return null;
+  return { id: String((data as any).id), status_id: Number((data as any).status_id) };
+}
+
+/**
+ * Maps each canvass stage to its corresponding pr_status.id in the DB.
+ * Values come from the pr_status table (see DB_PR_Status.png):
+ *
+ *   6  = Canvassing (Reception)  ← BAC receives & assigns canvass number
+ *   8  = Canvassing (Releasing)  ← RFQ released to canvassers
+ *   9  = Canvassing (Collection) ← BAC collecting filled canvass sheets
+ *   10 = BAC Resolution          ← resolution signed and recorded
+ *   11 = AAA Issuance            ← abstract of awards finalised
+ */
+export const CANVASS_PR_STATUS: Record<string, number> = {
+  pr_received:     6,
+  release_canvass: 8,
+  collect_canvass: 9,
+  bac_resolution:  10,
+  aaa_preparation: 11,
+};
+
+/**
+ * Update only the status_id of a purchase_request row.
+ * Used by the canvassing workflow to advance the PR's visible status
+ * in the PR list as each canvass step is completed.
+ *
+ * Deliberately separate from updatePurchaseRequest so it never
+ * accidentally mutates items or other fields.
+ */
+export async function updatePRStatus(prId: string, statusId: number): Promise<void> {
+  const { error } = await supabase
+    .from("purchase_requests")
+    .update({ status_id: statusId })
+    .eq("id", prId);
+  if (error) throw error;
+}
+
+export async function ensureCanvassSession(
+  prId: string,
+  initial?: Partial<CanvassSessionRow>
+): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .select("*")
+    .eq("pr_id", prId);
+  if (error) throw error;
+  if (Array.isArray(data) && data.length > 0) return data[0] as CanvassSessionRow;
+  const payload: Record<string, any> = {
+    pr_id: prId,
+    stage: initial?.stage ?? "pr_received",
+    status: initial?.status ?? "open",
+  };
+  if (initial?.released_by !== undefined) payload.released_by = initial.released_by;
+  if (initial?.deadline     !== undefined) payload.deadline     = initial.deadline;
+  if (initial?.bac_no       !== undefined) payload.bac_no       = initial.bac_no;
+  const { data: created, error: insErr } = await supabase
+    .from("canvass_sessions")
+    .insert(payload)
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return created as CanvassSessionRow;
+}
+
+export async function updateCanvassStage(sessionId: string, stage: string): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .update({ stage, updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvassSessionRow;
+}
+
+export async function updateCanvassSessionMeta(
+  sessionId: string,
+  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>
+): Promise<CanvassSessionRow> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvassSessionRow;
+}
+
+export async function fetchDivisionIdByName(name: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("division_id")
+    .eq("division_name", name)
+    .single();
+  if (error) return null;
+  return (data as any)?.division_id ?? null;
+}
+
+export async function insertAssignmentsForDivisions(
+  sessionId: string,
+  assignments: Array<{ division_id: number; canvasser_id?: number; released_at?: string }>
+): Promise<CanvasserAssignmentRow[]> {
+  if (!assignments.length) return [];
+  const rows = assignments.map(a => ({
+    session_id: sessionId,
+    division_id: a.division_id,
+    canvasser_id: a.canvasser_id ?? null,
+    released_at: a.released_at ?? new Date().toISOString(),
+    status: "released" as const,
+  }));
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow[];
+}
+
+export async function markAssignmentReturned(
+  sessionId: string,
+  division_id: number,
+  returned_at?: string
+): Promise<CanvasserAssignmentRow> {
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .update({
+      returned_at: returned_at ?? new Date().toISOString(),
+      status: "returned",
+    })
+    .eq("session_id", sessionId)
+    .eq("division_id", division_id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow;
+}
+
+export async function insertSupplierQuotesForSession(
+  sessionId: string,
+  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>
+): Promise<CanvassEntryRow[]> {
+  if (!quotes.length) return [];
+  const rows = quotes.map(q => ({ ...q, session_id: sessionId }));
+  const { data, error } = await supabase
+    .from("canvass_entries")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data as CanvassEntryRow[];
+}
+
+export async function fetchAssignmentsForSession(sessionId: string): Promise<CanvasserAssignmentRow[]> {
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  return data as CanvasserAssignmentRow[];
+}
+
+export async function fetchQuotesForSession(sessionId: string): Promise<CanvassEntryRow[]> {
+  const { data, error } = await supabase
+    .from("canvass_entries")
+    .select("*")
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  return data as CanvassEntryRow[];
+}
+
+export async function insertBACResolution(
+  sessionId: string,
+  payload: Omit<BACResolutionRow, "id" | "session_id">
+): Promise<BACResolutionRow> {
+  const { data, error } = await supabase
+    .from("bac_resolution")
+    .insert({ ...payload, session_id: sessionId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as BACResolutionRow;
+}
+
+export async function insertAAAForSession(
+  sessionId: string,
+  payload: Omit<AAADocumentRow, "id" | "session_id">
+): Promise<AAADocumentRow> {
+  const { data, error } = await supabase
+    .from("aaa_documents")
+    .insert({ ...payload, session_id: sessionId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AAADocumentRow;
+}
+
+
+// ─── Budget Module · Types & Helpers ─────────────────────────────────────────
+
+export interface DivisionBudgetRow {
+  id: string;
+  division_id: number;
+  fiscal_year: number;
+  allocated: number;
+  utilized: number;        // auto-updated by DB trigger from approved ORS entries
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined from divisions table (select with division_name)
+  division_name?: string;
+}
+
+export interface OrsEntryRow {
+  id: string;
+  ors_no: string;          // e.g. ORS-2026-0145
+  pr_id: string | null;
+  pr_no: string | null;
+  division_id: number | null;
+  fiscal_year: number;
+  amount: number;
+  status: "Pending" | "Processing" | "Approved" | "Rejected";
+  prepared_by: number | null;
+  approved_by: number | null;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined
+  division_name?: string;
+}
+
+// ── Fetch all budget rows for a fiscal year, joined with division name ────────
+
+export async function fetchBudgets(fiscalYear: number): Promise<DivisionBudgetRow[]> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .select("*, divisions(division_name)")
+    .eq("fiscal_year", fiscalYear)
+    .order("division_id");
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  })) as DivisionBudgetRow[];
+}
+
+export async function fetchBudgetByDivision(
+  divisionId: number,
+  fiscalYear: number
+): Promise<DivisionBudgetRow | null> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .select("*, divisions(division_name)")
+    .eq("division_id", divisionId)
+    .eq("fiscal_year", fiscalYear)
+    .single();
+  if (error) return null;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+// ── Upsert a division's allocated budget (Budget / Admin only) ────────────────
+
+/** Create a brand-new division budget allocation row (from CreateAllocModal). */
+export async function insertDivisionBudget(
+  divisionId: number,
+  fiscalYear: number,
+  allocated: number,
+  notes?: string,
+): Promise<DivisionBudgetRow> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .insert({
+      division_id: divisionId,
+      fiscal_year: fiscalYear,
+      allocated,
+      notes: notes ?? null,
+    })
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+/** Update an existing allocation row by its primary key (from AllocModal). */
+export async function updateDivisionBudget(
+  id: string,
+  fiscalYear: number,
+  allocated: number,
+  notes?: string,
+): Promise<DivisionBudgetRow> {
+  const { data, error } = await supabase
+    .from("division_budgets")
+    .update({
+      fiscal_year: fiscalYear,
+      allocated,
+      notes: notes ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+// ── ORS helpers ───────────────────────────────────────────────────────────────
+
+export async function fetchOrsEntries(
+  fiscalYear: number,
+  divisionId?: number
+): Promise<OrsEntryRow[]> {
+  let q = supabase
+    .from("ors_entries")
+    .select("*, divisions(division_name)")
+    .eq("fiscal_year", fiscalYear)
+    .order("created_at", { ascending: false });
+  if (divisionId !== undefined) q = q.eq("division_id", divisionId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  })) as OrsEntryRow[];
+}
+
+export async function insertOrsEntry(
+  entry: Omit<OrsEntryRow, "id" | "created_at" | "updated_at" | "division_name">
+): Promise<OrsEntryRow> {
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .insert(entry)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function updateOrsStatus(
+  orsId: string,
+  status: OrsEntryRow["status"],
+  approvedBy?: number
+): Promise<OrsEntryRow> {
+  const patch: Record<string, any> = { status };
+  if (approvedBy !== undefined) patch.approved_by = approvedBy;
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .update(patch)
+    .eq("id", orsId)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function updateOrsEntry(
+  orsId: string,
+  patch: Partial<Pick<OrsEntryRow, "ors_no" | "pr_no" | "amount" | "status" | "notes" | "approved_by">>
+): Promise<OrsEntryRow> {
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .update(patch)
+    .eq("id", orsId)
+    .select("*, divisions(division_name)")
+    .single();
+  if (error) throw error;
+  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+}
+
+export async function deleteOrsEntry(orsId: string): Promise<void> {
+  const { error } = await supabase.from("ors_entries").delete().eq("id", orsId);
+  if (error) throw error;
+}
+
+// ── Generate next ORS number for current year ─────────────────────────────────
+
+export async function generateOrsNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { count, error } = await supabase
+    .from("ors_entries")
+    .select("*", { count: "exact", head: true })
+    .like("ors_no", `ORS-${year}-%`);
+  if (error) throw error;
+  const seq = String((count ?? 0) + 1).padStart(4, "0");
+  return `ORS-${year}-${seq}`;
+}
+
+// ─── Divisions ────────────────────────────────────────────────────────────────
+
+export interface DivisionRow {
+  division_id:   number;
+  division_name: string | null;
+}
+
+/** Fetch all divisions ordered by name. Used by CreateAllocModal and any
+ *  component that needs the full division list regardless of budget data. */
+export async function fetchAllDivisions(): Promise<DivisionRow[]> {
+  const { data, error } = await supabase
+    .from("divisions")
+    .select("division_id, division_name")
+    .order("division_name");
+  if (error) throw error;
+  return (data ?? []) as DivisionRow[];
+}
+
+// ─── Canvass user helpers ─────────────────────────────────────────────────────
+
+/**
+ * A user row enriched with their division name, used for canvass assignment.
+ * role_id 6 = End User (the submitting division rep)
+ * role_id 7 = Canvasser (designated canvass collector per division)
+ */
+export interface CanvassUserRow {
+  id:            number;
+  username:      string;
+  role_id:       number;
+  division_id:   number | null;
+  division_name: string | null;
+}
+
+/**
+ * Fetch users whose role_id is in the provided list, joined with their division name.
+ * Used by BACView to populate the release/return canvass assignment table
+ * with actual End Users (role 6) and Canvassers (role 7) from the DB.
+ */
+export async function fetchUsersByRole(roleIds: number[]): Promise<CanvassUserRow[]> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, username, role_id, division_id, divisions(division_name)")
+    .in("role_id", roleIds)
+    .order("username");
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id:            r.id,
+    username:      r.username,
+    role_id:       r.role_id,
+    division_id:   r.division_id ?? null,
+    division_name: r.divisions?.division_name ?? null,
+  })) as CanvassUserRow[];
+}
+
+
+
+/** Valid status_flag values — must match the CHECK constraint in the DB. */
+export type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
+
+export interface RemarkRow {
+  id:          number;
+  pr_id:       number | string;   // FK → purchase_requests.id
+  user_id:     number;            // FK → users.id
+  remark:      string;
+  status_flag: StatusFlag | null;
+  created_at:  string;
+  // Joined from users table when fetched with select("*, users(username)")
+  username?:   string;
+}
+
+/**
+ * Insert a single remark for a PR.
+ * Called by ProcessPRModal (on process/sign) and PRModule RemarkSheet (ad-hoc).
+ */
+export async function insertRemark(
+  prId:       number | string,
+  userId:     number | string,
+  remark:     string,
+  statusFlag: StatusFlag | null,
+): Promise<RemarkRow> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .insert({
+      pr_id:       prId,
+      user_id:     userId,
+      remark:      remark.trim(),
+      status_flag: statusFlag ?? null,
+    })
+    .select("id, pr_id, user_id, remark, status_flag, created_at")
+    .single();
+  if (error) throw error;
+  return data as RemarkRow;
+}
+
+/**
+ * Fetch all remarks for a given PR, newest first.
+ * Joins users(username) so callers don't need a second query.
+ */
+export async function fetchRemarksByPR(prId: number | string): Promise<RemarkRow[]> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id:          r.id,
+    pr_id:       r.pr_id,
+    user_id:     r.user_id,
+    remark:      r.remark,
+    status_flag: r.status_flag as StatusFlag | null,
+    created_at:  r.created_at,
+    username:    r.users?.username ?? undefined,
+  })) as RemarkRow[];
+}
+
+/**
+ * Fetch the most recent remark for a PR (e.g. to show the latest flag on a card).
+ * Returns null if none exist.
+ */
+export async function fetchLatestRemarkByPR(prId: number | string): Promise<RemarkRow | null> {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id:          (data as any).id,
+    pr_id:       (data as any).pr_id,
+    user_id:     (data as any).user_id,
+    remark:      (data as any).remark,
+    status_flag: (data as any).status_flag as StatusFlag | null,
+    created_at:  (data as any).created_at,
+    username:    (data as any).users?.username ?? undefined,
+  };
+}
+
+/**
+ * Delete a remark by id. Only the author or an Admin should call this;
+ * enforce that in the UI layer — RLS handles it on the DB side.
+ */
+export async function deleteRemark(remarkId: number): Promise<void> {
+  const { error } = await supabase.from("remarks").delete().eq("id", remarkId);
+  if (error) throw error;
 }
