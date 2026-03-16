@@ -5,8 +5,10 @@
 
 import type { CanvassStage, CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React from "react";
+import React, { useState } from "react";
 import { Platform, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import type { CanvassPreviewData } from "../(modals)/CanvassPreview";
+import CanvassPreviewModal from "../(modals)/CanvassPreviewModal";
 
 // ─── Inlined constants ────────────────────────────────────────────────────────
 
@@ -114,6 +116,31 @@ export default function EndUserView({ pr, onBack, currentStage: currentStageProp
   const currentStage: CanvassStage = currentStageProp ?? "release_canvass";
   const currentIdx = STAGE_ORDER.indexOf(currentStage);
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const buildPreviewData = (): CanvassPreviewData => {
+    const deadlineDate = new Date();
+    deadlineDate.setDate(deadlineDate.getDate() + 7);
+    return {
+      prNo:           pr.prNo,
+      quotationNo:    "—",          // not available to End User
+      date:           pr.date,
+      deadline:       deadlineDate.toLocaleDateString("en-PH", {
+                        month: "long", day: "numeric", year: "numeric" }),
+      bacChairperson: "ATTY. JAIME G. RESOCO, JR.",
+      officeSection:  pr.officeSection,
+      purpose:        pr.purpose,
+      items:          pr.items.map((item, i) => ({
+        itemNo:      i + 1,
+        description: item.desc,
+        qty:         item.qty,
+        unit:        item.unit,
+        unitPrice:   "",
+      })),
+      canvasserNames: [],
+    };
+  };
+
   return (
     <View className="flex-1 bg-gray-50">
 
@@ -134,10 +161,20 @@ export default function EndUserView({ pr, onBack, currentStage: currentStageProp
               <Text className="text-[15px] font-extrabold text-white">Canvassing Status</Text>
             </View>
           </View>
-          <View className="bg-white/15 px-2.5 py-1 rounded-xl">
-            <Text className="text-[10.5px] font-bold text-white/80" style={{ fontFamily: MONO }}>
-              {pr.prNo}
-            </Text>
+          <View className="flex-row items-center gap-2">
+            <View className="bg-white/15 px-2.5 py-1 rounded-xl">
+              <Text className="text-[10.5px] font-bold text-white/80" style={{ fontFamily: MONO }}>
+                {pr.prNo}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setPreviewOpen(true)}
+              activeOpacity={0.8}
+              className="flex-row items-center gap-1.5 bg-white/15 px-2.5 py-1.5 rounded-xl"
+              style={{ borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" }}>
+              <MaterialIcons name="description" size={13} color="#fff" />
+              <Text className="text-[11px] font-bold text-white">View RFQ</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -249,6 +286,14 @@ export default function EndUserView({ pr, onBack, currentStage: currentStageProp
         <ItemsTable items={pr.items} />
 
       </ScrollView>
+
+      {/* ── RFQ Preview Modal ── */}
+      <CanvassPreviewModal
+        visible={previewOpen}
+        data={buildPreviewData()}
+        onClose={() => setPreviewOpen(false)}
+      />
+
     </View>
   );
 }

@@ -4,10 +4,12 @@
  */
 
 import {
-  ensureCanvassSession, fetchPRIdByNo, fetchPRWithItemsById,
+  CANVASS_PR_STATUS,
+  ensureCanvassSession, fetchPRMetaByNo, fetchPRWithItemsById,
   fetchUsersByRole,
   insertAAAForSession, insertAssignmentsForDivisions, insertBACResolution,
   insertSupplierQuotesForSession, updateCanvassSessionMeta, updateCanvassStage,
+  updatePRStatus,
   type CanvassUserRow,
 } from "@/lib/supabase";
 import type {
@@ -54,6 +56,20 @@ const PROC_MODES = [
 // role_id 6 = End User  (division representative who submitted the PR)
 // role_id 7 = Canvasser (designated canvass collector per division)
 const CANVASS_ROLE_IDS = [6, 7];
+
+/**
+ * Reverse of CANVASS_PR_STATUS.
+ * Maps pr_status.id → CanvassStage so the mount effect can restore the
+ * correct step from the PR row's status_id rather than relying solely on
+ * canvass_sessions.stage, which can drift if a prior update was partial.
+ */
+const PR_STATUS_TO_STAGE: Record<number, CanvassStage> = {
+  6:  "pr_received",
+  8:  "release_canvass",
+  9:  "collect_canvass",
+  10: "bac_resolution",
+  11: "aaa_preparation",
+};
 
 // ─── Inlined UI atoms (NativeWind className) ──────────────────────────────────
 
@@ -181,39 +197,137 @@ const Btn = ({ label, onPress, disabled, ghost }: {
   </TouchableOpacity>
 );
 
+/**
+ * CompletedBanner — shown when the BAC navigates back to an already-submitted step.
+ * Mirrors page.tsx's phase-completion banner style.
+ * The "Re-submit" action un-marks the step so the form becomes editable again,
+ * but does NOT touch the DB — the next submission will update it.
+ */
+const CompletedBanner = ({ label, onResubmit }: {
+  label: string; onResubmit: () => void;
+}) => (
+  <View className="flex-row items-center gap-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 mb-3">
+    <View className="w-7 h-7 rounded-full bg-emerald-200 items-center justify-center">
+      <MaterialIcons name="check-circle" size={16} color="#065f46" />
+    </View>
+    <View className="flex-1">
+      <Text className="text-[12.5px] font-bold text-emerald-800">Step completed</Text>
+      <Text className="text-[11px] text-emerald-700 mt-0.5">{label}</Text>
+    </View>
+    <TouchableOpacity onPress={onResubmit} activeOpacity={0.8}
+      className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white">
+      <Text className="text-[11.5px] font-bold text-emerald-700">Edit</Text>
+    </TouchableOpacity>
+  </View>
+);
+
+/**
+ * StepNav — Previous / Submit / Next footer row.
+ * Mirrors page.tsx's navigation buttons:
+ *   Previous — always available (goes to prior stage in STAGE_ORDER)
+ *   Submit   — only shown when the step is not yet completed
+ *   Next     — goes to the next stage (visible even on completed steps for review)
+ */
+const StepNav = ({ stage, done, onPrev, onNext, canSubmit, submitLabel, onSubmit }: {
+  stage:       CanvassStage;
+  done:        Set<CanvassStage>;
+  onPrev:      (s: CanvassStage) => void;
+  onNext:      (s: CanvassStage) => void;
+  canSubmit:   boolean;
+  submitLabel: string;
+  onSubmit:    () => void;
+}) => {
+  const idx     = STAGE_ORDER.indexOf(stage);
+  const prevStage = idx > 0 ? STAGE_ORDER[idx - 1] : null;
+  const nextStage = idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : null;
+  return (
+    <View className="flex-row items-center justify-between mt-3 pt-3"
+      style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+      {/* Previous */}
+      {prevStage ? (
+        <TouchableOpacity onPress={() => onPrev(prevStage)} activeOpacity={0.8}
+          className="flex-row items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+          <MaterialIcons name="chevron-left" size={16} color="#6b7280" />
+          <Text className="text-[12.5px] font-bold text-gray-500">Previous</Text>
+        </TouchableOpacity>
+      ) : (
+        <View />
+      )}
+
+      {/* Submit — hidden on already-completed steps */}
+      {canSubmit && (
+        <Btn label={submitLabel} onPress={onSubmit} />
+      )}
+
+      {/* Next */}
+      {nextStage ? (
+        <TouchableOpacity onPress={() => onNext(nextStage)} activeOpacity={0.8}
+          className="flex-row items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+          <Text className="text-[12.5px] font-bold text-gray-500">Next</Text>
+          <MaterialIcons name="chevron-right" size={16} color="#6b7280" />
+        </TouchableOpacity>
+      ) : (
+        <View />
+      )}
+    </View>
+  );
+};
+
+/**
+ * StageStrip — mirrors page.tsx's StepIndicator.
+ *
+ * Any stage is tappable via onNavigate:
+ *   completed  → green dot, checkmark, "tap to edit" hint
+ *   active     → white dot, current icon
+ *   future     → dim dot, can still be tapped to preview (read-only view)
+ *
+ * Navigating never clears completion state — that is preserved in `done`
+ * and only modified when the user confirms an action button.
+ */
 const StageStrip = ({ current, completed, onNavigate }: {
-  current: CanvassStage;
-  completed: Set<CanvassStage>;
-  onNavigate?: (stage: CanvassStage) => void;
+  current:    CanvassStage;
+  completed:  Set<CanvassStage>;
+  onNavigate: (stage: CanvassStage) => void;
 }) => (
   <ScrollView horizontal showsHorizontalScrollIndicator={false}
     className="bg-[#064E3B]"
     contentContainerStyle={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 10, gap: 4 }}>
     {STAGE_ORDER.map((s, i) => {
-      const meta     = STAGE_META[s];
-      const isDone   = completed.has(s);
-      const active   = s === current;
-      const tappable = isDone && !active && !!onNavigate;
+      const meta   = STAGE_META[s];
+      const isDone = completed.has(s);
+      const active = s === current;
       return (
         <React.Fragment key={s}>
           <TouchableOpacity
-            onPress={tappable ? () => onNavigate!(s) : undefined}
-            activeOpacity={tappable ? 0.65 : 1}
+            onPress={() => onNavigate(s)}
+            activeOpacity={0.65}
             className="items-center gap-1">
             <View className={`w-7 h-7 rounded-full items-center justify-center ${
-              isDone ? "bg-[#52b788]" : active ? "bg-white" : "bg-white/15"
+              isDone  ? "bg-[#52b788]" :
+              active  ? "bg-white"     : "bg-white/15"
             }`}
-              style={tappable ? { borderWidth: 1.5, borderColor: "#a7f3d0" } : undefined}>
+              style={isDone && !active
+                ? { borderWidth: 1.5, borderColor: "#a7f3d0" }
+                : undefined}>
               <MaterialIcons
-                name={isDone ? (tappable ? "replay" : "check") : meta.icon} size={13}
-                color={isDone ? "#1a4d2e" : active ? "#064E3B" : "rgba(255,255,255,0.4)"} />
+                name={isDone ? "check" : meta.icon} size={13}
+                color={
+                  isDone  ? "#1a4d2e" :
+                  active  ? "#064E3B" : "rgba(255,255,255,0.4)"
+                } />
             </View>
-            <Text className="text-[9px] font-bold text-center" style={{ maxWidth: 54,
-              color: active ? "#fff" : isDone ? "#52b788" : "rgba(255,255,255,0.35)" }}>
+            <Text className="text-[9px] font-bold text-center" style={{
+              maxWidth: 54,
+              color: active ? "#fff" : isDone ? "#52b788" : "rgba(255,255,255,0.35)",
+            }}>
               {meta.label}
             </Text>
-            {tappable && (
-              <Text style={{ fontSize: 7, color: "rgba(167,243,208,0.7)", textAlign: "center", maxWidth: 54 }}>
+            {/* Subtle hint only on completed (re-editable) stages */}
+            {isDone && !active && (
+              <Text style={{
+                fontSize: 7, color: "rgba(167,243,208,0.7)",
+                textAlign: "center", maxWidth: 54,
+              }}>
                 tap to edit
               </Text>
             )}
@@ -359,36 +473,29 @@ export default function BACView({ pr, onComplete, onBack }: {
   const [mode,      setMode]      = useState(PROC_MODES[0]);
   const [aaaNo,     setAaaNo]     = useState("");
   const sessionRef = useRef<any>({ pr_no: pr.prNo });
+  // Cached on mount — avoids redundant fetchPRIdByNo calls in every step handler
+  const prIdRef    = useRef<string | null>(null);
 
-  // ── Back-navigation: jump to any previously completed stage ──────────────
+  // ── Free stage navigation — mirrors page.tsx's onStepClick ─────────────
+  // Navigating NEVER clears `done`. The DB stage is only advanced by the
+  // action buttons (handleStep6, handleStep8, etc.).  This lets BAC freely
+  // review any step without risking accidental re-submission or data loss.
   const goToStage = useCallback((target: CanvassStage) => {
-    Alert.alert(
-      "Go back to this stage?",
-      `Return to "${STAGE_META[target].label}"? You can re-submit from there.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Go Back",
-          onPress: () => {
-            // Remove the target and all stages after it from completed set
-            const targetIdx = STAGE_ORDER.indexOf(target);
-            setDone(prev => {
-              const next = new Set(prev);
-              STAGE_ORDER.forEach((s, i) => { if (i >= targetIdx) next.delete(s); });
-              return next;
-            });
-            setStage(target);
-          },
-        },
-      ]
-    );
+    setStage(target);
   }, []);
 
+  // ── Advance: marks a stage done and moves to the next stage ─────────────
+  // Unlike before, `done` is never mutated by navigation — only by this.
+  // This precisely mirrors page.tsx where setStepNData is the commit action.
   const advance = useCallback((current: CanvassStage) => {
     setDone(s => new Set([...s, current]));
     const idx = STAGE_ORDER.indexOf(current);
     if (idx < STAGE_ORDER.length - 1) setStage(STAGE_ORDER[idx + 1]);
   }, []);
+
+  // True when the BAC is viewing a stage that has already been submitted.
+  // Used to show a read-only notice banner — same as page.tsx's "completed" status UI.
+  const isViewingCompleted = done.has(stage);
 
   // ── Load canvass users (End Users + Canvassers) from DB ──────────────────
   useEffect(() => {
@@ -411,12 +518,39 @@ export default function BACView({ pr, onComplete, onBack }: {
   useEffect(() => {
     (async () => {
       try {
-        const prId = await fetchPRIdByNo(pr.prNo);
-        if (!prId) return;
-        const session = await ensureCanvassSession(prId);
+        // Single query gets both id and status_id — no second round-trip needed
+        const meta = await fetchPRMetaByNo(pr.prNo);
+        if (!meta) return;
+        prIdRef.current = meta.id;   // cache for all step handlers
+
+        const session = await ensureCanvassSession(meta.id);
         setSessionId(session.id);
-        setStage((session.stage as CanvassStage) || "pr_received");
-        const { items } = await fetchPRWithItemsById(prId);
+
+        // Restore BAC canvass number if already recorded
+        if (session.bac_no) {
+          setBacNo(session.bac_no);
+          sessionRef.current.bac_no = session.bac_no;
+        }
+
+        // Determine the authoritative current stage.
+        // pr_status.id takes priority over session.stage because it is updated
+        // by updatePRStatus in every step handler. session.stage is the fallback
+        // for sessions created before the expanded status system.
+        const stageFromStatus  = PR_STATUS_TO_STAGE[meta.status_id];
+        const stageFromSession = session.stage as CanvassStage | undefined;
+        const resolvedStage: CanvassStage =
+          stageFromStatus ?? stageFromSession ?? "pr_received";
+
+        setStage(resolvedStage);
+
+        // Reconstruct `done` — every stage that precedes the resolved stage
+        // is considered already submitted, so CompletedBanner renders correctly.
+        const resolvedIdx = STAGE_ORDER.indexOf(resolvedStage);
+        if (resolvedIdx > 0) {
+          setDone(new Set(STAGE_ORDER.slice(0, resolvedIdx)));
+        }
+
+        const { items } = await fetchPRWithItemsById(meta.id);
         setLiveItems(items.map(i => ({
           id: parseInt(String(i.id)), desc: i.description,
           stock: i.stock_no, unit: i.unit, qty: i.quantity, unitCost: i.unit_price,
@@ -428,11 +562,12 @@ export default function BACView({ pr, onComplete, onBack }: {
   // ── Step handlers ─────────────────────────────────────────────────────────
 
   const handleStep6 = useCallback(async () => {
+    const prId = prIdRef.current;
+    if (!prId) { Alert.alert("Error", "PR not loaded yet. Please wait and try again."); return; }
     try {
-      const prId = await fetchPRIdByNo(pr.prNo);
-      if (!prId) throw new Error("PR not found");
       const session = await ensureCanvassSession(prId, { bac_no: bacNo });
       setSessionId(session.id);
+      await updatePRStatus(prId, CANVASS_PR_STATUS.pr_received);        // → status 6
       await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
       await updateCanvassStage(session.id, "release_canvass");
       sessionRef.current.bac_no = bacNo;
@@ -440,23 +575,22 @@ export default function BACView({ pr, onComplete, onBack }: {
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not create canvass session");
     }
-  }, [pr.prNo, bacNo, advance]);
+  }, [bacNo, advance]);
 
   const handleStep8 = useCallback(async () => {
-    if (!sessionId) return;
+    const prId = prIdRef.current;
+    if (!sessionId || !prId) return;
     try {
-      // Build assignment rows from users who have been released
       const released = canvassUsers.filter(
         u => canvassStatuses[u.id]?.status !== "pending" && u.division_id !== null
       );
       const rows = released.map(u => ({
         division_id:  u.division_id!,
-        canvasser_id: u.id,               // actual user id from the DB users table
-        released_at:  canvassStatuses[u.id]?.releaseDate
-          ? new Date(canvassStatuses[u.id].releaseDate).toISOString()
-          : new Date().toISOString(),
+        canvasser_id: u.id,
+        released_at:  canvassStatuses[u.id]?.releaseDate || new Date().toISOString(),
       }));
       if (rows.length) await insertAssignmentsForDivisions(sessionId, rows);
+      await updatePRStatus(prId, CANVASS_PR_STATUS.release_canvass);    // → status 8
       await updateCanvassStage(sessionId, "collect_canvass");
       advance("release_canvass");
     } catch (e: any) {
@@ -465,7 +599,8 @@ export default function BACView({ pr, onComplete, onBack }: {
   }, [sessionId, canvassUsers, canvassStatuses, advance]);
 
   const handleStep9 = useCallback(async () => {
-    if (!sessionId) return;
+    const prId = prIdRef.current;
+    if (!sessionId || !prId) return;
     try {
       const quotes: any[] = [];
       supps.forEach(sp => {
@@ -479,6 +614,7 @@ export default function BACView({ pr, onComplete, onBack }: {
         });
       });
       if (quotes.length) await insertSupplierQuotesForSession(sessionId, quotes);
+      await updatePRStatus(prId, CANVASS_PR_STATUS.collect_canvass);    // → status 9
       await updateCanvassStage(sessionId, "bac_resolution");
       advance("collect_canvass");
     } catch (e: any) {
@@ -487,7 +623,8 @@ export default function BACView({ pr, onComplete, onBack }: {
   }, [sessionId, supps, liveItems, advance]);
 
   const handleStep7 = useCallback(async () => {
-    if (!sessionId || !resNo) return;
+    const prId = prIdRef.current;
+    if (!sessionId || !resNo || !prId) return;
     try {
       sessionRef.current.resolution_no = resNo;
       sessionRef.current.mode = mode;
@@ -496,6 +633,7 @@ export default function BACView({ pr, onComplete, onBack }: {
         prepared_by: currentUser?.id ?? 0,
         mode, resolved_at: new Date().toISOString(), notes: null,
       });
+      await updatePRStatus(prId, CANVASS_PR_STATUS.bac_resolution);     // → status 10
       await updateCanvassStage(sessionId, "aaa_preparation");
       advance("bac_resolution");
     } catch (e: any) {
@@ -504,13 +642,15 @@ export default function BACView({ pr, onComplete, onBack }: {
   }, [sessionId, resNo, mode, currentUser?.id, advance]);
 
   const handleComplete = useCallback(async () => {
-    if (!sessionId || !aaaNo) return;
+    const prId = prIdRef.current;
+    if (!sessionId || !aaaNo || !prId) return;
     try {
       sessionRef.current.aaa_no = aaaNo;
       await insertAAAForSession(sessionId, {
         aaa_no: aaaNo, prepared_by: currentUser?.id ?? 0,
         prepared_at: new Date().toISOString(), file_url: null,
       });
+      await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);    // → status 11
       await updateCanvassSessionMeta(sessionId, { status: "closed" });
       onComplete?.({
         pr_no: pr.prNo, bac_no: sessionRef.current.bac_no,
@@ -522,11 +662,14 @@ export default function BACView({ pr, onComplete, onBack }: {
     }
   }, [sessionId, aaaNo, currentUser?.id, mode, pr.prNo, onComplete]);
 
-  // Helper to toggle a user's release/return status
+  // Helper to toggle a user's release/return status.
+  // releaseDate / returnDate are stored as ISO strings so that handleStep8
+  // can pass them directly to new Date(...).toISOString() without parsing errors.
+  // They are formatted for display only at render time.
   const toggleUserStatus = useCallback((userId: number) => {
     setCanvassStatuses(prev => {
       const cur = prev[userId] ?? { status: "pending", releaseDate: "", returnDate: "" };
-      const now = new Date().toLocaleDateString("en-PH");
+      const now = new Date().toISOString();
       if (cur.status === "pending")   return { ...prev, [userId]: { ...cur, status: "released", releaseDate: now } };
       if (cur.status === "released")  return { ...prev, [userId]: { ...cur, status: "returned",  returnDate: now } };
       return prev; // "returned" — no further toggle
@@ -576,7 +719,14 @@ export default function BACView({ pr, onComplete, onBack }: {
           <View>
             <StepHeader stage="pr_received" title="PR Received from PARPO"
               desc="Assign a BAC canvass number to acknowledge receipt of the approved PR." />
-            <Banner type="info" text="PR has been approved by PARPO. Assign a BAC canvass number to begin." />
+            {isViewingCompleted ? (
+              <CompletedBanner
+                label={`BAC Canvass No. ${bacNo} recorded.`}
+                onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("pr_received"); return n; })}
+              />
+            ) : (
+              <Banner type="info" text="PR has been approved by PARPO. Assign a BAC canvass number to begin." />
+            )}
             <Card>
               <View className="px-4 pt-3 pb-2">
                 <Divider label="BAC Acknowledgement" />
@@ -589,10 +739,15 @@ export default function BACView({ pr, onComplete, onBack }: {
               </View>
             </Card>
             <ItemsTable items={liveItems} />
-            <View className="flex-row justify-end gap-2.5 mt-1">
-              <Btn ghost label="Save Draft" onPress={() => {}} />
-              <Btn label="Acknowledged → Release Canvass" disabled={!bacNo} onPress={handleStep6} />
-            </View>
+            <StepNav
+              stage={stage}
+              done={done}
+              onPrev={goToStage}
+              onNext={goToStage}
+              canSubmit={!isViewingCompleted && !!bacNo}
+              submitLabel="Acknowledged → Release Canvass"
+              onSubmit={handleStep6}
+            />
           </View>
         )}
 
@@ -674,10 +829,21 @@ export default function BACView({ pr, onComplete, onBack }: {
                 )}
               </View>
             </Card>
-            <View className="flex-row justify-end gap-2.5 mt-1">
-              <Btn ghost label="Save Draft" onPress={() => {}} />
-              <Btn label="Released → Collect Canvass" onPress={handleStep8} />
-            </View>
+            {isViewingCompleted && (
+              <CompletedBanner
+                label="Canvass sheets released. Waiting for returns."
+                onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("release_canvass"); return n; })}
+              />
+            )}
+            <StepNav
+              stage={stage}
+              done={done}
+              onPrev={goToStage}
+              onNext={goToStage}
+              canSubmit={!isViewingCompleted}
+              submitLabel="Released → Collect Canvass"
+              onSubmit={handleStep8}
+            />
           </View>
         )}
 
@@ -773,10 +939,21 @@ export default function BACView({ pr, onComplete, onBack }: {
                 </TouchableOpacity>
               </View>
             </Card>
-            <View className="flex-row justify-end gap-2.5 mt-1">
-              <Btn ghost label="Save Draft" onPress={() => {}} />
-              <Btn label="Encoded → BAC Resolution" onPress={handleStep9} />
-            </View>
+            {isViewingCompleted && (
+              <CompletedBanner
+                label="Supplier quotations encoded."
+                onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("collect_canvass"); return n; })}
+              />
+            )}
+            <StepNav
+              stage={stage}
+              done={done}
+              onPrev={goToStage}
+              onNext={goToStage}
+              canSubmit={!isViewingCompleted}
+              submitLabel="Encoded → BAC Resolution"
+              onSubmit={handleStep9}
+            />
           </View>
         )}
 
@@ -873,11 +1050,26 @@ export default function BACView({ pr, onComplete, onBack }: {
               </View>
             </Card>
 
-            <View className="flex-row justify-end gap-2.5 mt-1">
-              <Btn ghost label="Save Draft" onPress={() => {}} />
-              <Btn label="Resolve → Prepare AAA"
-                disabled={!allSigned || !resNo || !mode} onPress={handleStep7} />
-            </View>
+            {isViewingCompleted ? (
+              <CompletedBanner
+                label={`Resolution No. ${resNo} recorded. Mode: ${mode}.`}
+                onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("bac_resolution"); return n; })}
+              />
+            ) : (
+              !allSigned && (
+                <Banner type="warning"
+                  text="All BAC members and PARPO II must sign before proceeding." />
+              )
+            )}
+            <StepNav
+              stage={stage}
+              done={done}
+              onPrev={goToStage}
+              onNext={goToStage}
+              canSubmit={!isViewingCompleted && allSigned && !!resNo && !!mode}
+              submitLabel="Resolve → Prepare AAA"
+              onSubmit={handleStep7}
+            />
           </View>
         )}
 
@@ -909,11 +1101,21 @@ export default function BACView({ pr, onComplete, onBack }: {
                 </View>
               </View>
             </Card>
-            <View className="flex-row justify-end gap-2.5 mt-1">
-              <Btn ghost label="Save Draft" onPress={() => {}} />
-              <Btn label="Finalize & Forward to Supply →"
-                disabled={!aaaNo} onPress={handleComplete} />
-            </View>
+            {isViewingCompleted && (
+              <CompletedBanner
+                label={`AAA No. ${aaaNo} prepared. Forwarded to Supply.`}
+                onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("aaa_preparation"); return n; })}
+              />
+            )}
+            <StepNav
+              stage={stage}
+              done={done}
+              onPrev={goToStage}
+              onNext={goToStage}
+              canSubmit={!isViewingCompleted && !!aaaNo}
+              submitLabel="Finalize & Forward to Supply →"
+              onSubmit={handleComplete}
+            />
           </View>
         )}
 

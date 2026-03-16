@@ -4,7 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
-  Pressable, ScrollView, Text, TextInput, TouchableOpacity, View,
+  Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/EditPRModal";
 import ProcessPRModal, {
@@ -18,10 +18,12 @@ import ProcessPRModal, {
 import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-  fetchCanvassablePRs, fetchCanvassablePRsByDivision, fetchPRStatuses,
+  fetchCanvassablePRs, fetchCanvassablePRsByDivision,
+  fetchLatestRemarkByPR,
+  fetchPRStatuses,
   fetchPurchaseRequests, fetchPurchaseRequestsByDivision,
   insertProposalForPR, insertPurchaseRequest, supabase,
-  type PRRow, type PRStatusRow,
+  type PRRow, type PRStatusRow, type RemarkRow,
 } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
@@ -35,25 +37,35 @@ type PRRecord = ReturnType<typeof toPRDisplay> & { itemDescription: string; quan
 
 /**
  * Visual config keyed by status_id (FK from pr_status table).
- * Labels come from the live pr_status lookup; these are fallback UI colours only.
+ * Covers the full lifecycle including canvassing sub-statuses from the DB:
  *
- *   1 = Pending
- *   2 = Processing (Division Head)
- *   3 = Processing (BAC)
- *   4 = Processing (Budget)
- *   5 = Processing (PARPO)
- *
- * Any unknown id falls back to STATUS_FALLBACK below.
+ *   1  = Pending
+ *   2  = Processing (Division Head)
+ *   3  = Processing (BAC)
+ *   4  = Processing (Budget)
+ *   5  = Processing (PARPO)
+ *   6  = Canvassing (Reception)    ← BAC receives & assigns canvass number
+ *   8  = Canvassing (Releasing)    ← RFQ released to canvassers
+ *   9  = Canvassing (Collection)   ← BAC collecting filled canvass sheets
+ *   10 = BAC Resolution
+ *   11 = AAA Issuance
  */
-const STATUS_CONFIG: Record<number, { dotClass: string; bgClass: string; textClass: string }> = {
-  1: { dotClass: "bg-yellow-400", bgClass: "bg-yellow-50",  textClass: "text-yellow-700" }, // Pending
-  2: { dotClass: "bg-blue-500",   bgClass: "bg-blue-50",    textClass: "text-blue-700"   }, // Processing (Div. Head)
-  3: { dotClass: "bg-violet-500", bgClass: "bg-violet-50",  textClass: "text-violet-700" }, // Processing (BAC)
-  4: { dotClass: "bg-orange-500", bgClass: "bg-orange-50",  textClass: "text-orange-700" }, // Processing (Budget)
-  5: { dotClass: "bg-green-500",  bgClass: "bg-green-50",   textClass: "text-green-700"  }, // Processing (PARPO)
-  6: { dotClass: "bg-emerald-500",bgClass: "bg-emerald-50", textClass: "text-emerald-700"}, // Canvassing & Resolution
-  7: { dotClass: "bg-teal-500",   bgClass: "bg-teal-50",    textClass: "text-teal-700"   }, // AAA
+const STATUS_CFG: Record<number, { bg: string; text: string; dot: string; label: string }> = {
+  1:  { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending"                },
+  2:  { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6", label: "Div. Head Review"       },
+  3:  { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC Review"             },
+  4:  { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget Review"          },
+  5:  { bg: "#ecfdf5", text: "#065f46", dot: "#10b981", label: "PARPO Approval"         },
+  6:  { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", label: "Canvass · Reception"    },
+  8:  { bg: "#ecfdf5", text: "#065f46", dot: "#16a34a", label: "Canvass · Releasing"    },
+  9:  { bg: "#f0fdfa", text: "#0f766e", dot: "#0d9488", label: "Canvass · Collection"   },
+  10: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", label: "BAC Resolution"         },
+  11: { bg: "#fdf4ff", text: "#86198f", dot: "#c026d3", label: "AAA Issuance"           },
 };
+
+function statusCfgFor(id: number) {
+  return STATUS_CFG[id] ?? { bg: "#f9fafb", text: "#6b7280", dot: "#9ca3af", label: `Status ${id}` };
+}
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "pr",                 label: "Purchase Request"   },
@@ -61,13 +73,14 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "abstract_of_awards", label: "Abstract of Awards" },
 ];
 
-const SECTION_FILTERS = ["All", "STOD", "LTSP", "ARBDSP", "Legal", "PARPO", "PARAD"];
 const MONO      = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
 const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// role_id 2 = Division Head (Step 2), 3 = BAC (Step 3), 4 = Budget (Step 4), 5 = PARPO (Step 5)
-const PROCESS_ROLES = new Set([2, 3, 4, 5]);
+type SortBy = "date_created" | "date_modified";
+
+// role_id 2 = Division Head, 3 = BAC, 4 = Budget, 5 = PARPO, 7 = Canvasser, 8 = Supply
+const PROCESS_ROLES = new Set([2, 3, 4, 5, 7, 8]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,9 +115,11 @@ const SubTabRow: React.FC<{ active: SubTab; onSelect: (s: SubTab) => void }> = (
 );
 
 const SearchBar: React.FC<{
-  value: string; onChange: (t: string) => void; onCreatePress: () => void; canCreate?: boolean;
-}> = ({ value, onChange, onCreatePress, canCreate = true }) => (
-  <View className="flex-row items-center gap-2.5 px-4 py-3 bg-white border-b border-gray-100">
+  value: string; onChange: (t: string) => void;
+  onCreatePress: () => void; canCreate?: boolean;
+  filterActive: boolean; onFilterToggle: () => void;
+}> = ({ value, onChange, onCreatePress, canCreate = true, filterActive, onFilterToggle }) => (
+  <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <Text className="text-gray-400 text-sm">🔍</Text>
       <TextInput value={value} onChangeText={onChange}
@@ -116,6 +131,16 @@ const SearchBar: React.FC<{
         </TouchableOpacity>
       )}
     </View>
+    {/* Filter toggle — mirrors ProcurementLog */}
+    <TouchableOpacity onPress={onFilterToggle} activeOpacity={0.8}
+      style={{
+        width: 40, height: 40, borderRadius: 12,
+        alignItems: "center", justifyContent: "center",
+        backgroundColor: filterActive ? "#064E3B" : "#ffffff",
+        borderWidth: 1.5, borderColor: filterActive ? "#064E3B" : "#e5e7eb",
+      }}>
+      <MaterialIcons name="filter-list" size={18} color={filterActive ? "#ffffff" : "#6b7280"} />
+    </TouchableOpacity>
     {canCreate && (
       <Pressable onPress={onCreatePress}
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
@@ -127,22 +152,106 @@ const SearchBar: React.FC<{
   </View>
 );
 
-const FilterChips: React.FC<{ active: string; onSelect: (s: string) => void }> = ({ active, onSelect }) => (
-  <View className="bg-white border-b border-gray-100">
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 10 }}>
-      {SECTION_FILTERS.map((f) => {
-        const on = f === active;
-        return (
-          <TouchableOpacity key={f} onPress={() => onSelect(f)} activeOpacity={0.8}
-            className={`px-3 py-1.5 rounded-full border ${on ? "bg-[#064E3B] border-[#064E3B]" : "bg-white border-gray-200"}`}>
-            <Text className={`text-[11.5px] font-semibold ${on ? "text-white" : "text-gray-500"}`}>{f}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  </View>
-);
+/** Reusable chip used inside FilterPanel — mirrors ProcurementLog's FilterChip. */
+const FilterChip: React.FC<{
+  label: string; active: boolean; color?: string; onPress: () => void;
+}> = ({ label, active, color, onPress }) => {
+  const bg     = active ? (color ?? "#064E3B") : "#ffffff";
+  const txt    = active ? "#ffffff" : "#6b7280";
+  const border = active ? (color ?? "#064E3B") : "#e5e7eb";
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75}
+      className="rounded-full"
+      style={{ paddingHorizontal: 12, paddingVertical: 6,
+        backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
+      <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
+
+/**
+ * Collapsible filter + sort panel — mirrors ProcurementLog.
+ * Sections derived from actual record data (no hardcoded list).
+ * Sort options: Date Created (newest first) · Last Modified (newest first).
+ */
+const FilterPanel: React.FC<{
+  visible:        boolean;
+  records:        PRRecord[];
+  statusFilter:   number | null;
+  sectionFilter:  string;
+  sortBy:         SortBy;
+  onStatusFilter: (id: number | null) => void;
+  onSectionFilter:(s: string) => void;
+  onSortBy:       (s: SortBy) => void;
+  onClear:        () => void;
+}> = ({ visible, records, statusFilter, sectionFilter, sortBy,
+        onStatusFilter, onSectionFilter, onSortBy, onClear }) => {
+  if (!visible) return null;
+
+  const presentStatusIds = [...new Set(records.map(r => r.statusId))].sort((a, b) => a - b);
+  const presentSections  = ["All", ...new Set(records.map(r => r.officeSection).filter(Boolean))].sort();
+  const hasActive        = statusFilter !== null || sectionFilter !== "All";
+
+  return (
+    <View className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3"
+      style={{ gap: 10, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}>
+
+      {/* ── Status ── */}
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Status</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        <FilterChip label="All" active={statusFilter === null} onPress={() => onStatusFilter(null)} />
+        {presentStatusIds.map(sid => {
+          const c = statusCfgFor(sid);
+          return (
+            <FilterChip key={sid} label={c.label} active={statusFilter === sid} color={c.dot}
+              onPress={() => onStatusFilter(statusFilter === sid ? null : sid)} />
+          );
+        })}
+      </ScrollView>
+
+      {/* ── Section / Division ── */}
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Section</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        {presentSections.map(s => (
+          <FilterChip key={s} label={s} active={sectionFilter === s}
+            onPress={() => onSectionFilter(s)} />
+        ))}
+      </ScrollView>
+
+      {/* ── Sort ── */}
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Sort By</Text>
+      <View className="flex-row gap-2">
+        {([
+          { key: "date_created"  as SortBy, label: "Date Created",  icon: "calendar-today"   },
+          { key: "date_modified" as SortBy, label: "Last Processed", icon: "update"           },
+        ] as { key: SortBy; label: string; icon: keyof typeof MaterialIcons.glyphMap }[]).map(opt => {
+          const active = sortBy === opt.key;
+          return (
+            <TouchableOpacity key={opt.key} onPress={() => onSortBy(opt.key)} activeOpacity={0.8}
+              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2 rounded-xl border ${
+                active ? "bg-[#064E3B] border-[#064E3B]" : "bg-white border-gray-200"
+              }`}>
+              <MaterialIcons name={opt.icon} size={13} color={active ? "#fff" : "#6b7280"} />
+              <Text style={{ fontSize: 11.5, fontWeight: "700",
+                color: active ? "#ffffff" : "#6b7280" }}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* ── Clear ── */}
+      {hasActive && (
+        <TouchableOpacity onPress={onClear} className="self-end">
+          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}>Clear filters</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
 
 const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({ records, statuses }) => {
   // Build a label→count map using the live status table so labels stay in sync.
@@ -156,6 +265,8 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
     { label: "Pending",    value: String(countByStatus[1] ?? 0),                            color: "text-amber-700",  bg: "bg-amber-50"  },
     { label: "Processing", value: String([2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)),
                                                                                               color: "text-blue-700",   bg: "bg-blue-50"   },
+    { label: "Canvassing", value: String([6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)),
+                                                                                              color: "text-emerald-700", bg: "bg-emerald-50" },
     { label: "Amount",     value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,  color: "text-violet-700", bg: "bg-violet-50" },
   ];
   return (
@@ -175,16 +286,18 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
   );
 };
 
-const STATUS_FALLBACK = { dotClass: "bg-gray-400", bgClass: "bg-gray-100", textClass: "text-gray-500" };
-
 const StatusPill: React.FC<{ statusId: number; label: string; elapsed: string }> = ({ statusId, label, elapsed }) => {
-  const cfg = STATUS_CONFIG[statusId] ?? STATUS_FALLBACK;
+  const cfg = statusCfgFor(statusId);
   return (
-    <View className={`flex-row items-center gap-1.5 self-start px-2.5 py-1 rounded-full ${cfg.bgClass}`}>
-      <View className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} />
-      <Text className={`text-[10.5px] font-bold ${cfg.textClass}`}>{label}</Text>
-      <View className="w-px h-2.5 bg-current opacity-30" />
-      <Text className={`text-[10px] font-semibold ${cfg.textClass} opacity-70`}>{elapsed}</Text>
+    <View style={{
+      flexDirection: "row", alignItems: "center", gap: 5,
+      alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4,
+      borderRadius: 999, backgroundColor: cfg.bg,
+    }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: cfg.dot }} />
+      <Text style={{ fontSize: 10.5, fontWeight: "700", color: cfg.text }}>{label}</Text>
+      <View style={{ width: 1, height: 10, backgroundColor: cfg.dot, opacity: 0.3 }} />
+      <Text style={{ fontSize: 10, fontWeight: "600", color: cfg.text, opacity: 0.7 }}>{elapsed}</Text>
     </View>
   );
 };
@@ -192,12 +305,14 @@ const StatusPill: React.FC<{ statusId: number; label: string; elapsed: string }>
 const RecordCard: React.FC<{
   record: PRRecord; isEven: boolean; roleId: number;
   statuses: PRStatusRow[];
+  latestFlag: RemarkRow | null;
   onView:    (r: PRRecord) => void;
   onEdit:    (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
   onMore:    (r: PRRecord) => void;
-}> = ({ record, isEven, roleId, statuses, onView, onEdit, onProcess, onMore }) => {
+}> = ({ record, isEven, roleId, statuses, latestFlag, onView, onEdit, onProcess, onMore }) => {
   const statusLabel = statuses.find((s) => s.id === record.statusId)?.status_name ?? `Status ${record.statusId}`;
+  const flag = latestFlag?.status_flag ? STATUS_FLAGS[latestFlag.status_flag] : null;
   return (
   <View className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
     style={{ shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}>
@@ -221,6 +336,30 @@ const RecordCard: React.FC<{
       <View className="flex-1" />
       <Text className="text-[12.5px] font-bold text-gray-700" style={{ fontFamily: MONO }}>₱{fmt(record.totalCost)}</Text>
     </View>
+    {/* ── Latest status flag from remarks ── */}
+    {flag && (
+      <>
+        <View className="h-px bg-gray-100 mx-4" />
+        <View className="flex-row items-center gap-2 px-4 py-2">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5,
+            paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+            backgroundColor: flag.bg, borderWidth: 1, borderColor: flag.dot + "40" }}>
+            <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
+            <Text style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}>{flag.label}</Text>
+          </View>
+          {latestFlag?.username && (
+            <Text className="text-[10px] text-gray-400">
+              by {latestFlag.username}
+            </Text>
+          )}
+          {latestFlag?.remark && (
+            <Text className="flex-1 text-[10.5px] text-gray-500" numberOfLines={1}>
+              · {latestFlag.remark}
+            </Text>
+          )}
+        </View>
+      </>
+    )}
     <View className="h-px bg-gray-100 mx-4" />
     <View className="flex-row items-center gap-2 px-4 py-2.5">
       <TouchableOpacity onPress={() => onView(record)} activeOpacity={0.8}
@@ -534,9 +673,14 @@ export default function PRModule() {
   const [activeSubTab,  setActiveSubTab]  = useState<SubTab>("pr");
   const [searchQuery,   setSearchQuery]   = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
+  const [statusFilter,  setStatusFilter]  = useState<number | null>(null);
+  const [sortBy,        setSortBy]        = useState<SortBy>("date_created");
+  const [filterOpen,    setFilterOpen]    = useState(false);
   const [page,          setPage]          = useState(1);
   const [records,       setRecords]       = useState<PRRecord[]>([]);
   const [statuses,      setStatuses]      = useState<PRStatusRow[]>([]);
+  // Latest remark per PR id — fetched alongside records, used to show flag on cards
+  const [latestRemarks, setLatestRemarks] = useState<Record<string, RemarkRow | null>>({});
 
   // View PR modal state
   const [viewRecord,  setViewRecord]  = useState<PRRecord | null>(null);
@@ -557,6 +701,7 @@ export default function PRModule() {
   // Create PR modal state
   const [prModalOpen,   setPrModalOpen]   = useState(false);
   const [saving,        setSaving]        = useState(false);
+  const [refreshing,    setRefreshing]    = useState(false);
 
   // Load PR status lookup table once — labels come from DB, not hardcoded strings.
   useEffect(() => {
@@ -565,27 +710,43 @@ export default function PRModule() {
       .catch(() => {}); // non-fatal; StatusPill falls back to "Status N"
   }, []);
 
-  // Load PRs by subtab
-  useEffect(() => {
-    const load = async () => {
-      try {
-        let rows: PRRow[] = [];
-        if (activeSubTab === "pr") {
-          rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
-            ? await fetchPurchaseRequests()
-            : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
-        } else if (activeSubTab === "canvass") {
-          rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
-            ? await fetchCanvassablePRs()
-            : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
-        } else {
-          rows = []; // Abstract of awards subtab will populate later
-        }
-        setRecords(rows.map((r) => rowToRecord(r)));
-      } catch {}
-    };
-    load();
+  // ── Load PRs — shared by initial load, subtab change, and pull-to-refresh ──
+  const loadPRs = useCallback(async () => {
+    try {
+      let rows: PRRow[] = [];
+      if (activeSubTab === "pr") {
+        rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
+          ? await fetchPurchaseRequests()
+          : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
+      } else if (activeSubTab === "canvass") {
+        rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
+          ? await fetchCanvassablePRs()
+          : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
+      } else {
+        rows = [];
+      }
+      setRecords(rows.map((r) => rowToRecord(r)));
+
+      // Fetch latest remark for every PR in parallel (for status flag display on cards).
+      // Fire-and-forget after records are set — flags are non-blocking UI enhancement.
+      const remarkEntries = await Promise.all(
+        rows.map(async (r) => {
+          const remark = await fetchLatestRemarkByPR(String(r.id)).catch(() => null);
+          return [String(r.id), remark] as [string, RemarkRow | null];
+        })
+      );
+      setLatestRemarks(Object.fromEntries(remarkEntries));
+    } catch {}
   }, [activeSubTab, roleId, currentUser?.division_id]);
+
+  useEffect(() => { loadPRs(); }, [loadPRs]);
+
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadPRs();
+    setRefreshing(false);
+  }, [loadPRs]);
 
   // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
@@ -647,11 +808,30 @@ export default function PRModule() {
     // TODO: persist via supabase updatePurchaseRequest(payload)
   }, []);
 
-  const filtered   = records.filter((r) => {
-    const q = searchQuery.toLowerCase();
-    return (!q || r.prNo.toLowerCase().includes(q) || r.itemDescription.toLowerCase().includes(q) || r.officeSection.toLowerCase().includes(q))
-      && (sectionFilter === "All" || r.officeSection === sectionFilter);
-  });
+  const filtered = records
+    .filter((r) => {
+      const q = searchQuery.toLowerCase();
+      const matchSearch = !q
+        || r.prNo.toLowerCase().includes(q)
+        || r.itemDescription.toLowerCase().includes(q)
+        || r.officeSection.toLowerCase().includes(q);
+      const matchSection = sectionFilter === "All" || r.officeSection === sectionFilter;
+      const matchStatus  = statusFilter === null || r.statusId === statusFilter;
+      return matchSearch && matchSection && matchStatus;
+    })
+    .sort((a, b) => {
+      // Both sort modes are newest-first.
+      // date_modified uses elapsedTime indirectly; since we only have created_at on PRRecord
+      // we use the raw date string. For "last modified" we use statusId as a proxy
+      // tie-breaker (higher status = more recently processed) when dates are equal.
+      if (sortBy === "date_modified") {
+        // Primary: date desc, secondary: statusId desc (higher = further along = more recently touched)
+        const dateDiff = b.date.localeCompare(a.date);
+        return dateDiff !== 0 ? dateDiff : b.statusId - a.statusId;
+      }
+      // date_created: newest first by date string
+      return b.date.localeCompare(a.date);
+    });
   const paged      = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
@@ -663,25 +843,74 @@ export default function PRModule() {
         onChange={(t) => { setSearchQuery(t); setPage(1); }}
         onCreatePress={handleOpenCreate}
         canCreate={roleId === 6}
+        filterActive={filterOpen || statusFilter !== null || sectionFilter !== "All"}
+        onFilterToggle={() => setFilterOpen(o => !o)}
       />
       <StatStrip records={filtered} statuses={statuses} />
-      {roleId !== 6 && (
-        <FilterChips active={sectionFilter} onSelect={(s) => { setSectionFilter(s); setPage(1); }} />
-      )}
+      <FilterPanel
+        visible={filterOpen}
+        records={records}
+        statusFilter={statusFilter}
+        sectionFilter={sectionFilter}
+        sortBy={sortBy}
+        onStatusFilter={(id) => { setStatusFilter(id); setPage(1); }}
+        onSectionFilter={(s) => { setSectionFilter(s); setPage(1); }}
+        onSortBy={(s) => { setSortBy(s); setPage(1); }}
+        onClear={() => { setStatusFilter(null); setSectionFilter("All"); setPage(1); }}
+      />
+
+      {/* Results count + active sort indicator */}
+      <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
+        <Text className="text-[11px] text-gray-400">
+          <Text className="font-semibold text-gray-500">{filtered.length}</Text>
+          {" of "}{records.length} records
+          {(statusFilter !== null || sectionFilter !== "All" || searchQuery) ? " (filtered)" : ""}
+        </Text>
+        <View className="flex-row items-center gap-1">
+          <MaterialIcons name={sortBy === "date_created" ? "calendar-today" : "update"} size={11} color="#9ca3af" />
+          <Text className="text-[10.5px] text-gray-400">
+            {sortBy === "date_created" ? "Date Created" : "Last Processed"}
+          </Text>
+        </View>
+      </View>
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: 12, paddingBottom: 16 }}
-        keyboardShouldPersistTaps="handled">
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#064E3B"
+            colors={["#064E3B"]}
+          />
+        }>
         {paged.length === 0
           ? <EmptyState label="No records found" />
           : paged.map((record, idx) => (
               <RecordCard key={record.id} record={record} isEven={idx % 2 === 0} roleId={roleId}
                 statuses={statuses}
+                latestFlag={latestRemarks[record.id] ?? null}
                 onView={(r)    => { setViewRecord(r); setViewVisible(true); }}
                 onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
                 onProcess={(r) => {
-                  if (activeSubTab === "canvass") {
-                    (navigation as any).navigate("Canvassing" as never, { prNo: r.prNo } as never);
+                  /**
+                   * Route the "Process" button to the correct view based on role_id:
+                   *
+                   *  role 3  (BAC)        → CanvassingModule → BACView
+                   *  role 7  (Canvasser)  → CanvassingModule → CanvasserView
+                   *  role 6  (End User)   → CanvassingModule → EndUserView  (read-only)
+                   *  role 2  (Div. Head)  → ProcessPRModal   (approval step)
+                   *  role 4  (Budget)     → ProcessPRModal   (budget step)
+                   *  role 5  (PARPO)      → ProcessPRModal   (final approval)
+                   *  role 8  (Supply)     → ProcessPRModal   (supply step)
+                   *  role 1  (Admin)      → ProcessPRModal   (admin override)
+                   */
+                  if (roleId === 3 || roleId === 7 || roleId === 6) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
                   } else {
                     setProcessRecord({ id: r.id, prNo: r.prNo });
                     setProcessVisible(true);

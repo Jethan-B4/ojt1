@@ -18,6 +18,8 @@ import {
   Alert, KeyboardAvoidingView, Platform, ScrollView,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import type { CanvassPreviewData } from "../(modals)/CanvassPreview";
+import CanvassPreviewModal from "../(modals)/CanvassPreviewModal";
 import { useAuth } from "../AuthContext";
 
 // ─── Inlined constants ────────────────────────────────────────────────────────
@@ -162,6 +164,36 @@ export default function CanvasserView({ pr, onBack }: {
   const [assigned,  setAssigned]  = React.useState(true);
   const [quotes,    setQuotes]    = React.useState<Record<number, { supplier: string; price: string }>>({});
   const [liveItems, setLiveItems] = React.useState<CanvassingPRItem[]>(pr.items);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+
+  // ── Build RFQ preview — pre-fills prices from quotes state ───────────────
+  const buildPreviewData = (): CanvassPreviewData => {
+    const deadlineDate = new Date();
+    deadlineDate.setDate(deadlineDate.getDate() + 7);
+    return {
+      prNo:           pr.prNo,
+      quotationNo:    "—",          // BAC canvass no. not available to canvasser
+      date:           pr.date,
+      deadline:       deadlineDate.toLocaleDateString("en-PH", {
+                        month: "long", day: "numeric", year: "numeric" }),
+      bacChairperson: "ATTY. JAIME G. RESOCO, JR.",
+      officeSection:  pr.officeSection,
+      purpose:        pr.purpose,
+      items:          liveItems.map((item, i) => {
+        const q  = quotes[item.id];
+        const up = q?.price ? parseFloat(q.price) : undefined;
+        return {
+          itemNo:      i + 1,
+          description: item.desc + (q?.supplier ? ` (${q.supplier})` : ""),
+          qty:         item.qty,
+          unit:        item.unit,
+          // Show the price the canvasser has entered, blank if not yet filled
+          unitPrice:   up && up > 0 ? up.toFixed(2) : "",
+        };
+      }),
+      canvasserNames: currentUser?.username ? [currentUser.username] : [],
+    };
+  };
 
   // ── Load session + verify division assignment ─────────────────────────────
   React.useEffect(() => {
@@ -402,6 +434,14 @@ export default function CanvasserView({ pr, onBack }: {
 
         {/* ── Submit / submitted state ── */}
         <View className="flex-row justify-end mt-2 gap-2.5">
+          {/* View RFQ always visible so canvasser can reference the form */}
+          <TouchableOpacity
+            onPress={() => setPreviewOpen(true)}
+            activeOpacity={0.8}
+            className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+            <MaterialIcons name="description" size={14} color="#064E3B" />
+            <Text className="text-[12.5px] font-bold text-[#064E3B]">View RFQ</Text>
+          </TouchableOpacity>
           {stage === "bac_resolution" ? (
             <View className="flex-row items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
               <Text className="text-[13px] font-bold text-emerald-700">✅ Submitted to BAC</Text>
@@ -413,6 +453,14 @@ export default function CanvasserView({ pr, onBack }: {
         </View>
 
       </ScrollView>
+
+      {/* ── RFQ Preview Modal ── */}
+      <CanvassPreviewModal
+        visible={previewOpen}
+        data={buildPreviewData()}
+        onClose={() => setPreviewOpen(false)}
+      />
+
     </KeyboardAvoidingView>
   );
 }

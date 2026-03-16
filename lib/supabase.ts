@@ -268,7 +268,7 @@ export async function fetchCanvassablePRs(): Promise<PRRow[]> {
   const { data, error } = await supabase
     .from("purchase_requests")
     .select("*")
-    .eq("status_id", 6);
+    .gt("status_id", 5);
   if (error) throw error;
   return data as PRRow[];
 }
@@ -277,7 +277,7 @@ export async function fetchCanvassablePRsByDivision(divisionId: number): Promise
   const { data, error } = await supabase
     .from("purchase_requests")
     .select("*")
-    .eq("status_id", 6)
+    .gt("status_id", 5)
     .eq("division_id", divisionId);
   if (error) throw error;
   return data as PRRow[];
@@ -527,6 +527,57 @@ export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
     .single();
   if (error) return null;
   return (data as any)?.id ?? null;
+}
+
+/**
+ * Fetch a PR's id and current status_id in a single query.
+ * Used by BACView on mount so it can cache the prId AND restore
+ * the correct canvass stage from pr_status.id without a second query.
+ */
+export async function fetchPRMetaByNo(
+  prNo: string
+): Promise<{ id: string; status_id: number } | null> {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("id, status_id")
+    .eq("pr_no", prNo)
+    .single();
+  if (error || !data) return null;
+  return { id: String((data as any).id), status_id: Number((data as any).status_id) };
+}
+
+/**
+ * Maps each canvass stage to its corresponding pr_status.id in the DB.
+ * Values come from the pr_status table (see DB_PR_Status.png):
+ *
+ *   6  = Canvassing (Reception)  ← BAC receives & assigns canvass number
+ *   8  = Canvassing (Releasing)  ← RFQ released to canvassers
+ *   9  = Canvassing (Collection) ← BAC collecting filled canvass sheets
+ *   10 = BAC Resolution          ← resolution signed and recorded
+ *   11 = AAA Issuance            ← abstract of awards finalised
+ */
+export const CANVASS_PR_STATUS: Record<string, number> = {
+  pr_received:     6,
+  release_canvass: 8,
+  collect_canvass: 9,
+  bac_resolution:  10,
+  aaa_preparation: 11,
+};
+
+/**
+ * Update only the status_id of a purchase_request row.
+ * Used by the canvassing workflow to advance the PR's visible status
+ * in the PR list as each canvass step is completed.
+ *
+ * Deliberately separate from updatePurchaseRequest so it never
+ * accidentally mutates items or other fields.
+ */
+export async function updatePRStatus(prId: string, statusId: number): Promise<void> {
+  const { error } = await supabase
+    .from("purchase_requests")
+    .update({ status_id: statusId })
+    .eq("id", prId);
+  if (error) throw error;
 }
 
 export async function ensureCanvassSession(
