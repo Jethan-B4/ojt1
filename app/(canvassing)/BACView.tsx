@@ -5,12 +5,14 @@
 
 import {
   CANVASS_PR_STATUS,
-  ensureCanvassSession, fetchPRMetaByNo, fetchPRWithItemsById,
+  ensureCanvassSession, fetchAssignmentsForSession, fetchPRIdByNo,
+fetchPRWithItemsById, fetchQuotesForSession,
   fetchUsersByRole,
   insertAAAForSession, insertAssignmentsForDivisions, insertBACResolution,
   insertSupplierQuotesForSession, updateCanvassSessionMeta, updateCanvassStage,
   updatePRStatus,
-  type CanvassUserRow,
+  type CanvassEntryRow, type CanvassUserRow,
+  type CanvasserAssignmentRow,
 } from "@/lib/supabase";
 import type {
   BACMember, CanvassStage, CanvassingPR, CanvassingPRItem, SupplierQ,
@@ -18,10 +20,11 @@ import type {
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-import { useAuth } from "../AuthContext";
+import type { CanvassPreviewData } from "../(modals)/CanvassPreview";
+import CanvassPreviewModal from "../(modals)/CanvassPreviewModal";
 
 // ─── Inlined constants ────────────────────────────────────────────────────────
 
@@ -56,20 +59,6 @@ const PROC_MODES = [
 // role_id 6 = End User  (division representative who submitted the PR)
 // role_id 7 = Canvasser (designated canvass collector per division)
 const CANVASS_ROLE_IDS = [6, 7];
-
-/**
- * Reverse of CANVASS_PR_STATUS.
- * Maps pr_status.id → CanvassStage so the mount effect can restore the
- * correct step from the PR row's status_id rather than relying solely on
- * canvass_sessions.stage, which can drift if a prior update was partial.
- */
-const PR_STATUS_TO_STAGE: Record<number, CanvassStage> = {
-  6:  "pr_received",
-  8:  "release_canvass",
-  9:  "collect_canvass",
-  10: "bac_resolution",
-  11: "aaa_preparation",
-};
 
 // ─── Inlined UI atoms (NativeWind className) ──────────────────────────────────
 
@@ -435,6 +424,183 @@ const ItemsTable = ({ items }: { items: CanvassingPRItem[] }) => (
   </Card>
 );
 
+// ─── AssignmentList — Step 7 ──────────────────────────────────────────────────
+// Shows canvasser_assignments rows for the current session joined with the
+// canvassUsers list (for division name + username display).
+
+const AssignmentList = ({
+  assignments, users, loading,
+}: {
+  assignments: CanvasserAssignmentRow[];
+  users:       CanvassUserRow[];
+  loading:     boolean;
+}) => {
+  if (loading) {
+    return (
+      <View className="items-center py-4 gap-2">
+        <ActivityIndicator size="small" color="#064E3B" />
+        <Text className="text-[11.5px] text-gray-400">Loading assignments…</Text>
+      </View>
+    );
+  }
+  if (assignments.length === 0) {
+    return (
+      <View className="items-center py-4">
+        <Text className="text-[12px] text-gray-400">No assignments recorded yet.</Text>
+      </View>
+    );
+  }
+
+  // Build a lookup so we can display name + division without extra queries
+  const userById = Object.fromEntries(users.map(u => [u.id, u]));
+
+  return (
+    <>
+      {/* Table header */}
+      <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
+        {["Division", "Canvasser", "Released", "Returned", "Status"].map((h, i) => (
+          <Text key={h} className="text-[9px] font-bold uppercase tracking-wide text-white/70"
+            style={{ flex: i === 0 ? 1.2 : i === 1 ? 1.5 : i === 4 ? 0.9 : 1.1 }}>
+            {h}
+          </Text>
+        ))}
+      </View>
+
+      {assignments.map((row, i) => {
+        const user = row.canvasser_id ? userById[row.canvasser_id] : undefined;
+        const fmtDt = (iso?: string | null) =>
+          iso ? new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "—";
+
+        return (
+          <View key={row.id}
+            className={`flex-row items-center px-3 py-2 rounded-xl mb-0.5 ${
+              i % 2 === 0 ? "bg-white" : "bg-gray-50"
+            }`}
+            style={{ borderWidth: 1, borderColor: "#f3f4f6" }}>
+            {/* Division */}
+            <View className="flex-[1.2]">
+              <View className="bg-emerald-100 self-start px-1.5 py-0.5 rounded-md">
+                <Text className="text-[9.5px] font-bold text-emerald-800" numberOfLines={1}>
+                  {user?.division_name ?? `Div ${row.division_id}`}
+                </Text>
+              </View>
+            </View>
+            {/* Canvasser name */}
+            <Text className="flex-[1.5] text-[11px] text-gray-700 font-medium" numberOfLines={1}>
+              {user?.username ?? "—"}
+            </Text>
+            {/* Released */}
+            <Text className="flex-[1.1] text-[10.5px] text-gray-500" style={{ fontFamily: MONO }}>
+              {fmtDt(row.released_at)}
+            </Text>
+            {/* Returned */}
+            <Text className="flex-[1.1] text-[10.5px] text-gray-500" style={{ fontFamily: MONO }}>
+              {fmtDt(row.returned_at)}
+            </Text>
+            {/* Status pill */}
+            <View className={`flex-[0.9] self-center px-1.5 py-0.5 rounded-full ${
+              row.status === "returned" ? "bg-blue-100" : "bg-emerald-100"
+            }`}>
+              <Text className={`text-[9px] font-bold text-center ${
+                row.status === "returned" ? "text-blue-700" : "text-emerald-700"
+              }`}>
+                {row.status === "returned" ? "Returned" : "Released"}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </>
+  );
+};
+
+// ─── CanvassEntriesList — Step 8 ─────────────────────────────────────────────
+// Shows canvass_entries rows for the current session, grouped by supplier.
+
+const CanvassEntriesList = ({
+  entries, loading,
+}: {
+  entries: CanvassEntryRow[];
+  loading: boolean;
+}) => {
+  if (loading) {
+    return (
+      <View className="items-center py-4 gap-2">
+        <ActivityIndicator size="small" color="#064E3B" />
+        <Text className="text-[11.5px] text-gray-400">Loading quotations…</Text>
+      </View>
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <View className="items-center py-4">
+        <Text className="text-[12px] text-gray-400">No quotations encoded yet.</Text>
+      </View>
+    );
+  }
+
+  // Group by supplier_name
+  const grouped = entries.reduce<Record<string, CanvassEntryRow[]>>((acc, e) => {
+    (acc[e.supplier_name] ??= []).push(e);
+    return acc;
+  }, {});
+
+  return (
+    <>
+      {Object.entries(grouped).map(([supplier, rows], gIdx) => {
+        const supplierTotal = rows.reduce((s, r) => s + r.total_price, 0);
+        return (
+          <View key={supplier}
+            className="border border-gray-200 rounded-2xl mb-2.5 overflow-hidden">
+            {/* Supplier header */}
+            <View className="flex-row items-center justify-between px-3 py-2 bg-gray-50">
+              <View className="flex-row items-center gap-2">
+                <View className="w-6 h-6 rounded-full bg-[#064E3B] items-center justify-center">
+                  <Text className="text-[10px] font-bold text-white">{gIdx + 1}</Text>
+                </View>
+                <Text className="text-[13px] font-bold text-[#1a4d2e]" numberOfLines={1}>
+                  {supplier}
+                </Text>
+              </View>
+              <Text className="text-[11.5px] font-bold text-[#064E3B]"
+                style={{ fontFamily: MONO }}>
+                ₱{fmt(supplierTotal)}
+              </Text>
+            </View>
+            {/* Item rows */}
+            {rows.map((entry, i) => (
+              <View key={entry.id}
+                className={`flex-row items-center px-3 py-2 ${
+                  i % 2 === 0 ? "bg-white" : "bg-gray-50"
+                }`}
+                style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+                <Text className="flex-[2.5] text-[11.5px] text-gray-700" numberOfLines={2}>
+                  {entry.description}
+                </Text>
+                <Text className="w-8 text-[10.5px] text-gray-400 text-center">
+                  {entry.unit}
+                </Text>
+                <Text className="w-8 text-[10.5px] text-gray-600 text-right"
+                  style={{ fontFamily: MONO }}>
+                  {entry.quantity}
+                </Text>
+                <Text className="flex-1 text-[11px] text-gray-700 text-right"
+                  style={{ fontFamily: MONO }}>
+                  ₱{fmt(entry.unit_price)}
+                </Text>
+                <Text className="flex-1 text-[11.5px] font-semibold text-[#064E3B] text-right"
+                  style={{ fontFamily: MONO }}>
+                  ₱{fmt(entry.total_price)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </>
+  );
+};
+
 // ─── Local state factories ────────────────────────────────────────────────────
 
 const mkBACMembers = (): BACMember[] => [
@@ -473,8 +639,14 @@ export default function BACView({ pr, onComplete, onBack }: {
   const [mode,      setMode]      = useState(PROC_MODES[0]);
   const [aaaNo,     setAaaNo]     = useState("");
   const sessionRef = useRef<any>({ pr_no: pr.prNo });
-  // Cached on mount — avoids redundant fetchPRIdByNo calls in every step handler
-  const prIdRef    = useRef<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // ── DB-backed canvass lists ───────────────────────────────────────────────
+  // Fetched whenever sessionId is first established or on re-open.
+  const [assignments,      setAssignments]      = useState<CanvasserAssignmentRow[]>([]);
+  const [canvassEntries,   setCanvassEntries]   = useState<CanvassEntryRow[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [entriesLoading,     setEntriesLoading]     = useState(false);
 
   // ── Free stage navigation — mirrors page.tsx's onStepClick ─────────────
   // Navigating NEVER clears `done`. The DB stage is only advanced by the
@@ -514,43 +686,42 @@ export default function BACView({ pr, onComplete, onBack }: {
       .finally(() => setUsersLoading(false));
   }, []);
 
+  // ── Load assignments + canvass entries whenever sessionId is available ────
+  // Re-runs if the BAC navigates away and back (e.g. after re-opening a PR).
+  useEffect(() => {
+    if (!sessionId) return;
+
+    setAssignmentsLoading(true);
+    fetchAssignmentsForSession(sessionId)
+      .then(setAssignments)
+      .catch(() => {})
+      .finally(() => setAssignmentsLoading(false));
+
+    setEntriesLoading(true);
+    fetchQuotesForSession(sessionId)
+      .then(setCanvassEntries)
+      .catch(() => {})
+      .finally(() => setEntriesLoading(false));
+  }, [sessionId]);
+
   // ── Load existing session on mount ───────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        // Single query gets both id and status_id — no second round-trip needed
-        const meta = await fetchPRMetaByNo(pr.prNo);
-        if (!meta) return;
-        prIdRef.current = meta.id;   // cache for all step handlers
-
-        const session = await ensureCanvassSession(meta.id);
+                const prId = await fetchPRIdByNo(pr.prNo);
+        if (!prId) return;
+                const session = await ensureCanvassSession(prId);
         setSessionId(session.id);
-
-        // Restore BAC canvass number if already recorded
-        if (session.bac_no) {
-          setBacNo(session.bac_no);
-          sessionRef.current.bac_no = session.bac_no;
+const dbStage = (session.stage as CanvassStage) || "pr_received";
+        setStage(dbStage);
+        // Reconstruct `done` from the DB stage so CompletedBanner shows
+        // correctly when the BAC re-opens a PR that's already in progress.
+        // All stages that come BEFORE the current DB stage are considered done.
+        const dbIdx = STAGE_ORDER.indexOf(dbStage);
+        if (dbIdx > 0) {
+          setDone(new Set(STAGE_ORDER.slice(0, dbIdx)));
         }
-
-        // Determine the authoritative current stage.
-        // pr_status.id takes priority over session.stage because it is updated
-        // by updatePRStatus in every step handler. session.stage is the fallback
-        // for sessions created before the expanded status system.
-        const stageFromStatus  = PR_STATUS_TO_STAGE[meta.status_id];
-        const stageFromSession = session.stage as CanvassStage | undefined;
-        const resolvedStage: CanvassStage =
-          stageFromStatus ?? stageFromSession ?? "pr_received";
-
-        setStage(resolvedStage);
-
-        // Reconstruct `done` — every stage that precedes the resolved stage
-        // is considered already submitted, so CompletedBanner renders correctly.
-        const resolvedIdx = STAGE_ORDER.indexOf(resolvedStage);
-        if (resolvedIdx > 0) {
-          setDone(new Set(STAGE_ORDER.slice(0, resolvedIdx)));
-        }
-
-        const { items } = await fetchPRWithItemsById(meta.id);
+        const { items } = await fetchPRWithItemsById(prId);
         setLiveItems(items.map(i => ({
           id: parseInt(String(i.id)), desc: i.description,
           stock: i.stock_no, unit: i.unit, qty: i.quantity, unitCost: i.unit_price,
@@ -562,46 +733,52 @@ export default function BACView({ pr, onComplete, onBack }: {
   // ── Step handlers ─────────────────────────────────────────────────────────
 
   const handleStep6 = useCallback(async () => {
-    const prId = prIdRef.current;
-    if (!prId) { Alert.alert("Error", "PR not loaded yet. Please wait and try again."); return; }
-    try {
+        try {
+const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
       const session = await ensureCanvassSession(prId, { bac_no: bacNo });
       setSessionId(session.id);
-      await updatePRStatus(prId, CANVASS_PR_STATUS.pr_received);        // → status 6
-      await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
+            await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
       await updateCanvassStage(session.id, "release_canvass");
+await updatePRStatus(prId, CANVASS_PR_STATUS.pr_received);   // → status 6
       sessionRef.current.bac_no = bacNo;
       advance("pr_received");
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not create canvass session");
     }
-  }, [bacNo, advance]);
+  }, [pr.prNo, bacNo, advance]);
 
   const handleStep8 = useCallback(async () => {
-    const prId = prIdRef.current;
-    if (!sessionId || !prId) return;
+        if (!sessionId) return;
     try {
+const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
+      // Build assignment rows from users who have been released
       const released = canvassUsers.filter(
         u => canvassStatuses[u.id]?.status !== "pending" && u.division_id !== null
       );
       const rows = released.map(u => ({
         division_id:  u.division_id!,
         canvasser_id: u.id,
+// releaseDate is stored as ISO string by toggleUserStatus — use directly
         released_at:  canvassStatuses[u.id]?.releaseDate || new Date().toISOString(),
       }));
       if (rows.length) await insertAssignmentsForDivisions(sessionId, rows);
-      await updatePRStatus(prId, CANVASS_PR_STATUS.release_canvass);    // → status 8
+      await updatePRStatus(prId, CANVASS_PR_STATUS.release_canvass);  // → status 8
       await updateCanvassStage(sessionId, "collect_canvass");
+// Refresh the assignment list so Step 8 immediately shows new rows
+      fetchAssignmentsForSession(sessionId).then(setAssignments).catch(() => {});
       advance("release_canvass");
     } catch (e: any) {
       Alert.alert("Release failed", e?.message ?? "Could not record canvass releases");
     }
-  }, [sessionId, canvassUsers, canvassStatuses, advance]);
+  }, [sessionId, pr.prNo, canvassUsers, canvassStatuses, advance]);
 
   const handleStep9 = useCallback(async () => {
-    const prId = prIdRef.current;
-    if (!sessionId || !prId) return;
+        if (!sessionId) return;
     try {
+const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
       const quotes: any[] = [];
       supps.forEach(sp => {
         liveItems.forEach(item => {
@@ -614,18 +791,21 @@ export default function BACView({ pr, onComplete, onBack }: {
         });
       });
       if (quotes.length) await insertSupplierQuotesForSession(sessionId, quotes);
-      await updatePRStatus(prId, CANVASS_PR_STATUS.collect_canvass);    // → status 9
+      await updatePRStatus(prId, CANVASS_PR_STATUS.collect_canvass);  // → status 9
       await updateCanvassStage(sessionId, "bac_resolution");
+// Refresh the entries list so it reflects the just-inserted quotes
+      fetchQuotesForSession(sessionId).then(setCanvassEntries).catch(() => {});
       advance("collect_canvass");
     } catch (e: any) {
       Alert.alert("Quotes failed", e?.message ?? "Could not save supplier quotations");
     }
-  }, [sessionId, supps, liveItems, advance]);
+  }, [sessionId, pr.prNo, supps, liveItems, advance]);
 
   const handleStep7 = useCallback(async () => {
-    const prId = prIdRef.current;
-    if (!sessionId || !resNo || !prId) return;
+        if (!sessionId || !resNo) return;
     try {
+const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
       sessionRef.current.resolution_no = resNo;
       sessionRef.current.mode = mode;
       await insertBACResolution(sessionId, {
@@ -633,25 +813,26 @@ export default function BACView({ pr, onComplete, onBack }: {
         prepared_by: currentUser?.id ?? 0,
         mode, resolved_at: new Date().toISOString(), notes: null,
       });
-      await updatePRStatus(prId, CANVASS_PR_STATUS.bac_resolution);     // → status 10
-      await updateCanvassStage(sessionId, "aaa_preparation");
+            await updateCanvassStage(sessionId, "aaa_preparation");
+await updatePRStatus(prId, CANVASS_PR_STATUS.bac_resolution);   // → status 10
       advance("bac_resolution");
     } catch (e: any) {
       Alert.alert("Resolution failed", e?.message ?? "Could not record BAC resolution");
     }
-  }, [sessionId, resNo, mode, currentUser?.id, advance]);
+  }, [sessionId, pr.prNo, resNo, mode, currentUser?.id, advance]);
 
   const handleComplete = useCallback(async () => {
-    const prId = prIdRef.current;
-    if (!sessionId || !aaaNo || !prId) return;
+        if (!sessionId || !aaaNo) return;
     try {
+const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
       sessionRef.current.aaa_no = aaaNo;
       await insertAAAForSession(sessionId, {
         aaa_no: aaaNo, prepared_by: currentUser?.id ?? 0,
         prepared_at: new Date().toISOString(), file_url: null,
       });
-      await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);    // → status 11
-      await updateCanvassSessionMeta(sessionId, { status: "closed" });
+            await updateCanvassSessionMeta(sessionId, { status: "closed" });
+await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);  // → status 11
       onComplete?.({
         pr_no: pr.prNo, bac_no: sessionRef.current.bac_no,
         resolution_no: sessionRef.current.resolution_no, mode, aaa_no: aaaNo,
@@ -660,7 +841,7 @@ export default function BACView({ pr, onComplete, onBack }: {
     } catch (e: any) {
       Alert.alert("AAA failed", e?.message ?? "Could not record AAA");
     }
-  }, [sessionId, aaaNo, currentUser?.id, mode, pr.prNo, onComplete]);
+  }, [sessionId, pr.prNo, aaaNo, currentUser?.id, mode, onComplete]);
 
   // Helper to toggle a user's release/return status.
   // releaseDate / returnDate are stored as ISO strings so that handleStep8
@@ -677,6 +858,32 @@ export default function BACView({ pr, onComplete, onBack }: {
   }, []);
 
   const allSigned = members.every(m => m.signed);
+
+  // ── Build RFQ preview data ───────────────────────────────────────────────
+  const buildPreviewData = (): CanvassPreviewData => {
+    const deadlineDate = new Date();
+    deadlineDate.setDate(deadlineDate.getDate() + 7);
+    return {
+      prNo:           pr.prNo,
+      quotationNo:    bacNo || "—",
+      date:           new Date().toLocaleDateString("en-PH"),
+      deadline:       deadlineDate.toLocaleDateString("en-PH", {
+                        month: "long", day: "numeric", year: "numeric" }),
+      bacChairperson: members.find(m => m.designation.includes("Chairperson"))?.name || "BAC Chairperson",
+      officeSection:  pr.officeSection,
+      purpose:        pr.purpose,
+      items:          liveItems.map((item, i) => ({
+        itemNo:       i + 1,
+        description:  item.desc,
+        qty:          item.qty,
+        unit:         item.unit,
+        unitPrice:    "", // Blank for BAC preview
+      })),
+      canvasserNames: canvassUsers
+        .filter(u => canvassStatuses[u.id]?.status !== "pending")
+        .map(u => u.username),
+    };
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -829,11 +1036,87 @@ export default function BACView({ pr, onComplete, onBack }: {
                 )}
               </View>
             </Card>
+{/* ── DB assignment records ── */}
+            {assignments.length > 0 || assignmentsLoading ? (
+              <Card>
+                <View className="px-4 pt-3 pb-3">
+                  <Divider label="Recorded Assignments" />
+                  <AssignmentList
+                    assignments={assignments}
+                    users={canvassUsers}
+                    loading={assignmentsLoading}
+                  />
+                </View>
+              </Card>
+            ) : null}
             {isViewingCompleted && (
               <CompletedBanner
                 label="Canvass sheets released. Waiting for returns."
                 onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("release_canvass"); return n; })}
               />
+            )}
+
+            {/* ── Live assignment list from DB ── */}
+            {assignments.length > 0 && (
+              <Card>
+                <View className="px-4 pt-3 pb-2">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <Divider label="Assignment Tracker" />
+                    <View className="flex-row items-center gap-1.5 ml-2 mb-2.5">
+                      <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <Text className="text-[10px] text-gray-400">
+                        {assignments.filter(a => a.status === "returned").length}/{assignments.length} returned
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Table header */}
+                  <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
+                    <Text className="flex-[2] text-[9px] font-bold uppercase tracking-wide text-white/70">Canvasser</Text>
+                    <Text className="flex-1 text-[9px] font-bold uppercase tracking-wide text-white/70">Division</Text>
+                    <Text className="flex-1 text-[9px] font-bold uppercase tracking-wide text-white/70 text-center">Released</Text>
+                    <Text className="flex-1 text-[9px] font-bold uppercase tracking-wide text-white/70 text-center">Returned</Text>
+                  </View>
+                  {entriesLoading ? (
+                    <View className="items-center py-4">
+                      <Text className="text-[12px] text-gray-400">Loading…</Text>
+                    </View>
+                  ) : (
+                    assignments.map((a, i) => {
+                      const relDate = a.released_at
+                        ? new Date(a.released_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })
+                        : "—";
+                      const retDate = a.returned_at
+                        ? new Date(a.returned_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" })
+                        : null;
+                      return (
+                        <View key={a.id}
+                          className={`flex-row items-center px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                          style={{ borderWidth: 1, borderColor: "#f3f4f6" }}>
+                          <Text className="flex-[2] text-[11.5px] font-semibold text-gray-800" numberOfLines={1}>
+                            {canvassUsers.find(u => u.id === a.canvasser_id)?.username ?? `User ${a.canvasser_id}`}
+                          </Text>
+                          <Text className="flex-1 text-[11px] text-gray-500" numberOfLines={1}>
+                            {canvassUsers.find(u => u.id === a.canvasser_id)?.division_name ?? "—"}
+                          </Text>
+                          <Text className="flex-1 text-[10.5px] text-gray-500 text-center"
+                            style={{ fontFamily: MONO }}>{relDate}</Text>
+                          <View className="flex-1 items-center">
+                            {retDate ? (
+                              <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
+                                <Text className="text-[9.5px] font-bold text-emerald-700">{retDate}</Text>
+                              </View>
+                            ) : (
+                              <View className="bg-amber-100 px-2 py-0.5 rounded-full">
+                                <Text className="text-[9.5px] font-bold text-amber-700">Pending</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </Card>
             )}
             <StepNav
               stage={stage}
@@ -853,6 +1136,74 @@ export default function BACView({ pr, onComplete, onBack }: {
             <StepHeader stage="collect_canvass" title="Collect & Encode Canvass"
               desc="Collect returned RFQ forms and encode each supplier's quoted prices." />
             <ItemsTable items={liveItems} />
+
+            {/* ── Previously submitted entries from DB ── */}
+            {canvassEntries.length > 0 && (
+              <Card>
+                <View className="px-4 pt-3 pb-2">
+                  <View className="flex-row items-center gap-2 mb-1">
+                    <Divider label="Submitted Quotations" />
+                    <View className="bg-emerald-100 px-2 py-0.5 rounded-full mb-2.5 ml-1">
+                      <Text className="text-[10px] font-bold text-emerald-700">
+                        {canvassEntries.length} entr{canvassEntries.length === 1 ? "y" : "ies"}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Table header */}
+                  <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
+                    <Text className="flex-[3] text-[9px] font-bold uppercase tracking-wide text-white/70">Item / Supplier</Text>
+                    <Text className="w-16 text-[9px] font-bold uppercase tracking-wide text-white/70 text-center">Qty</Text>
+                    <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">Unit Price</Text>
+                    <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">Total</Text>
+                  </View>
+                  {entriesLoading ? (
+                    <View className="items-center py-4">
+                      <Text className="text-[12px] text-gray-400">Loading…</Text>
+                    </View>
+                  ) : (
+                    canvassEntries.map((e, i) => (
+                      <View key={e.id}
+                        className={`px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                        style={{ borderWidth: 1, borderColor: "#f3f4f6" }}>
+                        <View className="flex-row items-center">
+                          <View className="flex-[3] pr-2">
+                            <Text className="text-[11.5px] font-semibold text-gray-800" numberOfLines={1}>
+                              {e.description}
+                            </Text>
+                            <Text className="text-[10.5px] text-gray-400 mt-0.5" numberOfLines={1}>
+                              {e.supplier_name}
+                            </Text>
+                          </View>
+                          <Text className="w-16 text-[11px] text-gray-500 text-center"
+                            style={{ fontFamily: MONO }}>
+                            {e.quantity} {e.unit}
+                          </Text>
+                          <Text className="w-20 text-[11.5px] font-semibold text-gray-700 text-right"
+                            style={{ fontFamily: MONO }}>
+                            ₱{fmt(e.unit_price)}
+                          </Text>
+                          <Text className="w-20 text-[11.5px] font-bold text-[#064E3B] text-right"
+                            style={{ fontFamily: MONO }}>
+                            ₱{fmt(e.total_price)}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                  {/* Grand total row */}
+                  {canvassEntries.length > 0 && (
+                    <View className="flex-row justify-end mt-1.5 px-3 pt-2"
+                      style={{ borderTopWidth: 1, borderTopColor: "#d1fae5" }}>
+                      <Text className="text-[11px] font-bold text-gray-500 mr-3">Grand Total</Text>
+                      <Text className="text-[12px] font-extrabold text-[#064E3B]"
+                        style={{ fontFamily: MONO }}>
+                        ₱{fmt(canvassEntries.reduce((s, e) => s + e.total_price, 0))}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </Card>
+            )}
             <Card>
               <View className="px-4 pt-3 pb-3">
                 <Divider label="Supplier Quotations" />
@@ -945,6 +1296,16 @@ export default function BACView({ pr, onComplete, onBack }: {
                 onResubmit={() => setDone(prev => { const n = new Set(prev); n.delete("collect_canvass"); return n; })}
               />
             )}
+{/* Preview RFQ Button */}
+            <View className="flex-row justify-center mb-3">
+              <TouchableOpacity
+                onPress={() => setPreviewOpen(true)}
+                activeOpacity={0.8}
+                className="flex-row items-center gap-2 px-5 py-2.5 rounded-xl border border-[#064E3B] bg-[#064E3B]">
+                <MaterialIcons name="description" size={16} color="#ffffff" />
+                <Text className="text-[13px] font-bold text-white">Preview RFQ Form</Text>
+              </TouchableOpacity>
+            </View>
             <StepNav
               stage={stage}
               done={done}
@@ -1120,6 +1481,14 @@ export default function BACView({ pr, onComplete, onBack }: {
         )}
 
       </ScrollView>
+
+      {/* ── RFQ Preview Modal ── */}
+      <CanvassPreviewModal
+        visible={previewOpen}
+        data={buildPreviewData()}
+        onClose={() => setPreviewOpen(false)}
+      />
+
     </KeyboardAvoidingView>
   );
 }
