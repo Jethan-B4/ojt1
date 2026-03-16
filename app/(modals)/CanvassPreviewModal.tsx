@@ -21,9 +21,12 @@
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import React from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Platform,
   Text,
@@ -45,6 +48,30 @@ export default function CanvassPreviewModal({
   onClose: () => void;
 }) {
   const html = React.useMemo(() => buildCanvassHTML(data), [data]);
+
+  const handlePrint = async () => {
+    try {
+      await Print.printAsync({ html });
+    } catch {
+      Alert.alert("Print Error", "Unable to print the document.");
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: "application/pdf",
+          dialogTitle: `Download ${data.quotationNo}`,
+        });
+      } else {
+        Alert.alert("Download", "Sharing is not available on this device.");
+      }
+    } catch {
+      Alert.alert("Download Error", "Unable to generate PDF.");
+    }
+  };
 
   return (
     <Modal
@@ -133,14 +160,13 @@ export default function CanvassPreviewModal({
         {/* Print hint */}
         <View style={{
           flexDirection: "row", alignItems: "center", gap: 6,
-          backgroundColor: "#fffbeb",
-          borderBottomWidth: 1, borderBottomColor: "#fde68a",
+          backgroundColor: "#f0fdf4",
+          borderBottomWidth: 1, borderBottomColor: "#d1fae5",
           paddingHorizontal: 14, paddingVertical: 6,
         }}>
-          <MaterialIcons name="info-outline" size={13} color="#92400e" />
-          <Text style={{ fontSize: 11, color: "#92400e" }}>
+          <MaterialIcons name="info-outline" size={13} color="#047857" />
+          <Text style={{ fontSize: 11, color: "#047857" }}>
             This is a preview of the official DAR RFQ form (DARCS1-QF-STO-009 Rev 01).
-            Print or share using your device's browser options.
           </Text>
         </View>
 
@@ -169,7 +195,7 @@ export default function CanvassPreviewModal({
         {/* Footer action bar */}
         <View style={{
           flexDirection: "row",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
           paddingHorizontal: 16,
           paddingVertical: 12,
           paddingBottom: Platform.OS === "ios" ? 28 : 12,
@@ -178,6 +204,30 @@ export default function CanvassPreviewModal({
           borderTopColor: "#e5e7eb",
           gap: 10,
         }}>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={handlePrint}
+              activeOpacity={0.8}
+              style={{
+                paddingHorizontal: 16, paddingVertical: 10,
+                borderRadius: 12, borderWidth: 1.5, borderColor: "#e5e7eb",
+                flexDirection: "row", alignItems: "center", gap: 6,
+              }}>
+              <MaterialIcons name="print" size={16} color="#6b7280" />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#6b7280" }}>Print</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleDownload}
+              activeOpacity={0.8}
+              style={{
+                paddingHorizontal: 16, paddingVertical: 10,
+                borderRadius: 12, borderWidth: 1.5, borderColor: "#e5e7eb",
+                flexDirection: "row", alignItems: "center", gap: 6,
+              }}>
+              <MaterialIcons name="download" size={16} color="#6b7280" />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#6b7280" }}>Download</Text>
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             onPress={onClose}
             activeOpacity={0.8}

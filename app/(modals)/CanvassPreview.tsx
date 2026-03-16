@@ -22,13 +22,13 @@ export interface CanvassPreviewData {
   bacChairperson:  string;
   officeSection:   string;
   purpose:         string;
-  items: Array<{
+  items: {
     itemNo:       number;
     description:  string;
     qty:          number;
     unit:         string;
     unitPrice?:   string;            // blank on release; filled when collecting
-  }>;
+  }[];
   canvasserNames:  string[];         // names listed at bottom-left
   supplierName?:   string;
   supplierAddress?: string;
@@ -72,8 +72,8 @@ const BASE_CSS = `
 
 export function buildCanvassHTML(data: CanvassPreviewData): string {
   const {
-    prNo, quotationNo, date, deadline, bacChairperson,
-    officeSection, purpose, items, canvasserNames,
+    quotationNo, date, deadline, bacChairperson,
+    items, canvasserNames,
     supplierName = "", supplierAddress = "",
   } = data;
 

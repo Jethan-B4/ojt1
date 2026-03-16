@@ -681,6 +681,52 @@ export async function markAssignmentReturned(
   return data as CanvasserAssignmentRow;
 }
 
+export async function insertAssignmentReleased(
+  sessionId: string,
+  division_id: number,
+  canvasser_id?: number | null,
+  released_at?: string
+): Promise<CanvasserAssignmentRow> {
+  const now = released_at ?? new Date().toISOString();
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .insert({
+      session_id: sessionId,
+      division_id,
+      canvasser_id: canvasser_id ?? null,
+      released_at: now,
+      returned_at: null,
+      status: "released" as const,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow;
+}
+
+export async function updateAssignmentReleased(
+  sessionId: string,
+  division_id: number,
+  canvasser_id?: number | null,
+  released_at?: string
+): Promise<CanvasserAssignmentRow> {
+  const now = released_at ?? new Date().toISOString();
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .update({
+      canvasser_id: canvasser_id ?? null,
+      released_at: now,
+      returned_at: null,
+      status: "released" as const,
+    })
+    .eq("session_id", sessionId)
+    .eq("division_id", division_id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as CanvasserAssignmentRow;
+}
+
 export async function insertSupplierQuotesForSession(
   sessionId: string,
   quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>

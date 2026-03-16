@@ -4,19 +4,19 @@
  */
 
 import {
-  ensureCanvassSession,
-  fetchPRIdByNo,
-  fetchPRWithItemsById,
-  insertSupplierQuotesForSession,
-  markAssignmentReturned,
-  supabase,
+    ensureCanvassSession,
+    fetchPRIdByNo,
+    fetchPRWithItemsById,
+    insertSupplierQuotesForSession,
+    markAssignmentReturned,
+    supabase,
 } from "@/lib/supabase";
 import type { CanvassStage, CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React from "react";
 import {
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
-  Text, TextInput, TouchableOpacity, View,
+    Alert, KeyboardAvoidingView, Platform, ScrollView,
+    Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import type { CanvassPreviewData } from "../(modals)/CanvassPreview";
 import CanvassPreviewModal from "../(modals)/CanvassPreviewModal";
@@ -236,7 +236,7 @@ export default function CanvasserView({ pr, onBack }: {
         // silently ignore — liveItems stays as pr.items prop
       }
     })();
-  }, [pr.prNo, currentUser?.division_id]);
+  }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
 
   // ── Submit quotations ─────────────────────────────────────────────────────
   const handleSubmitQuotes = async () => {
