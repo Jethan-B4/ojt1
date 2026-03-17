@@ -20,9 +20,9 @@ export interface CanvassingPR {
 
 export type CanvassStage =
   | "pr_received"
-  | "bac_resolution"
   | "release_canvass"
   | "collect_canvass"
+  | "bac_resolution"
   | "aaa_preparation";
 
 export interface BACMember {
@@ -41,23 +41,23 @@ export interface DivAssign {
 }
 
 export interface RFQForm {
-  quotationNo:    string;
-  quotationDate:  string;
-  deadlineDate:   string;
+  quotationNo: string;
+  quotationDate: string;
+  deadlineDate: string;
   bacChairperson: string;
-  entity:         string;
-  companyName:    string;
+  entity: string;
+  companyName: string;
   companyAddress: string;
   // Per-item supplier response (keyed by item id)
-  unitPrices:     Record<number, string>;
+  unitPrices: Record<number, string>;
   // Supplier fields (filled by supplier / canvasser)
-  printedName:    string;
-  telNo:          string;
-  philGeps:       string;
-  birTin:         string;
-  vatType:        "vat" | "non-vat" | "";
-  remarks:        string;
-  canvasserRef:   string;   // ECT/asa style reference
+  printedName: string;
+  telNo: string;
+  philGeps: string;
+  birTin: string;
+  vatType: "vat" | "non-vat" | "";
+  remarks: string;
+  canvasserRef: string; // ECT/asa style reference
 }
 
 export interface SupplierQ {

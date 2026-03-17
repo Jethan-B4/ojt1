@@ -3,27 +3,48 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
-  Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import EditPRModal, { type PREditPayload, type PREditRecord } from "../(modals)/EditPRModal";
+import EditPRModal, {
+    type PREditPayload,
+    type PREditRecord,
+} from "../(modals)/EditPRModal";
 import ProcessPRModal, {
-  FlagButton,
-  STATUS_FLAGS,
-  StatusFlagPicker,
-  insertRemark,
-  type ProcessRecord,
-  type StatusFlag,
+    FlagButton,
+    STATUS_FLAGS,
+    StatusFlagPicker,
+    type ProcessRecord,
+    type StatusFlag,
 } from "../(modals)/ProcessPRModal";
-import PurchaseRequestModal, { PRSubmitPayload } from "../(modals)/PurchaseRequestModal";
+import PurchaseRequestModal, {
+    PRSubmitPayload,
+} from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-  fetchCanvassablePRs, fetchCanvassablePRsByDivision,
-  fetchLatestRemarkByPR,
-  fetchPRStatuses,
-  fetchPurchaseRequests, fetchPurchaseRequestsByDivision,
-  insertProposalForPR, insertPurchaseRequest, supabase,
-  type PRRow, type PRStatusRow, type RemarkRow,
+    fetchCanvassablePRs,
+    fetchCanvassablePRsByDivision,
+    fetchLatestRemarkByPR,
+    fetchPRStatuses,
+    fetchPurchaseRequests,
+    fetchPurchaseRequestsByDivision,
+    insertProposalForPR,
+    insertPurchaseRequest,
+    insertRemark,
+    supabase,
+    type PRRow,
+    type PRStatusRow,
+    type RemarkRow,
 } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
@@ -31,7 +52,11 @@ import { useAuth } from "../AuthContext";
 
 type SubTab = "pr" | "canvass" | "abstract_of_awards";
 
-type PRRecord = ReturnType<typeof toPRDisplay> & { itemDescription: string; quantity: number; elapsedTime: string };
+type PRRecord = ReturnType<typeof toPRDisplay> & {
+  itemDescription: string;
+  quantity: number;
+  elapsedTime: string;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -50,46 +75,128 @@ type PRRecord = ReturnType<typeof toPRDisplay> & { itemDescription: string; quan
  *   10 = BAC Resolution
  *   11 = AAA Issuance
  */
-const STATUS_CFG: Record<number, { bg: string; text: string; dot: string; label: string }> = {
-  1:  { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending"                },
-  2:  { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6", label: "Div. Head Review"       },
-  3:  { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC Review"             },
-  4:  { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget Review"          },
-  5:  { bg: "#ecfdf5", text: "#065f46", dot: "#10b981", label: "PARPO Approval"         },
-  6:  { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", label: "Canvass · Reception"    },
-  8:  { bg: "#ecfdf5", text: "#065f46", dot: "#16a34a", label: "Canvass · Releasing"    },
-  9:  { bg: "#f0fdfa", text: "#0f766e", dot: "#0d9488", label: "Canvass · Collection"   },
-  10: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", label: "BAC Resolution"         },
-  11: { bg: "#fdf4ff", text: "#86198f", dot: "#c026d3", label: "AAA Issuance"           },
+const STATUS_CFG: Record<
+  number,
+  { bg: string; text: string; dot: string; label: string }
+> = {
+  1: { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending" },
+  2: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    label: "Div. Head Review",
+  },
+  3: { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC Review" },
+  4: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget Review" },
+  5: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#10b981",
+    label: "PARPO Approval",
+  },
+  6: {
+    bg: "#f0fdf4",
+    text: "#166534",
+    dot: "#22c55e",
+    label: "Canvass · Reception",
+  },
+  8: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#16a34a",
+    label: "Canvass · Releasing",
+  },
+  9: {
+    bg: "#f0fdfa",
+    text: "#0f766e",
+    dot: "#0d9488",
+    label: "Canvass · Collection",
+  },
+  10: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "BAC Resolution",
+  },
+  11: { bg: "#fdf4ff", text: "#86198f", dot: "#c026d3", label: "AAA Issuance" },
 };
 
 function statusCfgFor(id: number) {
-  return STATUS_CFG[id] ?? { bg: "#f9fafb", text: "#6b7280", dot: "#9ca3af", label: `Status ${id}` };
+  return (
+    STATUS_CFG[id] ?? {
+      bg: "#f9fafb",
+      text: "#6b7280",
+      dot: "#9ca3af",
+      label: `Status ${id}`,
+    }
+  );
 }
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
-  { key: "pr",                 label: "Purchase Request"   },
-  { key: "canvass",            label: "Canvass"            },
+  { key: "pr", label: "Purchase Request" },
+  { key: "canvass", label: "Canvass" },
   { key: "abstract_of_awards", label: "Abstract of Awards" },
 ];
 
-const MONO      = Platform.OS === "ios" ? "Courier New" : "monospace";
+const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
-const fmt = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n: number) =>
+  n.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 type SortBy = "date_created" | "date_modified";
 
 // role_id 2 = Division Head, 3 = BAC, 4 = Budget, 5 = PARPO, 7 = Canvasser, 8 = Supply
 const PROCESS_ROLES = new Set([2, 3, 4, 5, 7, 8]);
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Flag ID Mapping ──────────────────────────────────────────────────────────
+/**
+ * Maps StatusFlag strings to their corresponding status_flag table IDs.
+ * IDs should match the status_flag table in Supabase (1-indexed).
+ */
+const FLAG_TO_ID: Record<StatusFlag, number> = {
+  complete: 2,
+  incomplete_info: 3,
+  wrong_information: 4,
+  needs_revision: 5,
+  on_hold: 6,
+  urgent: 7,
+};
+
+/**
+ * Reverse mapping: status_flag_id → StatusFlag string.
+ * Used to display flag badges in remarks.
+ */
+const ID_TO_FLAG: Record<number, StatusFlag> = {
+  2: "complete",
+  3: "incomplete_info",
+  4: "wrong_information",
+  5: "needs_revision",
+  6: "on_hold",
+  7: "urgent",
+};
+
+function getStatusFlagId(flag: StatusFlag | null): number | null {
+  return flag ? FLAG_TO_ID[flag] : null;
+}
+
+function getFlagFromId(id: number | null): StatusFlag | null {
+  return id ? (ID_TO_FLAG[id] ?? null) : null;
+}
 
 function rowToRecord(row: PRRow, itemCount = 0): PRRecord {
   const base = toPRDisplay(row);
   const created = row.created_at ? new Date(row.created_at) : new Date();
-  const diffMs  = Date.now() - created.getTime();
+  const diffMs = Date.now() - created.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
-  const elapsed = diffMin < 60 ? `${diffMin} min` : diffMin < 1440 ? `${Math.floor(diffMin / 60)} hr` : `${Math.floor(diffMin / 1440)} days`;
+  const elapsed =
+    diffMin < 60
+      ? `${diffMin} min`
+      : diffMin < 1440
+        ? `${Math.floor(diffMin / 60)} hr`
+        : `${Math.floor(diffMin / 1440)} days`;
   return {
     ...base,
     itemDescription: base.purpose,
@@ -100,14 +207,23 @@ function rowToRecord(row: PRRow, itemCount = 0): PRRecord {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const SubTabRow: React.FC<{ active: SubTab; onSelect: (s: SubTab) => void }> = ({ active, onSelect }) => (
+const SubTabRow: React.FC<{
+  active: SubTab;
+  onSelect: (s: SubTab) => void;
+}> = ({ active, onSelect }) => (
   <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
     {SUB_TABS.map((sub) => {
       const on = sub.key === active;
       return (
-        <TouchableOpacity key={sub.key} onPress={() => onSelect(sub.key)} activeOpacity={0.8}
+        <TouchableOpacity
+          key={sub.key}
+          onPress={() => onSelect(sub.key)}
+          activeOpacity={0.8}
           className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}>
-          <Text className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}>{sub.label}</Text>
+          <Text
+            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}>
+            {sub.label}
+          </Text>
         </TouchableOpacity>
       );
     })}
@@ -115,16 +231,31 @@ const SubTabRow: React.FC<{ active: SubTab; onSelect: (s: SubTab) => void }> = (
 );
 
 const SearchBar: React.FC<{
-  value: string; onChange: (t: string) => void;
-  onCreatePress: () => void; canCreate?: boolean;
-  filterActive: boolean; onFilterToggle: () => void;
-}> = ({ value, onChange, onCreatePress, canCreate = true, filterActive, onFilterToggle }) => (
+  value: string;
+  onChange: (t: string) => void;
+  onCreatePress: () => void;
+  canCreate?: boolean;
+  filterActive: boolean;
+  onFilterToggle: () => void;
+}> = ({
+  value,
+  onChange,
+  onCreatePress,
+  canCreate = true,
+  filterActive,
+  onFilterToggle,
+}) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <Text className="text-gray-400 text-sm">🔍</Text>
-      <TextInput value={value} onChangeText={onChange}
-        placeholder="Search PR, section, item…" placeholderTextColor="#9ca3af"
-        returnKeyType="search" className="flex-1 text-[13px] text-gray-800" />
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder="Search PR, section, item…"
+        placeholderTextColor="#9ca3af"
+        returnKeyType="search"
+        className="flex-1 text-[13px] text-gray-800"
+      />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChange("")} hitSlop={8}>
           <Text className="text-gray-400 text-sm">✕</Text>
@@ -132,20 +263,33 @@ const SearchBar: React.FC<{
       )}
     </View>
     {/* Filter toggle — mirrors ProcurementLog */}
-    <TouchableOpacity onPress={onFilterToggle} activeOpacity={0.8}
+    <TouchableOpacity
+      onPress={onFilterToggle}
+      activeOpacity={0.8}
       style={{
-        width: 40, height: 40, borderRadius: 12,
-        alignItems: "center", justifyContent: "center",
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        alignItems: "center",
+        justifyContent: "center",
         backgroundColor: filterActive ? "#064E3B" : "#ffffff",
-        borderWidth: 1.5, borderColor: filterActive ? "#064E3B" : "#e5e7eb",
+        borderWidth: 1.5,
+        borderColor: filterActive ? "#064E3B" : "#e5e7eb",
       }}>
-      <MaterialIcons name="filter-list" size={18} color={filterActive ? "#ffffff" : "#6b7280"} />
+      <MaterialIcons
+        name="filter-list"
+        size={18}
+        color={filterActive ? "#ffffff" : "#6b7280"}
+      />
     </TouchableOpacity>
     {canCreate && (
-      <Pressable onPress={onCreatePress}
+      <Pressable
+        onPress={onCreatePress}
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => pressed ? { opacity: 0.82 } : undefined}>
-        <Text className="text-white text-[18px] leading-none font-light">+</Text>
+        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}>
+        <Text className="text-white text-[18px] leading-none font-light">
+          +
+        </Text>
         <Text className="text-white text-[13px] font-bold">Create</Text>
       </Pressable>
     )}
@@ -154,17 +298,29 @@ const SearchBar: React.FC<{
 
 /** Reusable chip used inside FilterPanel — mirrors ProcurementLog's FilterChip. */
 const FilterChip: React.FC<{
-  label: string; active: boolean; color?: string; onPress: () => void;
+  label: string;
+  active: boolean;
+  color?: string;
+  onPress: () => void;
 }> = ({ label, active, color, onPress }) => {
-  const bg     = active ? (color ?? "#064E3B") : "#ffffff";
-  const txt    = active ? "#ffffff" : "#6b7280";
+  const bg = active ? (color ?? "#064E3B") : "#ffffff";
+  const txt = active ? "#ffffff" : "#6b7280";
   const border = active ? (color ?? "#064E3B") : "#e5e7eb";
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.75}
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
       className="rounded-full"
-      style={{ paddingHorizontal: 12, paddingVertical: 6,
-        backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
-      <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>{label}</Text>
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: bg,
+        borderWidth: 1.5,
+        borderColor: border,
+      }}>
+      <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 };
@@ -175,67 +331,137 @@ const FilterChip: React.FC<{
  * Sort options: Date Created (newest first) · Last Modified (newest first).
  */
 const FilterPanel: React.FC<{
-  visible:        boolean;
-  records:        PRRecord[];
-  statusFilter:   number | null;
-  sectionFilter:  string;
-  sortBy:         SortBy;
+  visible: boolean;
+  records: PRRecord[];
+  statusFilter: number | null;
+  sectionFilter: string;
+  sortBy: SortBy;
   onStatusFilter: (id: number | null) => void;
-  onSectionFilter:(s: string) => void;
-  onSortBy:       (s: SortBy) => void;
-  onClear:        () => void;
-}> = ({ visible, records, statusFilter, sectionFilter, sortBy,
-        onStatusFilter, onSectionFilter, onSortBy, onClear }) => {
+  onSectionFilter: (s: string) => void;
+  onSortBy: (s: SortBy) => void;
+  onClear: () => void;
+}> = ({
+  visible,
+  records,
+  statusFilter,
+  sectionFilter,
+  sortBy,
+  onStatusFilter,
+  onSectionFilter,
+  onSortBy,
+  onClear,
+}) => {
   if (!visible) return null;
 
-  const presentStatusIds = [...new Set(records.map(r => r.statusId))].sort((a, b) => a - b);
-  const presentSections  = ["All", ...new Set(records.map(r => r.officeSection).filter(Boolean))].sort();
-  const hasActive        = statusFilter !== null || sectionFilter !== "All";
+  const presentStatusIds = [...new Set(records.map((r) => r.statusId))].sort(
+    (a, b) => a - b,
+  );
+  const presentSections = [
+    "All",
+    ...new Set(records.map((r) => r.officeSection).filter(Boolean)),
+  ].sort();
+  const hasActive = statusFilter !== null || sectionFilter !== "All";
 
   return (
-    <View className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3"
-      style={{ gap: 10, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}>
-
+    <View
+      className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3"
+      style={{
+        gap: 10,
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 2,
+      }}>
       {/* ── Status ── */}
-      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Status</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+        Status
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
-        <FilterChip label="All" active={statusFilter === null} onPress={() => onStatusFilter(null)} />
-        {presentStatusIds.map(sid => {
+        <FilterChip
+          label="All"
+          active={statusFilter === null}
+          onPress={() => onStatusFilter(null)}
+        />
+        {presentStatusIds.map((sid) => {
           const c = statusCfgFor(sid);
           return (
-            <FilterChip key={sid} label={c.label} active={statusFilter === sid} color={c.dot}
-              onPress={() => onStatusFilter(statusFilter === sid ? null : sid)} />
+            <FilterChip
+              key={sid}
+              label={c.label}
+              active={statusFilter === sid}
+              color={c.dot}
+              onPress={() => onStatusFilter(statusFilter === sid ? null : sid)}
+            />
           );
         })}
       </ScrollView>
 
       {/* ── Section / Division ── */}
-      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Section</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+        Section
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
-        {presentSections.map(s => (
-          <FilterChip key={s} label={s} active={sectionFilter === s}
-            onPress={() => onSectionFilter(s)} />
+        {presentSections.map((s) => (
+          <FilterChip
+            key={s}
+            label={s}
+            active={sectionFilter === s}
+            onPress={() => onSectionFilter(s)}
+          />
         ))}
       </ScrollView>
 
       {/* ── Sort ── */}
-      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">Sort By</Text>
+      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+        Sort By
+      </Text>
       <View className="flex-row gap-2">
-        {([
-          { key: "date_created"  as SortBy, label: "Date Created",  icon: "calendar-today"   },
-          { key: "date_modified" as SortBy, label: "Last Processed", icon: "update"           },
-        ] as { key: SortBy; label: string; icon: keyof typeof MaterialIcons.glyphMap }[]).map(opt => {
+        {(
+          [
+            {
+              key: "date_created" as SortBy,
+              label: "Date Created",
+              icon: "calendar-today",
+            },
+            {
+              key: "date_modified" as SortBy,
+              label: "Last Processed",
+              icon: "update",
+            },
+          ] as {
+            key: SortBy;
+            label: string;
+            icon: keyof typeof MaterialIcons.glyphMap;
+          }[]
+        ).map((opt) => {
           const active = sortBy === opt.key;
           return (
-            <TouchableOpacity key={opt.key} onPress={() => onSortBy(opt.key)} activeOpacity={0.8}
+            <TouchableOpacity
+              key={opt.key}
+              onPress={() => onSortBy(opt.key)}
+              activeOpacity={0.8}
               className={`flex-1 flex-row items-center justify-center gap-1.5 py-2 rounded-xl border ${
-                active ? "bg-[#064E3B] border-[#064E3B]" : "bg-white border-gray-200"
+                active
+                  ? "bg-[#064E3B] border-[#064E3B]"
+                  : "bg-white border-gray-200"
               }`}>
-              <MaterialIcons name={opt.icon} size={13} color={active ? "#fff" : "#6b7280"} />
-              <Text style={{ fontSize: 11.5, fontWeight: "700",
-                color: active ? "#ffffff" : "#6b7280" }}>
+              <MaterialIcons
+                name={opt.icon}
+                size={13}
+                color={active ? "#fff" : "#6b7280"}
+              />
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: "700",
+                  color: active ? "#ffffff" : "#6b7280",
+                }}>
                 {opt.label}
               </Text>
             </TouchableOpacity>
@@ -246,14 +472,19 @@ const FilterPanel: React.FC<{
       {/* ── Clear ── */}
       {hasActive && (
         <TouchableOpacity onPress={onClear} className="self-end">
-          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}>Clear filters</Text>
+          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}>
+            Clear filters
+          </Text>
         </TouchableOpacity>
       )}
     </View>
   );
 };
 
-const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({ records, statuses }) => {
+const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
+  records,
+  statuses,
+}) => {
   // Build a label→count map using the live status table so labels stay in sync.
   const countByStatus = records.reduce<Record<number, number>>((acc, r) => {
     acc[r.statusId] = (acc[r.statusId] ?? 0) + 1;
@@ -261,23 +492,66 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
   }, {});
 
   const stats = [
-    { label: "Total",      value: String(records.length),                                   color: "text-[#1a4d2e]", bg: "bg-emerald-50" },
-    { label: "Pending",    value: String(countByStatus[1] ?? 0),                            color: "text-amber-700",  bg: "bg-amber-50"  },
-    { label: "Processing", value: String([2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)),
-                                                                                              color: "text-blue-700",   bg: "bg-blue-50"   },
-    { label: "Canvassing", value: String([6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)),
-                                                                                              color: "text-emerald-700", bg: "bg-emerald-50" },
-    { label: "Amount",     value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,  color: "text-violet-700", bg: "bg-violet-50" },
+    {
+      label: "Total",
+      value: String(records.length),
+      color: "text-[#1a4d2e]",
+      bg: "bg-emerald-50",
+    },
+    {
+      label: "Pending",
+      value: String(countByStatus[1] ?? 0),
+      color: "text-amber-700",
+      bg: "bg-amber-50",
+    },
+    {
+      label: "Processing",
+      value: String(
+        [2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0),
+      ),
+      color: "text-blue-700",
+      bg: "bg-blue-50",
+    },
+    {
+      label: "Canvassing",
+      value: String(
+        [6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0),
+      ),
+      color: "text-emerald-700",
+      bg: "bg-emerald-50",
+    },
+    {
+      label: "Amount",
+      value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,
+      color: "text-violet-700",
+      bg: "bg-violet-50",
+    },
   ];
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
       className="bg-white border-b border-gray-100 max-h-20"
-      contentContainerStyle={{ flexDirection: "row", paddingHorizontal: 4, paddingVertical: 4, gap: 4 }}>
+      contentContainerStyle={{
+        flexDirection: "row",
+        paddingHorizontal: 4,
+        paddingVertical: 4,
+        gap: 4,
+      }}>
       {stats.map((s) => (
-        <View key={s.label} className={`${s.bg} rounded-xl px-4 py-2.5 items-center border border-gray-100 min-w-[72px]`}>
-          <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">{s.label}</Text>
-          <Text className={`text-[15px] font-bold ${s.color}`}
-            style={s.label === "Amount" ? { fontFamily: MONO, fontSize: 13 } : undefined}>
+        <View
+          key={s.label}
+          className={`${s.bg} rounded-xl px-4 py-2.5 items-center border border-gray-100 min-w-[72px]`}>
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+            {s.label}
+          </Text>
+          <Text
+            className={`text-[15px] font-bold ${s.color}`}
+            style={
+              s.label === "Amount"
+                ? { fontFamily: MONO, fontSize: 13 }
+                : undefined
+            }>
             {s.value}
           </Text>
         </View>
@@ -286,142 +560,264 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
   );
 };
 
-const StatusPill: React.FC<{ statusId: number; label: string; elapsed: string }> = ({ statusId, label, elapsed }) => {
+const StatusPill: React.FC<{
+  statusId: number;
+  label: string;
+  elapsed: string;
+}> = ({ statusId, label, elapsed }) => {
   const cfg = statusCfgFor(statusId);
   return (
-    <View style={{
-      flexDirection: "row", alignItems: "center", gap: 5,
-      alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4,
-      borderRadius: 999, backgroundColor: cfg.bg,
-    }}>
-      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: cfg.dot }} />
-      <Text style={{ fontSize: 10.5, fontWeight: "700", color: cfg.text }}>{label}</Text>
-      <View style={{ width: 1, height: 10, backgroundColor: cfg.dot, opacity: 0.3 }} />
-      <Text style={{ fontSize: 10, fontWeight: "600", color: cfg.text, opacity: 0.7 }}>{elapsed}</Text>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        alignSelf: "flex-start",
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 999,
+        backgroundColor: cfg.bg,
+      }}>
+      <View
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: cfg.dot,
+        }}
+      />
+      <Text style={{ fontSize: 10.5, fontWeight: "700", color: cfg.text }}>
+        {label}
+      </Text>
+      <View
+        style={{ width: 1, height: 10, backgroundColor: cfg.dot, opacity: 0.3 }}
+      />
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: "600",
+          color: cfg.text,
+          opacity: 0.7,
+        }}>
+        {elapsed}
+      </Text>
     </View>
   );
 };
 
 const RecordCard: React.FC<{
-  record: PRRecord; isEven: boolean; roleId: number;
+  record: PRRecord;
+  isEven: boolean;
+  roleId: number;
   statuses: PRStatusRow[];
   latestFlag: RemarkRow | null;
-  onView:    (r: PRRecord) => void;
-  onEdit:    (r: PRRecord) => void;
+  onView: (r: PRRecord) => void;
+  onEdit: (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
-  onMore:    (r: PRRecord) => void;
-}> = ({ record, isEven, roleId, statuses, latestFlag, onView, onEdit, onProcess, onMore }) => {
-  const statusLabel = statuses.find((s) => s.id === record.statusId)?.status_name ?? `Status ${record.statusId}`;
-  const flag = latestFlag?.status_flag ? STATUS_FLAGS[latestFlag.status_flag] : null;
+  onMore: (r: PRRecord) => void;
+}> = ({
+  record,
+  isEven,
+  roleId,
+  statuses,
+  latestFlag,
+  onView,
+  onEdit,
+  onProcess,
+  onMore,
+}) => {
+  const statusLabel =
+    statuses.find((s) => s.id === record.statusId)?.status_name ??
+    `Status ${record.statusId}`;
+  const flagKey = latestFlag?.status_flag_id
+    ? getFlagFromId(latestFlag.status_flag_id)
+    : null;
+  const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
   return (
-  <View className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
-    style={{ shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 }}>
-    <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
-      <View className="flex-1 pr-3">
-        <Text className="text-[13px] font-bold text-[#1a4d2e] mb-0.5" style={{ fontFamily: MONO }}>{record.prNo}</Text>
-        <Text className="text-[12.5px] text-gray-700 leading-5" numberOfLines={2}>{record.itemDescription}</Text>
-      </View>
-      <StatusPill statusId={record.statusId} label={statusLabel} elapsed={record.elapsedTime} />
-    </View>
-    <View className="h-px bg-gray-100 mx-4" />
-    <View className="flex-row items-center gap-3 px-4 py-2.5">
-      <View className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
-        <Text className="text-[10.5px] font-bold text-emerald-700">{record.officeSection}</Text>
-      </View>
-      <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-        Qty <Text className="text-[12px] font-semibold text-gray-600" style={{ fontFamily: MONO }}>{record.quantity}</Text>
-      </Text>
-      <View className="w-px h-3.5 bg-gray-200" />
-      <Text className="text-[11px] text-gray-400" style={{ fontFamily: MONO }}>{record.date}</Text>
-      <View className="flex-1" />
-      <Text className="text-[12.5px] font-bold text-gray-700" style={{ fontFamily: MONO }}>₱{fmt(record.totalCost)}</Text>
-    </View>
-    {/* ── Latest status flag from remarks ── */}
-    {flag && (
-      <>
-        <View className="h-px bg-gray-100 mx-4" />
-        <View className="flex-row items-center gap-2 px-4 py-2">
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 5,
-            paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
-            backgroundColor: flag.bg, borderWidth: 1, borderColor: flag.dot + "40" }}>
-            <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
-            <Text style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}>{flag.label}</Text>
-          </View>
-          {latestFlag?.username && (
-            <Text className="text-[10px] text-gray-400">
-              by {latestFlag.username}
-            </Text>
-          )}
-          {latestFlag?.remark && (
-            <Text className="flex-1 text-[10.5px] text-gray-500" numberOfLines={1}>
-              · {latestFlag.remark}
-            </Text>
-          )}
+    <View
+      className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
+      style={{
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.07,
+        shadowRadius: 6,
+        elevation: 3,
+      }}>
+      <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
+        <View className="flex-1 pr-3">
+          <Text
+            className="text-[13px] font-bold text-[#1a4d2e] mb-0.5"
+            style={{ fontFamily: MONO }}>
+            {record.prNo}
+          </Text>
+          <Text
+            className="text-[12.5px] text-gray-700 leading-5"
+            numberOfLines={2}>
+            {record.itemDescription}
+          </Text>
         </View>
-      </>
-    )}
-    <View className="h-px bg-gray-100 mx-4" />
-    <View className="flex-row items-center gap-2 px-4 py-2.5">
-      <TouchableOpacity onPress={() => onView(record)} activeOpacity={0.8}
-        className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
-        <Text className="text-white text-[12px] font-bold">View</Text>
-      </TouchableOpacity>
-      {PROCESS_ROLES.has(roleId) ? (
-        <TouchableOpacity onPress={() => onProcess(record)} activeOpacity={0.8}
-          className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
-          <Text className="text-white text-[12px] font-bold">Process</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity onPress={() => onEdit(record)} activeOpacity={0.8}
-          className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
-          <Text className="text-white text-[12px] font-bold">Edit</Text>
-        </TouchableOpacity>
+        <StatusPill
+          statusId={record.statusId}
+          label={statusLabel}
+          elapsed={record.elapsedTime}
+        />
+      </View>
+      <View className="h-px bg-gray-100 mx-4" />
+      <View className="flex-row items-center gap-3 px-4 py-2.5">
+        <View className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
+          <Text className="text-[10.5px] font-bold text-emerald-700">
+            {record.officeSection}
+          </Text>
+        </View>
+        <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Qty{" "}
+          <Text
+            className="text-[12px] font-semibold text-gray-600"
+            style={{ fontFamily: MONO }}>
+            {record.quantity}
+          </Text>
+        </Text>
+        <View className="w-px h-3.5 bg-gray-200" />
+        <Text
+          className="text-[11px] text-gray-400"
+          style={{ fontFamily: MONO }}>
+          {record.date}
+        </Text>
+        <View className="flex-1" />
+        <Text
+          className="text-[12.5px] font-bold text-gray-700"
+          style={{ fontFamily: MONO }}>
+          ₱{fmt(record.totalCost)}
+        </Text>
+      </View>
+      {/* ── Latest status flag from remarks ── */}
+      {flag && (
+        <>
+          <View className="h-px bg-gray-100 mx-4" />
+          <View className="flex-row items-center gap-2 px-4 py-2">
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 999,
+                backgroundColor: flag.bg,
+                borderWidth: 1,
+                borderColor: flag.dot + "40",
+              }}>
+              <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
+              <Text
+                style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}>
+                {flag.label}
+              </Text>
+            </View>
+            {latestFlag?.username && (
+              <Text className="text-[10px] text-gray-400">
+                by {latestFlag.username}
+              </Text>
+            )}
+            {latestFlag?.remark && (
+              <Text
+                className="flex-1 text-[10.5px] text-gray-500"
+                numberOfLines={1}>
+                · {latestFlag.remark}
+              </Text>
+            )}
+          </View>
+        </>
       )}
-      <TouchableOpacity onPress={() => onMore(record)} activeOpacity={0.8}
-        className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center">
-        <Text className="text-white text-[11px] font-bold tracking-widest">•••</Text>
-      </TouchableOpacity>
+      <View className="h-px bg-gray-100 mx-4" />
+      <View className="flex-row items-center gap-2 px-4 py-2.5">
+        <TouchableOpacity
+          onPress={() => onView(record)}
+          activeOpacity={0.8}
+          className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
+          <Text className="text-white text-[12px] font-bold">View</Text>
+        </TouchableOpacity>
+        {PROCESS_ROLES.has(roleId) ? (
+          <TouchableOpacity
+            onPress={() => onProcess(record)}
+            activeOpacity={0.8}
+            className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
+            <Text className="text-white text-[12px] font-bold">Process</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            onPress={() => onEdit(record)}
+            activeOpacity={0.8}
+            className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
+            <Text className="text-white text-[12px] font-bold">Edit</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          onPress={() => onMore(record)}
+          activeOpacity={0.8}
+          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center">
+          <Text className="text-white text-[11px] font-bold tracking-widest">
+            •••
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
-  </View>
   );
 };
 
 // ─── Remark types ─────────────────────────────────────────────────────────────
 
 interface RemarkEntry {
-  id:          number;
-  remark:      string;
-  status_flag: StatusFlag | null;
-  created_at:  string;
-  user_id:     number | null;
+  id: number;
+  remark: string;
+  status_flag_id: number | null;
+  created_at: string;
+  user_id: number | null;
   // joined
-  username?:   string;
+  username?: string;
 }
 
 // ─── RemarkRow — one history entry in the timeline ───────────────────────────
 
-const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({ entry, isLast }) => {
-  const flag = entry.status_flag ? STATUS_FLAGS[entry.status_flag] : null;
+const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
+  entry,
+  isLast,
+}) => {
+  const flagKey = getFlagFromId(entry.status_flag_id);
+  const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
   const date = new Date(entry.created_at);
   const timeStr = date.toLocaleString("en-PH", {
-    month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit", hour12: true,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
   });
 
   return (
     <View className="flex-row gap-3">
       {/* Timeline spine */}
       <View className="items-center" style={{ width: 28 }}>
-        <View className="w-7 h-7 rounded-full items-center justify-center border-2 border-white"
-          style={{ backgroundColor: flag ? flag.dot + "22" : "#f3f4f6",
-                   borderColor: flag ? flag.dot + "55" : "#e5e7eb" }}>
-          {flag
-            ? <MaterialIcons name={flag.icon} size={13} color={flag.dot} />
-            : <MaterialIcons name="chat-bubble-outline" size={12} color="#9ca3af" />
-          }
+        <View
+          className="w-7 h-7 rounded-full items-center justify-center border-2 border-white"
+          style={{
+            backgroundColor: flag ? flag.dot + "22" : "#f3f4f6",
+            borderColor: flag ? flag.dot + "55" : "#e5e7eb",
+          }}>
+          {flag ? (
+            <MaterialIcons name={flag.icon} size={13} color={flag.dot} />
+          ) : (
+            <MaterialIcons
+              name="chat-bubble-outline"
+              size={12}
+              color="#9ca3af"
+            />
+          )}
         </View>
         {!isLast && (
-          <View className="flex-1 w-px bg-gray-200 mt-1" style={{ minHeight: 16 }} />
+          <View
+            className="flex-1 w-px bg-gray-200 mt-1"
+            style={{ minHeight: 16 }}
+          />
         )}
       </View>
 
@@ -429,19 +825,35 @@ const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({ entry, i
       <View className="flex-1 pb-4">
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
           {flag && (
-            <View className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full border ${flag.bg} ${flag.border}`}>
-              <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: flag.dot }} />
-              <Text className={`text-[10px] font-bold ${flag.text}`}>{flag.label}</Text>
+            <View
+              className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full border ${flag.bg} ${flag.border}`}>
+              <View
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: flag.dot }}
+              />
+              <Text className={`text-[10px] font-bold ${flag.text}`}>
+                {flag.label}
+              </Text>
             </View>
           )}
           <Text className="text-[10px] text-gray-400">{timeStr}</Text>
           {entry.username && (
-            <Text className="text-[10px] font-semibold text-gray-500">· {entry.username}</Text>
+            <Text className="text-[10px] font-semibold text-gray-500">
+              · {entry.username}
+            </Text>
           )}
         </View>
-        <View className="bg-white rounded-xl px-3 py-2.5 border border-gray-100"
-          style={{ shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 }}>
-          <Text className="text-[13px] text-gray-700 leading-[19px]">{entry.remark}</Text>
+        <View
+          className="bg-white rounded-xl px-3 py-2.5 border border-gray-100"
+          style={{
+            shadowColor: "#000",
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 1,
+          }}>
+          <Text className="text-[13px] text-gray-700 leading-[19px]">
+            {entry.remark}
+          </Text>
         </View>
       </View>
     </View>
@@ -451,82 +863,111 @@ const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({ entry, i
 // ─── RemarkSheet — the full "More" bottom sheet ───────────────────────────────
 
 const RemarkSheet: React.FC<{
-  visible:    boolean;
-  record:     PRRecord | null;
+  visible: boolean;
+  record: PRRecord | null;
   currentUser: any;
-  onClose:    () => void;
+  onClose: () => void;
 }> = ({ visible, record, currentUser, onClose }) => {
-  const [remarksText,  setRemarksText]  = useState("");
-  const [statusFlag,   setStatusFlag]   = useState<StatusFlag | null>(null);
-  const [flagOpen,     setFlagOpen]     = useState(false);
-  const [history,      setHistory]      = useState<RemarkEntry[]>([]);
-  const [loadingHist,  setLoadingHist]  = useState(false);
-  const [saving,       setSaving]       = useState(false);
+  const [remarksText, setRemarksText] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [history, setHistory] = useState<RemarkEntry[]>([]);
+  const [loadingHist, setLoadingHist] = useState(false);
+  const [saving, setSaving] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   // Load history whenever sheet opens for a PR
   useEffect(() => {
-    if (!visible || !record) { setHistory([]); return; }
+    if (!visible || !record) {
+      setHistory([]);
+      return;
+    }
     setLoadingHist(true);
     supabase
       .from("remarks")
-      .select("id, remark, status_flag, created_at, user_id, users(username)")
+      .select(
+        "id, remark, status_flag_id, created_at, user_id, users(username)",
+      )
       .eq("pr_id", record.id)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
-        if (error || !data) { setHistory([]); return; }
-        setHistory(data.map((r: any) => ({
-          id:          r.id,
-          remark:      r.remark,
-          status_flag: r.status_flag as StatusFlag | null,
-          created_at:  r.created_at,
-          user_id:     r.user_id,
-          username:    r.users?.username ?? undefined,
-        })));
-      })
-      setLoadingHist(false);
+        if (error || !data) {
+          setHistory([]);
+          return;
+        }
+        setHistory(
+          data.map((r: any) => ({
+            id: r.id,
+            remark: r.remark,
+            status_flag_id: r.status_flag_id as number | null,
+            created_at: r.created_at,
+            user_id: r.user_id,
+            username: r.users?.username ?? undefined,
+          })),
+        );
+      });
+    setLoadingHist(false);
   }, [visible, record]);
 
   // Reset form when closed
   useEffect(() => {
-    if (!visible) { setRemarksText(""); setStatusFlag(null); }
+    if (!visible) {
+      setRemarksText("");
+      setStatusFlag(null);
+    }
   }, [visible]);
 
   const handleSubmit = async () => {
     if (!record || !remarksText.trim()) return;
     setSaving(true);
     try {
-      await insertRemark(record.id, currentUser?.id, remarksText, statusFlag);
+      await insertRemark(
+        record.id,
+        currentUser?.id,
+        remarksText,
+        getStatusFlagId(statusFlag),
+      );
       // Optimistically prepend to history
       const newEntry: RemarkEntry = {
-        id:          Date.now(),
-        remark:      remarksText.trim(),
-        status_flag: statusFlag,
-        created_at:  new Date().toISOString(),
-        user_id:     currentUser?.id ?? null,
-        username:    currentUser?.username ?? "You",
+        id: Date.now(),
+        remark: remarksText.trim(),
+        status_flag_id: getStatusFlagId(statusFlag),
+        created_at: new Date().toISOString(),
+        user_id: currentUser?.id ?? null,
+        username: currentUser?.username ?? "You",
       };
-      setHistory(prev => [newEntry, ...prev]);
+      setHistory((prev) => [newEntry, ...prev]);
       setRemarksText("");
       setStatusFlag(null);
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not save remark.");
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!record) return null;
 
   return (
     <>
-      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}>
         <Pressable className="flex-1 bg-black/40" onPress={onClose} />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={{ maxHeight: "85%" }}>
-          <View className="bg-gray-50 rounded-t-3xl overflow-hidden"
-            style={{ shadowColor: "#000", shadowOffset: { width: 0, height: -4 },
-                     shadowOpacity: 0.12, shadowRadius: 16, elevation: 16 }}>
-
+          <View
+            className="bg-gray-50 rounded-t-3xl overflow-hidden"
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: -4 },
+              shadowOpacity: 0.12,
+              shadowRadius: 16,
+              elevation: 16,
+            }}>
             {/* ── Header ── */}
             <View className="bg-[#064E3B] px-5 pt-4 pb-4">
               <View className="w-10 h-1 rounded-full bg-white/20 self-center mb-3" />
@@ -535,16 +976,24 @@ const RemarkSheet: React.FC<{
                   <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
                     PR Remarks & Flags
                   </Text>
-                  <Text className="text-[15px] font-extrabold text-white" style={{ fontFamily: MONO }}>
+                  <Text
+                    className="text-[15px] font-extrabold text-white"
+                    style={{ fontFamily: MONO }}>
                     {record.prNo}
                   </Text>
-                  <Text className="text-[11px] text-white/50 mt-0.5" numberOfLines={1}>
+                  <Text
+                    className="text-[11px] text-white/50 mt-0.5"
+                    numberOfLines={1}>
                     {record.officeSection} · {record.itemDescription}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={10}
+                <TouchableOpacity
+                  onPress={onClose}
+                  hitSlop={10}
                   className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center mt-0.5">
-                  <Text className="text-white text-[20px] leading-none font-light">×</Text>
+                  <Text className="text-white text-[20px] leading-none font-light">
+                    ×
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -554,10 +1003,15 @@ const RemarkSheet: React.FC<{
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 24 }}>
-
               {/* ── Add Remark form ── */}
-              <View className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
-                style={{ shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}>
+              <View
+                className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
+                style={{
+                  shadowColor: "#000",
+                  shadowOpacity: 0.05,
+                  shadowRadius: 6,
+                  elevation: 2,
+                }}>
                 <View className="px-4 pt-3.5 pb-1 border-b border-gray-100">
                   <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                     Add Remark
@@ -566,8 +1020,13 @@ const RemarkSheet: React.FC<{
                 <View className="px-4 pt-3 pb-4 gap-3">
                   {/* Flag picker trigger */}
                   <View>
-                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">Status Flag</Text>
-                    <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                      Status Flag
+                    </Text>
+                    <FlagButton
+                      selected={statusFlag}
+                      onPress={() => setFlagOpen(true)}
+                    />
                   </View>
                   {/* Remark text */}
                   <View>
@@ -590,16 +1049,25 @@ const RemarkSheet: React.FC<{
                     disabled={!remarksText.trim() || saving}
                     activeOpacity={0.8}
                     className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${
-                      !remarksText.trim() || saving ? "bg-gray-200" : "bg-[#064E3B]"
+                      !remarksText.trim() || saving
+                        ? "bg-gray-200"
+                        : "bg-[#064E3B]"
                     }`}>
-                    {saving
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <MaterialIcons name="send" size={14}
-                          color={!remarksText.trim() ? "#9ca3af" : "#fff"} />
-                    }
-                    <Text className={`text-[13px] font-bold ${
-                      !remarksText.trim() || saving ? "text-gray-400" : "text-white"
-                    }`}>
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <MaterialIcons
+                        name="send"
+                        size={14}
+                        color={!remarksText.trim() ? "#9ca3af" : "#fff"}
+                      />
+                    )}
+                    <Text
+                      className={`text-[13px] font-bold ${
+                        !remarksText.trim() || saving
+                          ? "text-gray-400"
+                          : "text-white"
+                      }`}>
                       {saving ? "Saving…" : "Save Remark"}
                     </Text>
                   </TouchableOpacity>
@@ -614,7 +1082,9 @@ const RemarkSheet: React.FC<{
                   </Text>
                   {history.length > 0 && (
                     <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
-                      <Text className="text-[10px] font-bold text-emerald-700">{history.length}</Text>
+                      <Text className="text-[10px] font-bold text-emerald-700">
+                        {history.length}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -622,23 +1092,32 @@ const RemarkSheet: React.FC<{
                 {loadingHist ? (
                   <View className="items-center py-8">
                     <ActivityIndicator size="small" color="#064E3B" />
-                    <Text className="text-[12px] text-gray-400 mt-2">Loading history…</Text>
+                    <Text className="text-[12px] text-gray-400 mt-2">
+                      Loading history…
+                    </Text>
                   </View>
                 ) : history.length === 0 ? (
                   <View className="items-center py-8 bg-white rounded-2xl border border-gray-100">
                     <Text className="text-2xl mb-2">💬</Text>
-                    <Text className="text-[13px] font-semibold text-gray-500">No remarks yet</Text>
-                    <Text className="text-[11px] text-gray-400 mt-0.5">Be the first to add a note.</Text>
+                    <Text className="text-[13px] font-semibold text-gray-500">
+                      No remarks yet
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                      Be the first to add a note.
+                    </Text>
                   </View>
                 ) : (
                   <View className="pt-1">
                     {history.map((entry, i) => (
-                      <RemarkRow key={entry.id} entry={entry} isLast={i === history.length - 1} />
+                      <RemarkRow
+                        key={entry.id}
+                        entry={entry}
+                        isLast={i === history.length - 1}
+                      />
                     ))}
                   </View>
                 )}
               </View>
-
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -658,8 +1137,12 @@ const RemarkSheet: React.FC<{
 const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   <View className="flex-1 items-center justify-center py-24 px-8">
     <Text className="text-5xl mb-4">📋</Text>
-    <Text className="text-[16px] font-bold text-gray-600 mb-2 text-center">{label}</Text>
-    <Text className="text-[13px] text-gray-400 text-center leading-5 max-w-[240px]">No records here yet.</Text>
+    <Text className="text-[16px] font-bold text-gray-600 mb-2 text-center">
+      {label}
+    </Text>
+    <Text className="text-[13px] text-gray-400 text-center leading-5 max-w-[240px]">
+      No records here yet.
+    </Text>
   </View>
 );
 
@@ -670,38 +1153,42 @@ export default function PRModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
-  const [activeSubTab,  setActiveSubTab]  = useState<SubTab>("pr");
-  const [searchQuery,   setSearchQuery]   = useState("");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>("pr");
+  const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
-  const [statusFilter,  setStatusFilter]  = useState<number | null>(null);
-  const [sortBy,        setSortBy]        = useState<SortBy>("date_created");
-  const [filterOpen,    setFilterOpen]    = useState(false);
-  const [page,          setPage]          = useState(1);
-  const [records,       setRecords]       = useState<PRRecord[]>([]);
-  const [statuses,      setStatuses]      = useState<PRStatusRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy>("date_created");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [records, setRecords] = useState<PRRecord[]>([]);
+  const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
   // Latest remark per PR id — fetched alongside records, used to show flag on cards
-  const [latestRemarks, setLatestRemarks] = useState<Record<string, RemarkRow | null>>({});
+  const [latestRemarks, setLatestRemarks] = useState<
+    Record<string, RemarkRow | null>
+  >({});
 
   // View PR modal state
-  const [viewRecord,  setViewRecord]  = useState<PRRecord | null>(null);
+  const [viewRecord, setViewRecord] = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
 
   // Edit PR modal state
-  const [editRecord,  setEditRecord]  = useState<PREditRecord | null>(null);
+  const [editRecord, setEditRecord] = useState<PREditRecord | null>(null);
   const [editVisible, setEditVisible] = useState(false);
 
   // Process PR modal state (Division Head / BAC / Budget)
-  const [processRecord,  setProcessRecord]  = useState<ProcessRecord | null>(null);
+  const [processRecord, setProcessRecord] = useState<ProcessRecord | null>(
+    null,
+  );
   const [processVisible, setProcessVisible] = useState(false);
 
   // More / actions sheet state
-  const [moreRecord,  setMoreRecord]  = useState<PRRecord | null>(null);
+  const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
 
   // Create PR modal state
-  const [prModalOpen,   setPrModalOpen]   = useState(false);
-  const [saving,        setSaving]        = useState(false);
-  const [refreshing,    setRefreshing]    = useState(false);
+  const [prModalOpen, setPrModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load PR status lookup table once — labels come from DB, not hardcoded strings.
   useEffect(() => {
@@ -715,13 +1202,29 @@ export default function PRModule() {
     try {
       let rows: PRRow[] = [];
       if (activeSubTab === "pr") {
-        rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
-          ? await fetchPurchaseRequests()
-          : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
+        rows =
+          roleId === 1 || PROCESS_ROLES.has(roleId)
+            ? await fetchPurchaseRequests()
+            : await fetchPurchaseRequestsByDivision(
+                currentUser?.division_id ?? -1,
+              );
       } else if (activeSubTab === "canvass") {
-        rows = (roleId === 1 || PROCESS_ROLES.has(roleId))
-          ? await fetchCanvassablePRs()
-          : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
+        rows =
+          roleId === 1 || PROCESS_ROLES.has(roleId)
+            ? await fetchCanvassablePRs()
+            : await fetchCanvassablePRsByDivision(
+                currentUser?.division_id ?? -1,
+              );
+      } else if (activeSubTab === "abstract_of_awards") {
+        // Only fetch PRs with status_id = 11 (AAA Issuance)
+        rows =
+          roleId === 1 || PROCESS_ROLES.has(roleId)
+            ? (await fetchPurchaseRequests()).filter((r) => r.status_id === 11)
+            : (
+                await fetchPurchaseRequestsByDivision(
+                  currentUser?.division_id ?? -1,
+                )
+              ).filter((r) => r.status_id === 11);
       } else {
         rows = [];
       }
@@ -731,15 +1234,19 @@ export default function PRModule() {
       // Fire-and-forget after records are set — flags are non-blocking UI enhancement.
       const remarkEntries = await Promise.all(
         rows.map(async (r) => {
-          const remark = await fetchLatestRemarkByPR(String(r.id)).catch(() => null);
+          const remark = await fetchLatestRemarkByPR(String(r.id)).catch(
+            () => null,
+          );
           return [String(r.id), remark] as [string, RemarkRow | null];
-        })
+        }),
       );
       setLatestRemarks(Object.fromEntries(remarkEntries));
     } catch {}
   }, [activeSubTab, roleId, currentUser?.division_id]);
 
-  useEffect(() => { loadPRs(); }, [loadPRs]);
+  useEffect(() => {
+    loadPRs();
+  }, [loadPRs]);
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -759,29 +1266,41 @@ export default function PRModule() {
     try {
       const saved = await insertPurchaseRequest(payload.pr, payload.items);
       try {
-        await insertProposalForPR(saved.id, payload.proposalNo, payload.divisionId);
+        await insertProposalForPR(
+          saved.id,
+          payload.proposalNo,
+          payload.divisionId,
+        );
       } catch {}
       setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
       setPage(1);
     } catch (e: any) {
       const message = e.message ?? "Insert failed";
-      setRecords((prev) => [{
-        id: `local-${Date.now()}`,
-        prNo: payload.pr.pr_no,
-        // Mirror display fields exactly
-        officeSection: payload.pr.office_section,
-        purpose: payload.pr.purpose,
-        totalCost: payload.pr.total_cost,
-        statusId: 1, // Pending — status_id 1 per pr_status table
-        date: new Date().toLocaleDateString("en-PH"),
-        // Extra display-only fields
-        itemDescription: payload.pr.purpose,
-        quantity: payload.items.length,
-        elapsedTime: "just now",
-      } as PRRecord, ...prev]);
+      setRecords((prev) => [
+        {
+          id: `local-${Date.now()}`,
+          prNo: payload.pr.pr_no,
+          // Mirror display fields exactly
+          officeSection: payload.pr.office_section,
+          purpose: payload.pr.purpose,
+          totalCost: payload.pr.total_cost,
+          statusId: 1, // Pending — status_id 1 per pr_status table
+          date: new Date().toLocaleDateString("en-PH"),
+          // Extra display-only fields
+          itemDescription: payload.pr.purpose,
+          quantity: payload.items.length,
+          elapsedTime: "just now",
+        } as PRRecord,
+        ...prev,
+      ]);
       setPage(1);
-      Alert.alert("Saved locally", `Could not reach the server. Record will sync when online. ${message}`);
-    } finally { setSaving(false); }
+      Alert.alert(
+        "Saved locally",
+        `Could not reach the server. Record will sync when online. ${message}`,
+      );
+    } finally {
+      setSaving(false);
+    }
     // Modal already inserted to DB. Optimistically add to list and refresh later.
     // setRecords((prev) => [{
     //   id: `local-${Date.now()}`, prNo: payload.pr.pr_no,
@@ -794,29 +1313,34 @@ export default function PRModule() {
     // setSaving(false);
   }, []);
 
-
   const handlePRSave = useCallback((payload: PREditPayload) => {
-    setRecords((prev) => prev.map((r) =>
-      r.id !== payload.id ? r : {
-        ...r,
-        officeSection: payload.officeSection,
-        totalCost: payload.totalCost,
-        quantity: payload.items.length,
-        itemDescription: `${payload.officeSection} procurement request`,
-      }
-    ));
+    setRecords((prev) =>
+      prev.map((r) =>
+        r.id !== payload.id
+          ? r
+          : {
+              ...r,
+              officeSection: payload.officeSection,
+              totalCost: payload.totalCost,
+              quantity: payload.items.length,
+              itemDescription: `${payload.officeSection} procurement request`,
+            },
+      ),
+    );
     // TODO: persist via supabase updatePurchaseRequest(payload)
   }, []);
 
   const filtered = records
     .filter((r) => {
       const q = searchQuery.toLowerCase();
-      const matchSearch = !q
-        || r.prNo.toLowerCase().includes(q)
-        || r.itemDescription.toLowerCase().includes(q)
-        || r.officeSection.toLowerCase().includes(q);
-      const matchSection = sectionFilter === "All" || r.officeSection === sectionFilter;
-      const matchStatus  = statusFilter === null || r.statusId === statusFilter;
+      const matchSearch =
+        !q ||
+        r.prNo.toLowerCase().includes(q) ||
+        r.itemDescription.toLowerCase().includes(q) ||
+        r.officeSection.toLowerCase().includes(q);
+      const matchSection =
+        sectionFilter === "All" || r.officeSection === sectionFilter;
+      const matchStatus = statusFilter === null || r.statusId === statusFilter;
       return matchSearch && matchSection && matchStatus;
     })
     .sort((a, b) => {
@@ -832,7 +1356,7 @@ export default function PRModule() {
       // date_created: newest first by date string
       return b.date.localeCompare(a.date);
     });
-  const paged      = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
   return (
@@ -840,11 +1364,16 @@ export default function PRModule() {
       <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
       <SearchBar
         value={searchQuery}
-        onChange={(t) => { setSearchQuery(t); setPage(1); }}
+        onChange={(t) => {
+          setSearchQuery(t);
+          setPage(1);
+        }}
         onCreatePress={handleOpenCreate}
         canCreate={roleId === 6}
-        filterActive={filterOpen || statusFilter !== null || sectionFilter !== "All"}
-        onFilterToggle={() => setFilterOpen(o => !o)}
+        filterActive={
+          filterOpen || statusFilter !== null || sectionFilter !== "All"
+        }
+        onFilterToggle={() => setFilterOpen((o) => !o)}
       />
       <StatStrip records={filtered} statuses={statuses} />
       <FilterPanel
@@ -853,28 +1382,50 @@ export default function PRModule() {
         statusFilter={statusFilter}
         sectionFilter={sectionFilter}
         sortBy={sortBy}
-        onStatusFilter={(id) => { setStatusFilter(id); setPage(1); }}
-        onSectionFilter={(s) => { setSectionFilter(s); setPage(1); }}
-        onSortBy={(s) => { setSortBy(s); setPage(1); }}
-        onClear={() => { setStatusFilter(null); setSectionFilter("All"); setPage(1); }}
+        onStatusFilter={(id) => {
+          setStatusFilter(id);
+          setPage(1);
+        }}
+        onSectionFilter={(s) => {
+          setSectionFilter(s);
+          setPage(1);
+        }}
+        onSortBy={(s) => {
+          setSortBy(s);
+          setPage(1);
+        }}
+        onClear={() => {
+          setStatusFilter(null);
+          setSectionFilter("All");
+          setPage(1);
+        }}
       />
 
       {/* Results count + active sort indicator */}
       <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
         <Text className="text-[11px] text-gray-400">
           <Text className="font-semibold text-gray-500">{filtered.length}</Text>
-          {" of "}{records.length} records
-          {(statusFilter !== null || sectionFilter !== "All" || searchQuery) ? " (filtered)" : ""}
+          {" of "}
+          {records.length} records
+          {statusFilter !== null || sectionFilter !== "All" || searchQuery
+            ? " (filtered)"
+            : ""}
         </Text>
         <View className="flex-row items-center gap-1">
-          <MaterialIcons name={sortBy === "date_created" ? "calendar-today" : "update"} size={11} color="#9ca3af" />
+          <MaterialIcons
+            name={sortBy === "date_created" ? "calendar-today" : "update"}
+            size={11}
+            color="#9ca3af"
+          />
           <Text className="text-[10.5px] text-gray-400">
             {sortBy === "date_created" ? "Date Created" : "Last Processed"}
           </Text>
         </View>
       </View>
 
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -885,61 +1436,132 @@ export default function PRModule() {
             colors={["#064E3B"]}
           />
         }>
-        {paged.length === 0
-          ? <EmptyState label="No records found" />
-          : paged.map((record, idx) => (
-              <RecordCard key={record.id} record={record} isEven={idx % 2 === 0} roleId={roleId}
-                statuses={statuses}
-                latestFlag={latestRemarks[record.id] ?? null}
-                onView={(r)    => { setViewRecord(r); setViewVisible(true); }}
-                onEdit={(r)    => { setEditRecord({ id: r.id, prNo: r.prNo }); setEditVisible(true); }}
-                onProcess={(r) => {
-                  /**
-                   * Route the "Process" button to the correct view based on role_id:
-                   *
-                   *  role 3  (BAC)        → CanvassingModule → BACView
-                   *  role 7  (Canvasser)  → CanvassingModule → CanvasserView
-                   *  role 6  (End User)   → CanvassingModule → EndUserView  (read-only)
-                   *  role 2  (Div. Head)  → ProcessPRModal   (approval step)
-                   *  role 4  (Budget)     → ProcessPRModal   (budget step)
-                   *  role 5  (PARPO)      → ProcessPRModal   (final approval)
-                   *  role 8  (Supply)     → ProcessPRModal   (supply step)
-                   *  role 1  (Admin)      → ProcessPRModal   (admin override)
-                   */
-                  if (roleId === 3 || roleId === 7 || roleId === 6) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                  } else {
-                    setProcessRecord({ id: r.id, prNo: r.prNo });
-                    setProcessVisible(true);
-                  }
-                }}
-                onMore={(r)    => { setMoreRecord(r); setMoreVisible(true); }} />
-            ))}
+        {paged.length === 0 ? (
+          <EmptyState label="No records found" />
+        ) : (
+          paged.map((record, idx) => (
+            <RecordCard
+              key={record.id}
+              record={record}
+              isEven={idx % 2 === 0}
+              roleId={roleId}
+              statuses={statuses}
+              latestFlag={latestRemarks[record.id] ?? null}
+              onView={(r) => {
+                setViewRecord(r);
+                setViewVisible(true);
+              }}
+              onEdit={(r) => {
+                setEditRecord({ id: r.id, prNo: r.prNo });
+                setEditVisible(true);
+              }}
+              onProcess={(r) => {
+                /**
+                 * Route the "Process" button to the correct view based on role_id and status_id:
+                 *
+                 *  role 3  (BAC):
+                 *    - status_id = 3 → ProcessPRModal (certification step)
+                 *    - status_id >= 6 → CanvassingModule → BACView
+                 *    - status_id < 6 → disabled
+                 *
+                 *  role 7  (Canvasser):
+                 *    - status_id >= 6 → CanvassingModule → CanvasserView
+                 *    - status_id < 6 → disabled
+                 *
+                 *  role 6  (End User):
+                 *    - status_id >= 6 → CanvassingModule → EndUserView (read-only)
+                 *    - status_id < 6 → disabled
+                 *
+                 *  role 2  (Div. Head)  → ProcessPRModal   (approval step)
+                 *  role 4  (Budget)     → ProcessPRModal   (budget step)
+                 *  role 5  (PARPO)      → ProcessPRModal   (final approval)
+                 *  role 8  (Supply)     → ProcessPRModal   (supply step)
+                 *  role 1  (Admin)      → ProcessPRModal   (admin override)
+                 */
+
+                // BAC user with status = 3 → open process modal for certification
+                if (roleId === 3 && r.statusId === 3) {
+                  setProcessRecord({ id: r.id, prNo: r.prNo });
+                  setProcessVisible(true);
+                  return;
+                }
+
+                // BAC, Canvasser, or End User with status >= 6 → canvassing view
+                if (
+                  (roleId === 3 || roleId === 7 || roleId === 6) &&
+                  r.statusId >= 6
+                ) {
+                  (navigation as any).navigate(
+                    "Canvassing" as never,
+                    { prNo: r.prNo } as never,
+                  );
+                } else if (roleId === 3 || roleId === 7 || roleId === 6) {
+                  // BAC/Canvasser/End User with status < 6 → show alert
+                  Alert.alert(
+                    "Not Available",
+                    `This PR is not yet in the canvassing phase (status: ${r.statusId}). Please wait until it reaches the canvassing stage.`,
+                  );
+                } else {
+                  // Other roles → process modal
+                  setProcessRecord({ id: r.id, prNo: r.prNo });
+                  setProcessVisible(true);
+                }
+              }}
+              onMore={(r) => {
+                setMoreRecord(r);
+                setMoreVisible(true);
+              }}
+            />
+          ))
+        )}
       </ScrollView>
 
       {/* Pagination */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t border-gray-100">
         <Text className="text-[12px] text-gray-400">
-          <Text className="font-semibold text-gray-600">{filtered.length}</Text> records
+          <Text className="font-semibold text-gray-600">{filtered.length}</Text>{" "}
+          records
         </Text>
         <View className="flex-row items-center gap-1.5">
           {[
             { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
-            ...Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1)
-              .map((p) => ({ label: String(p), page: p, disabled: false, active: p === page })),
-            { label: "›", page: Math.min(totalPages, page + 1), disabled: page === totalPages },
+            ...Array.from(
+              { length: Math.min(5, totalPages) },
+              (_, i) => i + 1,
+            ).map((p) => ({
+              label: String(p),
+              page: p,
+              disabled: false,
+              active: p === page,
+            })),
+            {
+              label: "›",
+              page: Math.min(totalPages, page + 1),
+              disabled: page === totalPages,
+            },
           ].map((btn, i) => (
-            <TouchableOpacity key={i} onPress={() => setPage(btn.page)} disabled={btn.disabled} activeOpacity={0.8}
+            <TouchableOpacity
+              key={i}
+              onPress={() => setPage(btn.page)}
+              disabled={btn.disabled}
+              activeOpacity={0.8}
               className={`w-8 h-8 rounded-lg items-center justify-center border ${
-                (btn as any).active ? "bg-[#064E3B] border-[#064E3B]" :
-                btn.disabled        ? "bg-gray-50 border-gray-100"   : "bg-white border-gray-200"
+                (btn as any).active
+                  ? "bg-[#064E3B] border-[#064E3B]"
+                  : btn.disabled
+                    ? "bg-gray-50 border-gray-100"
+                    : "bg-white border-gray-200"
               }`}>
-              <Text className={`text-[12px] font-bold ${
-                (btn as any).active ? "text-white" : btn.disabled ? "text-gray-300" : "text-gray-500"
-              }`}>{btn.label}</Text>
+              <Text
+                className={`text-[12px] font-bold ${
+                  (btn as any).active
+                    ? "text-white"
+                    : btn.disabled
+                      ? "text-gray-300"
+                      : "text-gray-500"
+                }`}>
+                {btn.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -949,7 +1571,10 @@ export default function PRModule() {
       <ViewPRModal
         visible={viewVisible}
         record={viewRecord}
-        onClose={() => { setViewVisible(false); setViewRecord(null); }}
+        onClose={() => {
+          setViewVisible(false);
+          setViewRecord(null);
+        }}
       />
 
       {/* More / Remarks sheet */}
@@ -957,15 +1582,20 @@ export default function PRModule() {
         visible={moreVisible}
         record={moreRecord}
         currentUser={currentUser}
-        onClose={() => { setMoreVisible(false); setMoreRecord(null); }}
+        onClose={() => {
+          setMoreVisible(false);
+          setMoreRecord(null);
+        }}
       />
-
 
       {/* Edit PR modal */}
       <EditPRModal
         visible={editVisible}
         record={editRecord}
-        onClose={() => { setEditVisible(false); setEditRecord(null); }}
+        onClose={() => {
+          setEditVisible(false);
+          setEditRecord(null);
+        }}
         onSave={handlePRSave}
       />
 
@@ -974,25 +1604,38 @@ export default function PRModule() {
         visible={processVisible}
         record={processRecord}
         roleId={roleId}
-        onClose={() => { setProcessVisible(false); setProcessRecord(null); }}
+        onClose={() => {
+          setProcessVisible(false);
+          setProcessRecord(null);
+        }}
         onProcessed={(id, newStatusId) => {
           // newStatusId is the raw status_id integer from pr_status.
           // Update the record in-place so the list reflects the new state immediately.
-          setRecords((prev) => prev.map((r) => r.id === id ? { ...r, statusId: Number(newStatusId) } : r));
+          setRecords((prev) =>
+            prev.map((r) =>
+              r.id === id ? { ...r, statusId: Number(newStatusId) } : r,
+            ),
+          );
         }}
       />
 
       {/* Create PR modal */}
       {prModalOpen && (
-        <PurchaseRequestModal visible={prModalOpen}
-          onClose={() => setPrModalOpen(false)} onSubmit={handlePRSubmit} currentUser={currentUser as any} />
+        <PurchaseRequestModal
+          visible={prModalOpen}
+          onClose={() => setPrModalOpen(false)}
+          onSubmit={handlePRSubmit}
+          currentUser={currentUser as any}
+        />
       )}
 
       {/* Saving overlay */}
       {saving && (
         <View className="absolute inset-0 bg-black/20 items-center justify-center">
           <View className="bg-white rounded-2xl px-6 py-4">
-            <Text className="text-[14px] font-semibold text-gray-700">Saving…</Text>
+            <Text className="text-[14px] font-semibold text-gray-700">
+              Saving…
+            </Text>
           </View>
         </View>
       )}

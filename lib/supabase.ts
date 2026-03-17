@@ -1,10 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-import 'react-native-url-polyfill/auto';
+import "react-native-url-polyfill/auto";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://yqfoykznqmdvgxsoassm.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxZm95a3pucW1kdmd4c29hc3NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMTA5NjEsImV4cCI6MjA4Njg4Njk2MX0.NOtDkXus6fb2l-gXAruCCgNV4JjtYzieFmyv_qtb_4I';
-
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  "https://yqfoykznqmdvgxsoassm.supabase.co";
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxZm95a3pucW1kdmd4c29hc3NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMTA5NjEsImV4cCI6MjA4Njg4Njk2MX0.NOtDkXus6fb2l-gXAruCCgNV4JjtYzieFmyv_qtb_4I";
 
 // Accesses the Supabase Auth client
 // export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -15,7 +18,6 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOi
 //     detectSessionInUrl: false,
 //   },
 // });
-
 
 // Accesses the Supabase Database client
 // We have disabled auth persistence since we are using custom local auth with the 'users' table
@@ -134,73 +136,73 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  *  ├─ created_at   timestamptz default now()
  *  └─ updated_at   timestamptz
  */
- /**
-  * Canvassing (Phase 2) — proposed tables (inputs and outputs)
-  *
-  * canvass_sessions
-  * ┌─ id             int8      PK  identity
-  * ├─ pr_id          int8      FK → purchase_requests.id
-  * ├─ stage          text      ENUM-like: "pr_received" | "release_canvass" | "collect_canvass" | "bac_resolution" | "aaa_preparation"
-  * ├─ released_by    int8      FK → users.id (BAC staff who released)
-  * ├─ deadline       timestamptz  due date for canvass return (Step 7/8)
-  * ├─ status         text      "open" | "closed" | "draft"
-  * ├─ created_at     timestamptz default now()
-  * ├─ updated_at     timestamptz
-  *
-  * canvasser_assignments
-  * ┌─ id             int8      PK
-  * ├─ session_id     int8      FK → canvass_sessions.id
-  * ├─ division_id    int8      FK → divisions.division_id
-  * ├─ canvasser_id   int8      FK → users.id (per division canvasser)
-  * ├─ released_at    timestamptz (Step 7)
-  * ├─ returned_at    timestamptz (Step 8)
-  * ├─ status         text      "released" | "returned"
-  *
-  * canvass_entries  (supplier quotations)
-  * ┌─ id             int8      PK
-  * ├─ session_id     int8      FK → canvass_sessions.id
-  * ├─ item_no        int8      index in PR items
-  * ├─ description    text
-  * ├─ unit           text
-  * ├─ quantity       numeric
-  * ├─ supplier_name  text
-  * ├─ unit_price     numeric
-  * ├─ total_price    numeric
-  * ├─ is_winning     boolean   resolved at Step 9/10
-  * ├─ created_at     timestamptz
-  *
-  * bac_resolution
-  * ┌─ id             int8      PK
-  * ├─ session_id     int8      FK → canvass_sessions.id
-  * ├─ resolution_no  text
-  * ├─ mode           text      ENUM-like: "SVP" | "Direct"
-  * ├─ prepared_by    int8      FK → users.id
-  * ├─ resolved_at    timestamptz (Step 9)
-  * ├─ notes          text
-  *
-  * aaa_documents
-  * ┌─ id             int8      PK
-  * ├─ session_id     int8      FK → canvass_sessions.id
-  * ├─ aaa_no         text
-  * ├─ prepared_by    int8      FK → users.id
-  * ├─ prepared_at    timestamptz (Step 10)
-  * ├─ file_url       text (optional storage link)
-  *
-  * Inputs (from Phase 1 → Phase 2):
-  *  • purchase_requests header (id, pr_no, purpose, division_id, items)
-  * Outputs (Phase 2):
-  *  • canvasser_assignments release records (Step 7/8)
-  *  • canvass_entries supplier quotations (Step 8)
-  *  • bac_resolution decision (Step 9)
-  *  • aaa_documents prepared AAA (Step 10)
-  */
+/**
+ * Canvassing (Phase 2) — proposed tables (inputs and outputs)
+ *
+ * canvass_sessions
+ * ┌─ id             int8      PK  identity
+ * ├─ pr_id          int8      FK → purchase_requests.id
+ * ├─ stage          text      ENUM-like: "pr_received" | "release_canvass" | "collect_canvass" | "bac_resolution" | "aaa_preparation"
+ * ├─ released_by    int8      FK → users.id (BAC staff who released)
+ * ├─ deadline       timestamptz  due date for canvass return (Step 7/8)
+ * ├─ status         text      "open" | "closed" | "draft"
+ * ├─ created_at     timestamptz default now()
+ * ├─ updated_at     timestamptz
+ *
+ * canvasser_assignments
+ * ┌─ id             int8      PK
+ * ├─ session_id     int8      FK → canvass_sessions.id
+ * ├─ division_id    int8      FK → divisions.division_id
+ * ├─ canvasser_id   int8      FK → users.id (per division canvasser)
+ * ├─ released_at    timestamptz (Step 7)
+ * ├─ returned_at    timestamptz (Step 8)
+ * ├─ status         text      "released" | "returned"
+ *
+ * canvass_entries  (supplier quotations)
+ * ┌─ id             int8      PK
+ * ├─ session_id     int8      FK → canvass_sessions.id
+ * ├─ item_no        int8      index in PR items
+ * ├─ description    text
+ * ├─ unit           text
+ * ├─ quantity       numeric
+ * ├─ supplier_name  text
+ * ├─ unit_price     numeric
+ * ├─ total_price    numeric
+ * ├─ is_winning     boolean   resolved at Step 9/10
+ * ├─ created_at     timestamptz
+ *
+ * bac_resolution
+ * ┌─ id             int8      PK
+ * ├─ session_id     int8      FK → canvass_sessions.id
+ * ├─ resolution_no  text
+ * ├─ mode           text      ENUM-like: "SVP" | "Direct"
+ * ├─ prepared_by    int8      FK → users.id
+ * ├─ resolved_at    timestamptz (Step 9)
+ * ├─ notes          text
+ *
+ * aaa_documents
+ * ┌─ id             int8      PK
+ * ├─ session_id     int8      FK → canvass_sessions.id
+ * ├─ aaa_no         text
+ * ├─ prepared_by    int8      FK → users.id
+ * ├─ prepared_at    timestamptz (Step 10)
+ * ├─ file_url       text (optional storage link)
+ *
+ * Inputs (from Phase 1 → Phase 2):
+ *  • purchase_requests header (id, pr_no, purpose, division_id, items)
+ * Outputs (Phase 2):
+ *  • canvasser_assignments release records (Step 7/8)
+ *  • canvass_entries supplier quotations (Step 8)
+ *  • bac_resolution decision (Step 9)
+ *  • aaa_documents prepared AAA (Step 10)
+ */
 
 // ─── Row types (mirror DB columns exactly) ────────────────────────────────────
 
 /** Lookup row from the pr_status table. */
 export interface PRStatusRow {
-  id: number;           // 1–5
-  status_name: string;  // e.g. "Pending", "Processing (Division Head)", …
+  id: number; // 1–5
+  status_name: string; // e.g. "Pending", "Processing (Division Head)", …
 }
 
 export interface PRRow {
@@ -246,15 +248,15 @@ export interface PRItemRow {
  * @returns A promise that resolves to an array of PRRow objects.
  */
 export async function fetchPurchaseRequests(): Promise<PRRow[]> {
-  const { data, error } = await supabase
-    .from("purchase_requests")
-    .select("*");
+  const { data, error } = await supabase.from("purchase_requests").select("*");
 
   if (error) throw error;
   return data;
 }
 
-export async function fetchPurchaseRequestsByDivision(divisionId: number): Promise<PRRow[]> {
+export async function fetchPurchaseRequestsByDivision(
+  divisionId: number,
+): Promise<PRRow[]> {
   const { data, error } = await supabase
     .from("purchase_requests")
     .select("*")
@@ -273,7 +275,9 @@ export async function fetchCanvassablePRs(): Promise<PRRow[]> {
   return data as PRRow[];
 }
 
-export async function fetchCanvassablePRsByDivision(divisionId: number): Promise<PRRow[]> {
+export async function fetchCanvassablePRsByDivision(
+  divisionId: number,
+): Promise<PRRow[]> {
   const { data, error } = await supabase
     .from("purchase_requests")
     .select("*")
@@ -304,16 +308,29 @@ export async function fetchPRStatuses(): Promise<PRStatusRow[]> {
 }
 
 // Fetch PR header and items by header id
-export async function fetchPRWithItemsById(prId: string): Promise<{ header: PRRow; items: PRItemRow[] }> {
-  let headerResp = await supabase.from("purchase_requests").select("*").eq("id", prId).single();
+export async function fetchPRWithItemsById(
+  prId: string,
+): Promise<{ header: PRRow; items: PRItemRow[] }> {
+  let headerResp = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("id", prId)
+    .single();
   if (headerResp.error) {
-    headerResp = await supabase.from("purchase_requests").select("*").eq("pr_id", prId).single();
+    headerResp = await supabase
+      .from("purchase_requests")
+      .select("*")
+      .eq("pr_id", prId)
+      .single();
   }
-  if (headerResp.error || !headerResp.data) throw headerResp.error ?? new Error("PR not found");
+  if (headerResp.error || !headerResp.data)
+    throw headerResp.error ?? new Error("PR not found");
   const header = headerResp.data as PRRow;
   const { data: items, error: iErr } = await supabase
     .from("purchase_request_items")
-    .select("id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id")
+    .select(
+      "id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id",
+    )
     .eq("pr_id", (header as any).id ?? (header as any).pr_id);
   if (iErr) throw iErr;
   return { header, items };
@@ -339,29 +356,29 @@ export async function generatePRNumber(): Promise<string> {
 
 export async function insertPurchaseRequest(
   pr: Omit<PRRow, "id" | "created_at">,
-  items: Omit<PRItemRow, "id" | "pr_id">[]
+  items: Omit<PRItemRow, "id" | "pr_id">[],
 ): Promise<PRRow> {
   // Build payload with only defined, non-empty fields to avoid 400 from unknown/invalid values
   const base: Record<string, any> = {
-    pr_no:          pr.pr_no,
+    pr_no: pr.pr_no,
     office_section: pr.office_section,
-    purpose:        pr.purpose,
-    total_cost:     pr.total_cost,
-    is_high_value:  pr.is_high_value,
-    status_id:      pr.status_id,   // FK → pr_status.id (1 = Pending on creation)
-    proposal_no:    pr.proposal_no, // always required
-    division_id:    pr.division_id,
+    purpose: pr.purpose,
+    total_cost: pr.total_cost,
+    is_high_value: pr.is_high_value,
+    status_id: pr.status_id, // FK → pr_status.id (1 = Pending on creation)
+    proposal_no: pr.proposal_no, // always required
+    division_id: pr.division_id,
   };
-  if (pr.entity_name)    base.entity_name   = pr.entity_name;
-  if (pr.fund_cluster)   base.fund_cluster  = pr.fund_cluster;
-  if (pr.resp_code)      base.resp_code     = pr.resp_code;
-  if (pr.budget_number)  base.budget_number = pr.budget_number;
-  if (pr.pap_code)       base.pap_code      = pr.pap_code;
-  if (pr.proposal_file)  base.proposal_file = pr.proposal_file;
-  if (pr.req_name)       base.req_name      = pr.req_name;
-  if (pr.req_desig)      base.req_desig     = pr.req_desig;
-  if (pr.app_name)       base.app_name      = pr.app_name;
-  if (pr.app_desig)      base.app_desig     = pr.app_desig;
+  if (pr.entity_name) base.entity_name = pr.entity_name;
+  if (pr.fund_cluster) base.fund_cluster = pr.fund_cluster;
+  if (pr.resp_code) base.resp_code = pr.resp_code;
+  if (pr.budget_number) base.budget_number = pr.budget_number;
+  if (pr.pap_code) base.pap_code = pr.pap_code;
+  if (pr.proposal_file) base.proposal_file = pr.proposal_file;
+  if (pr.req_name) base.req_name = pr.req_name;
+  if (pr.req_desig) base.req_desig = pr.req_desig;
+  if (pr.app_name) base.app_name = pr.app_name;
+  if (pr.app_desig) base.app_desig = pr.app_desig;
 
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -373,7 +390,10 @@ export async function insertPurchaseRequest(
 
   if (items.length > 0) {
     const parentId = (data as any).id ?? (data as any).pr_id;
-    if (!parentId) throw new Error("Insert succeeded but no primary key was returned for purchase_requests");
+    if (!parentId)
+      throw new Error(
+        "Insert succeeded but no primary key was returned for purchase_requests",
+      );
     const { error: itemsError } = await supabase
       .from("purchase_request_items")
       .insert(items.map((item) => ({ ...item, pr_id: parentId })));
@@ -387,7 +407,7 @@ export async function insertPurchaseRequest(
 export async function insertProposalForPR(
   prId: string,
   proposalNo: string,
-  divisionId?: number
+  divisionId?: number,
 ): Promise<void> {
   if (!proposalNo) return;
   const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
@@ -412,28 +432,31 @@ export async function setPRNumber(prId: string, prNo: string): Promise<PRRow> {
 export async function updatePurchaseRequest(
   id: string,
   pr: Partial<Omit<PRRow, "id" | "pr_no" | "created_at">>,
-  items: Omit<PRItemRow, "id" | "pr_id">[]
+  items: Omit<PRItemRow, "id" | "pr_id">[],
 ): Promise<PRRow> {
   // Build update payload — only include defined, non-empty fields
   const patch: Record<string, any> = {};
-  if (pr.division_id   !== undefined) patch.division_id   = pr.division_id;
-  if (pr.entity_name    !== undefined) patch.entity_name    = pr.entity_name    || null;
-  if (pr.fund_cluster   !== undefined) patch.fund_cluster   = pr.fund_cluster   || null;
+  if (pr.division_id !== undefined) patch.division_id = pr.division_id;
+  if (pr.entity_name !== undefined) patch.entity_name = pr.entity_name || null;
+  if (pr.fund_cluster !== undefined)
+    patch.fund_cluster = pr.fund_cluster || null;
   if (pr.office_section !== undefined) patch.office_section = pr.office_section;
-  if (pr.resp_code      !== undefined) patch.resp_code      = pr.resp_code      || null;
-  if (pr.purpose        !== undefined) patch.purpose        = pr.purpose;
-  if (pr.total_cost     !== undefined) patch.total_cost     = pr.total_cost;
-  if (pr.is_high_value  !== undefined) patch.is_high_value  = pr.is_high_value;
-  if (pr.status_id      !== undefined) patch.status_id      = pr.status_id;  // FK → pr_status.id
-  if (pr.proposal_no    !== undefined) patch.proposal_no    = pr.proposal_no;
-  if (pr.budget_number  !== undefined) patch.budget_number  = pr.budget_number  || null;
-  if (pr.pap_code       !== undefined) patch.pap_code       = pr.pap_code       || null;
-  if (pr.proposal_file  !== undefined) patch.proposal_file  = pr.proposal_file  || null;
-  if (pr.req_name       !== undefined) patch.req_name       = pr.req_name       || null;
-  if (pr.req_desig      !== undefined) patch.req_desig      = pr.req_desig      || null;
-  if (pr.app_name       !== undefined) patch.app_name       = pr.app_name       || null;
-  if (pr.app_desig      !== undefined) patch.app_desig      = pr.app_desig      || null;
-  if (pr.app_no         !== undefined) patch.app_no         = pr.app_no         || null;
+  if (pr.resp_code !== undefined) patch.resp_code = pr.resp_code || null;
+  if (pr.purpose !== undefined) patch.purpose = pr.purpose;
+  if (pr.total_cost !== undefined) patch.total_cost = pr.total_cost;
+  if (pr.is_high_value !== undefined) patch.is_high_value = pr.is_high_value;
+  if (pr.status_id !== undefined) patch.status_id = pr.status_id; // FK → pr_status.id
+  if (pr.proposal_no !== undefined) patch.proposal_no = pr.proposal_no;
+  if (pr.budget_number !== undefined)
+    patch.budget_number = pr.budget_number || null;
+  if (pr.pap_code !== undefined) patch.pap_code = pr.pap_code || null;
+  if (pr.proposal_file !== undefined)
+    patch.proposal_file = pr.proposal_file || null;
+  if (pr.req_name !== undefined) patch.req_name = pr.req_name || null;
+  if (pr.req_desig !== undefined) patch.req_desig = pr.req_desig || null;
+  if (pr.app_name !== undefined) patch.app_name = pr.app_name || null;
+  if (pr.app_desig !== undefined) patch.app_desig = pr.app_desig || null;
+  if (pr.app_no !== undefined) patch.app_no = pr.app_no || null;
   const { data, error } = await supabase
     .from("purchase_requests")
     .update(patch)
@@ -535,7 +558,7 @@ export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
  * the correct canvass stage from pr_status.id without a second query.
  */
 export async function fetchPRMetaByNo(
-  prNo: string
+  prNo: string,
 ): Promise<{ id: string; status_id: number } | null> {
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -543,7 +566,10 @@ export async function fetchPRMetaByNo(
     .eq("pr_no", prNo)
     .single();
   if (error || !data) return null;
-  return { id: String((data as any).id), status_id: Number((data as any).status_id) };
+  return {
+    id: String((data as any).id),
+    status_id: Number((data as any).status_id),
+  };
 }
 
 /**
@@ -557,10 +583,10 @@ export async function fetchPRMetaByNo(
  *   11 = AAA Issuance            ← abstract of awards finalised
  */
 export const CANVASS_PR_STATUS: Record<string, number> = {
-  pr_received:     6,
+  pr_received: 6,
   release_canvass: 8,
   collect_canvass: 9,
-  bac_resolution:  10,
+  bac_resolution: 10,
   aaa_preparation: 11,
 };
 
@@ -572,7 +598,10 @@ export const CANVASS_PR_STATUS: Record<string, number> = {
  * Deliberately separate from updatePurchaseRequest so it never
  * accidentally mutates items or other fields.
  */
-export async function updatePRStatus(prId: string, statusId: number): Promise<void> {
+export async function updatePRStatus(
+  prId: string,
+  statusId: number,
+): Promise<void> {
   const { error } = await supabase
     .from("purchase_requests")
     .update({ status_id: statusId })
@@ -582,22 +611,24 @@ export async function updatePRStatus(prId: string, statusId: number): Promise<vo
 
 export async function ensureCanvassSession(
   prId: string,
-  initial?: Partial<CanvassSessionRow>
+  initial?: Partial<CanvassSessionRow>,
 ): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
     .select("*")
     .eq("pr_id", prId);
   if (error) throw error;
-  if (Array.isArray(data) && data.length > 0) return data[0] as CanvassSessionRow;
+  if (Array.isArray(data) && data.length > 0)
+    return data[0] as CanvassSessionRow;
   const payload: Record<string, any> = {
     pr_id: prId,
     stage: initial?.stage ?? "pr_received",
     status: initial?.status ?? "open",
   };
-  if (initial?.released_by !== undefined) payload.released_by = initial.released_by;
-  if (initial?.deadline     !== undefined) payload.deadline     = initial.deadline;
-  if (initial?.bac_no       !== undefined) payload.bac_no       = initial.bac_no;
+  if (initial?.released_by !== undefined)
+    payload.released_by = initial.released_by;
+  if (initial?.deadline !== undefined) payload.deadline = initial.deadline;
+  if (initial?.bac_no !== undefined) payload.bac_no = initial.bac_no;
   const { data: created, error: insErr } = await supabase
     .from("canvass_sessions")
     .insert(payload)
@@ -607,7 +638,10 @@ export async function ensureCanvassSession(
   return created as CanvassSessionRow;
 }
 
-export async function updateCanvassStage(sessionId: string, stage: string): Promise<CanvassSessionRow> {
+export async function updateCanvassStage(
+  sessionId: string,
+  stage: string,
+): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
     .update({ stage, updated_at: new Date().toISOString() })
@@ -620,7 +654,7 @@ export async function updateCanvassStage(sessionId: string, stage: string): Prom
 
 export async function updateCanvassSessionMeta(
   sessionId: string,
-  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>
+  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>,
 ): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
@@ -632,7 +666,9 @@ export async function updateCanvassSessionMeta(
   return data as CanvassSessionRow;
 }
 
-export async function fetchDivisionIdByName(name: string): Promise<number | null> {
+export async function fetchDivisionIdByName(
+  name: string,
+): Promise<number | null> {
   const { data, error } = await supabase
     .from("divisions")
     .select("division_id")
@@ -644,10 +680,14 @@ export async function fetchDivisionIdByName(name: string): Promise<number | null
 
 export async function insertAssignmentsForDivisions(
   sessionId: string,
-  assignments: Array<{ division_id: number; canvasser_id?: number; released_at?: string }>
+  assignments: Array<{
+    division_id: number;
+    canvasser_id?: number;
+    released_at?: string;
+  }>,
 ): Promise<CanvasserAssignmentRow[]> {
   if (!assignments.length) return [];
-  const rows = assignments.map(a => ({
+  const rows = assignments.map((a) => ({
     session_id: sessionId,
     division_id: a.division_id,
     canvasser_id: a.canvasser_id ?? null,
@@ -665,7 +705,7 @@ export async function insertAssignmentsForDivisions(
 export async function markAssignmentReturned(
   sessionId: string,
   division_id: number,
-  returned_at?: string
+  returned_at?: string,
 ): Promise<CanvasserAssignmentRow> {
   const { data, error } = await supabase
     .from("canvasser_assignments")
@@ -685,7 +725,7 @@ export async function insertAssignmentReleased(
   sessionId: string,
   division_id: number,
   canvasser_id?: number | null,
-  released_at?: string
+  released_at?: string,
 ): Promise<CanvasserAssignmentRow> {
   const now = released_at ?? new Date().toISOString();
   const { data, error } = await supabase
@@ -708,7 +748,7 @@ export async function updateAssignmentReleased(
   sessionId: string,
   division_id: number,
   canvasser_id?: number | null,
-  released_at?: string
+  released_at?: string,
 ): Promise<CanvasserAssignmentRow> {
   const now = released_at ?? new Date().toISOString();
   const { data, error } = await supabase
@@ -729,10 +769,10 @@ export async function updateAssignmentReleased(
 
 export async function insertSupplierQuotesForSession(
   sessionId: string,
-  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>
+  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>,
 ): Promise<CanvassEntryRow[]> {
   if (!quotes.length) return [];
-  const rows = quotes.map(q => ({ ...q, session_id: sessionId }));
+  const rows = quotes.map((q) => ({ ...q, session_id: sessionId }));
   const { data, error } = await supabase
     .from("canvass_entries")
     .insert(rows)
@@ -741,7 +781,9 @@ export async function insertSupplierQuotesForSession(
   return data as CanvassEntryRow[];
 }
 
-export async function fetchAssignmentsForSession(sessionId: string): Promise<CanvasserAssignmentRow[]> {
+export async function fetchAssignmentsForSession(
+  sessionId: string,
+): Promise<CanvasserAssignmentRow[]> {
   const { data, error } = await supabase
     .from("canvasser_assignments")
     .select("*")
@@ -750,7 +792,9 @@ export async function fetchAssignmentsForSession(sessionId: string): Promise<Can
   return data as CanvasserAssignmentRow[];
 }
 
-export async function fetchQuotesForSession(sessionId: string): Promise<CanvassEntryRow[]> {
+export async function fetchQuotesForSession(
+  sessionId: string,
+): Promise<CanvassEntryRow[]> {
   const { data, error } = await supabase
     .from("canvass_entries")
     .select("*")
@@ -761,7 +805,7 @@ export async function fetchQuotesForSession(sessionId: string): Promise<CanvassE
 
 export async function insertBACResolution(
   sessionId: string,
-  payload: Omit<BACResolutionRow, "id" | "session_id">
+  payload: Omit<BACResolutionRow, "id" | "session_id">,
 ): Promise<BACResolutionRow> {
   const { data, error } = await supabase
     .from("bac_resolution")
@@ -774,7 +818,7 @@ export async function insertBACResolution(
 
 export async function insertAAAForSession(
   sessionId: string,
-  payload: Omit<AAADocumentRow, "id" | "session_id">
+  payload: Omit<AAADocumentRow, "id" | "session_id">,
 ): Promise<AAADocumentRow> {
   const { data, error } = await supabase
     .from("aaa_documents")
@@ -785,7 +829,6 @@ export async function insertAAAForSession(
   return data as AAADocumentRow;
 }
 
-
 // ─── Budget Module · Types & Helpers ─────────────────────────────────────────
 
 export interface DivisionBudgetRow {
@@ -793,7 +836,7 @@ export interface DivisionBudgetRow {
   division_id: number;
   fiscal_year: number;
   allocated: number;
-  utilized: number;        // auto-updated by DB trigger from approved ORS entries
+  utilized: number; // auto-updated by DB trigger from approved ORS entries
   notes: string | null;
   created_at?: string;
   updated_at?: string;
@@ -803,7 +846,7 @@ export interface DivisionBudgetRow {
 
 export interface OrsEntryRow {
   id: string;
-  ors_no: string;          // e.g. ORS-2026-0145
+  ors_no: string; // e.g. ORS-2026-0145
   pr_id: string | null;
   pr_no: string | null;
   division_id: number | null;
@@ -821,7 +864,9 @@ export interface OrsEntryRow {
 
 // ── Fetch all budget rows for a fiscal year, joined with division name ────────
 
-export async function fetchBudgets(fiscalYear: number): Promise<DivisionBudgetRow[]> {
+export async function fetchBudgets(
+  fiscalYear: number,
+): Promise<DivisionBudgetRow[]> {
   const { data, error } = await supabase
     .from("division_budgets")
     .select("*, divisions(division_name)")
@@ -836,7 +881,7 @@ export async function fetchBudgets(fiscalYear: number): Promise<DivisionBudgetRo
 
 export async function fetchBudgetByDivision(
   divisionId: number,
-  fiscalYear: number
+  fiscalYear: number,
 ): Promise<DivisionBudgetRow | null> {
   const { data, error } = await supabase
     .from("division_budgets")
@@ -845,7 +890,10 @@ export async function fetchBudgetByDivision(
     .eq("fiscal_year", fiscalYear)
     .single();
   if (error) return null;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 // ── Upsert a division's allocated budget (Budget / Admin only) ────────────────
@@ -868,7 +916,10 @@ export async function insertDivisionBudget(
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 /** Update an existing allocation row by its primary key (from AllocModal). */
@@ -890,14 +941,17 @@ export async function updateDivisionBudget(
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 // ── ORS helpers ───────────────────────────────────────────────────────────────
 
 export async function fetchOrsEntries(
   fiscalYear: number,
-  divisionId?: number
+  divisionId?: number,
 ): Promise<OrsEntryRow[]> {
   let q = supabase
     .from("ors_entries")
@@ -914,7 +968,10 @@ export async function fetchOrsEntries(
 }
 
 export async function insertOrsEntry(
-  entry: Omit<OrsEntryRow, "id" | "created_at" | "updated_at" | "division_name">
+  entry: Omit<
+    OrsEntryRow,
+    "id" | "created_at" | "updated_at" | "division_name"
+  >,
 ): Promise<OrsEntryRow> {
   const { data, error } = await supabase
     .from("ors_entries")
@@ -922,13 +979,16 @@ export async function insertOrsEntry(
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 export async function updateOrsStatus(
   orsId: string,
   status: OrsEntryRow["status"],
-  approvedBy?: number
+  approvedBy?: number,
 ): Promise<OrsEntryRow> {
   const patch: Record<string, any> = { status };
   if (approvedBy !== undefined) patch.approved_by = approvedBy;
@@ -939,12 +999,20 @@ export async function updateOrsStatus(
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 export async function updateOrsEntry(
   orsId: string,
-  patch: Partial<Pick<OrsEntryRow, "ors_no" | "pr_no" | "amount" | "status" | "notes" | "approved_by">>
+  patch: Partial<
+    Pick<
+      OrsEntryRow,
+      "ors_no" | "pr_no" | "amount" | "status" | "notes" | "approved_by"
+    >
+  >,
 ): Promise<OrsEntryRow> {
   const { data, error } = await supabase
     .from("ors_entries")
@@ -953,7 +1021,10 @@ export async function updateOrsEntry(
     .select("*, divisions(division_name)")
     .single();
   if (error) throw error;
-  return { ...(data as any), division_name: (data as any).divisions?.division_name ?? null };
+  return {
+    ...(data as any),
+    division_name: (data as any).divisions?.division_name ?? null,
+  };
 }
 
 export async function deleteOrsEntry(orsId: string): Promise<void> {
@@ -977,7 +1048,7 @@ export async function generateOrsNumber(): Promise<string> {
 // ─── Divisions ────────────────────────────────────────────────────────────────
 
 export interface DivisionRow {
-  division_id:   number;
+  division_id: number;
   division_name: string | null;
 }
 
@@ -1000,10 +1071,10 @@ export async function fetchAllDivisions(): Promise<DivisionRow[]> {
  * role_id 7 = Canvasser (designated canvass collector per division)
  */
 export interface CanvassUserRow {
-  id:            number;
-  username:      string;
-  role_id:       number;
-  division_id:   number | null;
+  id: number;
+  username: string;
+  role_id: number;
+  division_id: number | null;
   division_name: string | null;
 }
 
@@ -1012,7 +1083,9 @@ export interface CanvassUserRow {
  * Used by BACView to populate the release/return canvass assignment table
  * with actual End Users (role 6) and Canvassers (role 7) from the DB.
  */
-export async function fetchUsersByRole(roleIds: number[]): Promise<CanvassUserRow[]> {
+export async function fetchUsersByRole(
+  roleIds: number[],
+): Promise<CanvassUserRow[]> {
   const { data, error } = await supabase
     .from("users")
     .select("id, username, role_id, division_id, divisions(division_name)")
@@ -1020,17 +1093,21 @@ export async function fetchUsersByRole(roleIds: number[]): Promise<CanvassUserRo
     .order("username");
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
-    id:            r.id,
-    username:      r.username,
-    role_id:       r.role_id,
-    division_id:   r.division_id ?? null,
+    id: r.id,
+    username: r.username,
+    role_id: r.role_id,
+    division_id: r.division_id ?? null,
     division_name: r.divisions?.division_name ?? null,
   })) as CanvassUserRow[];
 }
 
+/** Row from the status_flag lookup table. */
+export interface StatusFlagRow {
+  id: number;
+  flag_name: string;
+}
 
-
-/** Valid status_flag values — must match the CHECK constraint in the DB. */
+/** Valid status_flag values — kept for backward compatibility. */
 export type StatusFlag =
   | "complete"
   | "incomplete_info"
@@ -1040,14 +1117,16 @@ export type StatusFlag =
   | "urgent";
 
 export interface RemarkRow {
-  id:          number;
-  pr_id:       number | string;   // FK → purchase_requests.id
-  user_id:     number;            // FK → users.id
-  remark:      string;
-  status_flag: StatusFlag | null;
-  created_at:  string;
+  id: number;
+  pr_id: number | string; // FK → purchase_requests.id
+  user_id: number; // FK → users.id
+  remark: string;
+  status_flag_id: number | null; // FK → status_flag.id (new)
+  created_at: string;
   // Joined from users table when fetched with select("*, users(username)")
-  username?:   string;
+  username?: string;
+  // Joined from status_flag table when fetched with select("*, status_flag(...)")
+  status_flag?: StatusFlagRow;
 }
 
 /**
@@ -1055,44 +1134,59 @@ export interface RemarkRow {
  * Called by ProcessPRModal (on process/sign) and PRModule RemarkSheet (ad-hoc).
  */
 export async function insertRemark(
-  prId:       number | string,
-  userId:     number | string,
-  remark:     string,
-  statusFlag: StatusFlag | null,
+  prId: number | string,
+  userId: number | string,
+  remark: string,
+  status_flag_Id: number | null,
 ): Promise<RemarkRow> {
   const { data, error } = await supabase
     .from("remarks")
     .insert({
-      pr_id:       prId,
-      user_id:     userId,
-      remark:      remark.trim(),
-      status_flag: statusFlag ?? null,
+      pr_id: prId,
+      user_id: userId,
+      remark: remark.trim(),
+      status_flag_id: status_flag_Id ?? null,
     })
-    .select("id, pr_id, user_id, remark, status_flag, created_at")
+    .select(
+      "id, pr_id, user_id, remark, status_flag_id, created_at, status_flag(*)",
+    )
     .single();
   if (error) throw error;
-  return data as RemarkRow;
+  return {
+    id: (data as any).id,
+    pr_id: (data as any).pr_id,
+    user_id: (data as any).user_id,
+    remark: (data as any).remark,
+    status_flag_id: (data as any).status_flag_id,
+    created_at: (data as any).created_at,
+    status_flag: (data as any).status_flag ?? undefined,
+  };
 }
 
 /**
  * Fetch all remarks for a given PR, newest first.
- * Joins users(username) so callers don't need a second query.
+ * Joins users(username) and status_flag table.
  */
-export async function fetchRemarksByPR(prId: number | string): Promise<RemarkRow[]> {
+export async function fetchRemarksByPR(
+  prId: number | string,
+): Promise<RemarkRow[]> {
   const { data, error } = await supabase
     .from("remarks")
-    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .select(
+      "id, pr_id, user_id, remark, status_flag_id, created_at, users(username), status_flag(*)",
+    )
     .eq("pr_id", prId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
-    id:          r.id,
-    pr_id:       r.pr_id,
-    user_id:     r.user_id,
-    remark:      r.remark,
-    status_flag: r.status_flag as StatusFlag | null,
-    created_at:  r.created_at,
-    username:    r.users?.username ?? undefined,
+    id: r.id,
+    pr_id: r.pr_id,
+    user_id: r.user_id,
+    remark: r.remark,
+    status_flag_id: r.status_flag_id,
+    created_at: r.created_at,
+    username: r.users?.username ?? undefined,
+    status_flag: r.status_flag ?? undefined,
   })) as RemarkRow[];
 }
 
@@ -1100,23 +1194,28 @@ export async function fetchRemarksByPR(prId: number | string): Promise<RemarkRow
  * Fetch the most recent remark for a PR (e.g. to show the latest flag on a card).
  * Returns null if none exist.
  */
-export async function fetchLatestRemarkByPR(prId: number | string): Promise<RemarkRow | null> {
+export async function fetchLatestRemarkByPR(
+  prId: number | string,
+): Promise<RemarkRow | null> {
   const { data, error } = await supabase
     .from("remarks")
-    .select("id, pr_id, user_id, remark, status_flag, created_at, users(username)")
+    .select(
+      "id, pr_id, user_id, remark, status_flag_id, created_at, users(username), status_flag(*)",
+    )
     .eq("pr_id", prId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
   return {
-    id:          (data as any).id,
-    pr_id:       (data as any).pr_id,
-    user_id:     (data as any).user_id,
-    remark:      (data as any).remark,
-    status_flag: (data as any).status_flag as StatusFlag | null,
-    created_at:  (data as any).created_at,
-    username:    (data as any).users?.username ?? undefined,
+    id: (data as any).id,
+    pr_id: (data as any).pr_id,
+    user_id: (data as any).user_id,
+    remark: (data as any).remark,
+    status_flag_id: (data as any).status_flag_id,
+    created_at: (data as any).created_at,
+    username: (data as any).users?.username ?? undefined,
+    status_flag: (data as any).status_flag ?? undefined,
   };
 }
 
