@@ -40,28 +40,38 @@ import { useAuth } from "../AuthContext";
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
-const STATUS_CFG: Record<
-  number,
-  { bg: string; text: string; dot: string; label: string }
-> = {
-  1: { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending" },
-  2: {
-    bg: "#eff6ff",
-    text: "#1e40af",
-    dot: "#3b82f6",
-    label: "Div. Head Review",
-  },
-  3: { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC Review" },
-  4: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget Review" },
-  5: {
-    bg: "#ecfdf5",
-    text: "#065f46",
-    dot: "#10b981",
-    label: "PARPO Approval",
-  },
-  6: { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", label: "Approved" },
-  7: { bg: "#fdf4ff", text: "#6b21a8", dot: "#a855f7", label: "AAA" },
-};
+// Default status styles — fallback for statuses not explicitly configured
+const DEFAULT_STATUS_COLORS = [
+  { bg: "#fefce8", text: "#854d0e", dot: "#eab308" }, // yellow — statuses 1
+  { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6" }, // blue — statuses 2
+  { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6" }, // purple — statuses 3
+  { bg: "#fff7ed", text: "#9a3412", dot: "#f97316" }, // orange — statuses 4
+  { bg: "#ecfdf5", text: "#065f46", dot: "#10b981" }, // green — statuses 5
+  { bg: "#f0fdf4", text: "#166534", dot: "#22c55e" }, // light green — statuses 6
+  { bg: "#fef2f2", text: "#991b1b", dot: "#ef4444" }, // red — statuses 8
+  { bg: "#fdf4ff", text: "#6b21a8", dot: "#a855f7" }, // pink — statuses 9
+  { bg: "#f9fafb", text: "#374151", dot: "#9ca3af" }, // gray — statuses 10
+  { bg: "#fef3c7", text: "#92400e", dot: "#f59e0b" }, // amber — statuses 11
+];
+
+// Build STATUS_CFG dynamically from database statuses
+function buildStatusConfig(
+  dbStatuses: PRStatusRow[],
+): Record<number, { bg: string; text: string; dot: string; label: string }> {
+  const cfg: Record<
+    number,
+    { bg: string; text: string; dot: string; label: string }
+  > = {};
+  for (const status of dbStatuses) {
+    const colorIdx = (status.id - 1) % DEFAULT_STATUS_COLORS.length;
+    const colors = DEFAULT_STATUS_COLORS[colorIdx];
+    cfg[status.id] = {
+      ...colors,
+      label: status.status_name,
+    };
+  }
+  return cfg;
+}
 
 const FLAG_CFG: Record<
   StatusFlag,
@@ -140,15 +150,21 @@ function getFlagFromId(id: number | null): StatusFlag | null {
   return id ? (ID_TO_FLAG[id] ?? null) : null;
 }
 
-function statusCfg(id: number) {
-  return (
-    STATUS_CFG[id] ?? {
-      bg: "#f9fafb",
-      text: "#6b7280",
-      dot: "#9ca3af",
-      label: `Status ${id}`,
-    }
-  );
+// Fallback status config for unknown statuses
+function defaultStatusCfg(id: number) {
+  const colorIdx = (id - 1) % DEFAULT_STATUS_COLORS.length;
+  const colors = DEFAULT_STATUS_COLORS[colorIdx];
+  return {
+    ...colors,
+    label: `Status ${id}`,
+  };
+}
+
+function statusCfg(id: number, statusConfig?: Record<number, any>) {
+  if (statusConfig && statusConfig[id]) {
+    return statusConfig[id];
+  }
+  return defaultStatusCfg(id);
 }
 
 function fmtDate(iso?: string) {
@@ -178,8 +194,14 @@ interface LogEntry {
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 
-function StatusPill({ statusId }: { statusId: number }) {
-  const c = statusCfg(statusId);
+function StatusPill({
+  statusId,
+  statusConfig,
+}: {
+  statusId: number;
+  statusConfig?: Record<number, any>;
+}) {
+  const c = statusCfg(statusId, statusConfig);
   return (
     <View
       style={{
@@ -298,10 +320,12 @@ function PRLogCard({
   entry,
   expanded,
   onToggle,
+  statusConfig,
 }: {
   entry: LogEntry;
   expanded: boolean;
   onToggle: () => void;
+  statusConfig?: Record<number, any>;
 }) {
   const { pr, remarks, loaded } = entry;
   const latestFlagId =
@@ -389,7 +413,7 @@ function PRLogCard({
                 marginTop: 3,
                 flexWrap: "wrap",
               }}>
-              <StatusPill statusId={pr.status_id} />
+              <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
               {latestFlag && <FlagPill flag={latestFlag} />}
             </View>
           </View>
@@ -561,14 +585,18 @@ export default function ProcurementLog({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ── Filter state ─────────────────────────────────────────────────────────────
+  // ── Filter & sort state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
   const [flagFilter, setFlagFilter] = useState<StatusFlag | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<"date_created" | "has_flag">("date_created");
 
   // ── Expanded cards ────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // ── Build dynamic status config ──────────────────────────────────────────────
+  const statusConfig = buildStatusConfig(statuses);
 
   // ── Load PRs ──────────────────────────────────────────────────────────────────
   const loadPRs = useCallback(
@@ -630,35 +658,51 @@ export default function ProcurementLog({ navigation }: any) {
     [expanded, entries],
   );
 
-  // ── Filtered list ─────────────────────────────────────────────────────────────
-  const filteredPRs = allPRs.filter((pr) => {
-    if (statusFilter !== null && pr.status_id !== statusFilter) return false;
-    if (flagFilter !== null) {
-      const entry = entries[String(pr.id)];
-      // Only filter by flag if remarks are loaded; otherwise keep in list
-      if (
-        entry?.loaded &&
-        !entry.remarks.some(
-          (r) => getFlagFromId(r.status_flag_id) === flagFilter,
+  // ── Filtered & sorted list ──────────────────────────────────────────────────
+  const filteredPRs = allPRs
+    .filter((pr) => {
+      if (statusFilter !== null && pr.status_id !== statusFilter) return false;
+      if (flagFilter !== null) {
+        const entry = entries[String(pr.id)];
+        // Only filter by flag if remarks are loaded; otherwise keep in list
+        if (
+          entry?.loaded &&
+          !entry.remarks.some(
+            (r) => getFlagFromId(r.status_flag_id) === flagFilter,
+          )
         )
-      )
-        return false;
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      return (
-        pr.pr_no.toLowerCase().includes(q) ||
-        pr.purpose.toLowerCase().includes(q) ||
-        pr.office_section?.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
-
-  // Unique status IDs present in current PR list for filter chips
-  const presentStatusIds = [...new Set(allPRs.map((p) => p.status_id))].sort(
-    (a, b) => a - b,
-  );
+          return false;
+      }
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        return (
+          pr.pr_no.toLowerCase().includes(q) ||
+          pr.purpose.toLowerCase().includes(q) ||
+          pr.office_section?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "date_created") {
+        return (
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+        );
+      } else if (sortBy === "has_flag") {
+        // Sort by presence of flags (flagged first), then by creation date
+        const aFlags =
+          entries[String(a.id)]?.remarks?.some((r) => r.status_flag_id) ?? false;
+        const bFlags =
+          entries[String(b.id)]?.remarks?.some((r) => r.status_flag_id) ?? false;
+        if (aFlags !== bFlags) return aFlags ? -1 : 1;
+        return (
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+        );
+      }
+      return 0;
+    });
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -735,8 +779,11 @@ export default function ProcurementLog({ navigation }: any) {
               ).length,
             },
             {
-              label: "Approved",
-              value: allPRs.filter((p) => p.status_id === 6).length,
+              label: "Flagged",
+              value: allPRs.filter((p) => {
+                const entry = entries[String(p.id)];
+                return entry?.loaded && entry.remarks.some((r) => r.status_flag_id);
+              }).length,
             },
           ].map((s) => (
             <View
@@ -850,6 +897,37 @@ export default function ProcurementLog({ navigation }: any) {
             padding: 12,
             gap: 10,
           }}>
+          {/* Sort options */}
+          <Text
+            style={{
+              fontSize: 10.5,
+              fontWeight: "700",
+              color: "#9ca3af",
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+            }}>
+            Sort By
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6 }}>
+            {[
+              { key: "date_created", label: "Date Created" },
+              { key: "has_flag", label: "Flagged First" },
+            ].map((opt) => (
+              <FilterChip
+                key={opt.key}
+                label={opt.label}
+                active={sortBy === opt.key}
+                color="#064E3B"
+                onPress={() =>
+                  setSortBy(opt.key as "date_created" | "has_flag")
+                }
+              />
+            ))}
+          </ScrollView>
+
           {/* Status filters */}
           <Text
             style={{
@@ -870,16 +948,18 @@ export default function ProcurementLog({ navigation }: any) {
               active={statusFilter === null}
               onPress={() => setStatusFilter(null)}
             />
-            {presentStatusIds.map((sid) => {
-              const c = statusCfg(sid);
+            {statuses.map((status) => {
+              const c = statusCfg(status.id, statusConfig);
               return (
                 <FilterChip
-                  key={sid}
+                  key={status.id}
                   label={c.label}
-                  active={statusFilter === sid}
+                  active={statusFilter === status.id}
                   color={c.dot}
                   onPress={() =>
-                    setStatusFilter((prev) => (prev === sid ? null : sid))
+                    setStatusFilter((prev) =>
+                      prev === status.id ? null : status.id,
+                    )
                   }
                 />
               );
@@ -987,6 +1067,7 @@ export default function ProcurementLog({ navigation }: any) {
                 entry={entry}
                 expanded={expanded.has(key)}
                 onToggle={() => handleToggle(key)}
+                statusConfig={statusConfig}
               />
             );
           })

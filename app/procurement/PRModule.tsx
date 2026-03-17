@@ -1148,12 +1148,16 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 
 // ─── PRModule ─────────────────────────────────────────────────────────────────
 
-export default function PRModule() {
+export default function PRModule({
+  initialSubTab,
+}: { initialSubTab?: SubTab } = {}) {
   const navigation = useNavigation();
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("pr");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>(
+    initialSubTab ?? "pr",
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
