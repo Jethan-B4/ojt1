@@ -590,7 +590,9 @@ export default function ProcurementLog({ navigation }: any) {
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
   const [flagFilter, setFlagFilter] = useState<StatusFlag | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<"date_created" | "has_flag">("date_created");
+  const [sortBy, setSortBy] = useState<"date_created" | "has_flag">(
+    "date_created",
+  );
 
   // ── Expanded cards ────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -692,9 +694,11 @@ export default function ProcurementLog({ navigation }: any) {
       } else if (sortBy === "has_flag") {
         // Sort by presence of flags (flagged first), then by creation date
         const aFlags =
-          entries[String(a.id)]?.remarks?.some((r) => r.status_flag_id) ?? false;
+          entries[String(a.id)]?.remarks?.some((r) => r.status_flag_id) ??
+          false;
         const bFlags =
-          entries[String(b.id)]?.remarks?.some((r) => r.status_flag_id) ?? false;
+          entries[String(b.id)]?.remarks?.some((r) => r.status_flag_id) ??
+          false;
         if (aFlags !== bFlags) return aFlags ? -1 : 1;
         return (
           new Date(b.created_at || "").getTime() -
@@ -782,7 +786,9 @@ export default function ProcurementLog({ navigation }: any) {
               label: "Flagged",
               value: allPRs.filter((p) => {
                 const entry = entries[String(p.id)];
-                return entry?.loaded && entry.remarks.some((r) => r.status_flag_id);
+                return (
+                  entry?.loaded && entry.remarks.some((r) => r.status_flag_id)
+                );
               }).length,
             },
           ].map((s) => (
