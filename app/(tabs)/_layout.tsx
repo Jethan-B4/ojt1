@@ -17,6 +17,7 @@ import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
 import ProcurementScreen from "./procurement";
 import ProcurementLog from "./ProcurementLog";
+import UserManagementScreen from "./UserManagement";
 
 // ─── Drawer navigator ─────────────────────────────────────────────────────────
 
@@ -80,6 +81,14 @@ export default function TabLayout() {
           drawerIcon: ({ color, size }) => (
             <MaterialIcons name="history" size={size} color={color} />
           ),
+        }}
+      />
+      <Drawer.Screen
+        name="UserManagement"
+        component={UserManagementScreen}
+        options={{
+          title: "User Management",
+          drawerItemStyle: { display: "none" },
         }}
       />
       <Drawer.Screen

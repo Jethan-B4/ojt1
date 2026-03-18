@@ -1227,3 +1227,151 @@ export async function deleteRemark(remarkId: number): Promise<void> {
   const { error } = await supabase.from("remarks").delete().eq("id", remarkId);
   if (error) throw error;
 }
+
+// ─── User Management ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch all users with their division and role information.
+ * Used by the user management screen.
+ */
+export interface UserRow {
+  user_id: string;
+  id?: string;
+  username: string;
+  designation: string | null;
+  password: string;
+  division_id: number | null;
+  role_id: number;
+  last_login: string | null;
+  created_at?: string;
+  // Joined data
+  division_name?: string | null;
+  role_name?: string | null;
+}
+
+export async function fetchAllUsers(): Promise<UserRow[]> {
+  const { data, error } = await supabase
+    .from("users")
+    .select(
+      `
+      user_id,
+      id,
+      username,
+      designation,
+      password,
+      division_id,
+      role_id,
+      last_login,
+      created_at,
+      divisions(division_name),
+      roles(role_name)
+    `,
+    )
+    .order("username");
+
+  if (error) throw error;
+
+  return (data ?? []).map((r: any) => ({
+    user_id: r.user_id,
+    id: r.id,
+    username: r.username,
+    designation: r.designation ?? null,
+    password: r.password,
+    division_id: r.division_id ?? null,
+    role_id: r.role_id,
+    last_login: r.last_login ?? null,
+    created_at: r.created_at,
+    division_name: r.divisions?.division_name ?? null,
+    role_name: r.roles?.role_name ?? null,
+  }));
+}
+
+/**
+ * Update the last_login timestamp for a user.
+ * Called after successful authentication.
+ */
+export async function updateLastLogin(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("users")
+    .update({ last_login: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  if (error) throw error;
+}
+
+// ─── Roles ────────────────────────────────────────────────────────────────────
+
+export interface RoleRow {
+  role_id: number;
+  role_name: string;
+}
+
+export async function fetchAllRoles(): Promise<RoleRow[]> {
+  const { data, error } = await supabase
+    .from("roles")
+    .select("role_id, role_name")
+    .order("role_id");
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ─── User CRUD Operations ─────────────────────────────────────────────────────
+
+/**
+ * Create a new user.
+ */
+export async function createUser(
+  user: Omit<UserRow, "id" | "created_at" | "division_name" | "role_name">,
+): Promise<UserRow> {
+  const { data, error } = await supabase
+    .from("users")
+    .insert([
+      {
+        user_id: user.user_id,
+        username: user.username,
+        password: user.password,
+        designation: user.designation ?? null,
+        division_id: user.division_id ?? null,
+        role_id: user.role_id,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Update an existing user.
+ */
+/**
+ * Update an existing user.
+ * Supports updating all fields including user_id.
+ */
+export async function updateUser(
+  userId: string,
+  patch: Partial<
+    Omit<UserRow, "id" | "created_at" | "division_name" | "role_name">
+  >,
+): Promise<UserRow> {
+  const { data, error } = await supabase
+    .from("users")
+    .update(patch)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Delete a user by user_id.
+ */
+export async function deleteUser(userId: string): Promise<void> {
+  const { error } = await supabase.from("users").delete().eq("user_id", userId);
+
+  if (error) throw error;
+}
