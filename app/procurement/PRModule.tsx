@@ -3,48 +3,48 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import EditPRModal, {
-    type PREditPayload,
-    type PREditRecord,
+  type PREditPayload,
+  type PREditRecord,
 } from "../(modals)/EditPRModal";
 import ProcessPRModal, {
-    FlagButton,
-    STATUS_FLAGS,
-    StatusFlagPicker,
-    type ProcessRecord,
-    type StatusFlag,
+  FlagButton,
+  STATUS_FLAGS,
+  StatusFlagPicker,
+  type ProcessRecord,
+  type StatusFlag,
 } from "../(modals)/ProcessPRModal";
 import PurchaseRequestModal, {
-    PRSubmitPayload,
+  PRSubmitPayload,
 } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-    fetchCanvassablePRs,
-    fetchCanvassablePRsByDivision,
-    fetchLatestRemarkByPR,
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision,
-    insertProposalForPR,
-    insertPurchaseRequest,
-    insertRemark,
-    supabase,
-    type PRRow,
-    type PRStatusRow,
-    type RemarkRow,
+  fetchCanvassablePRs,
+  fetchCanvassablePRsByDivision,
+  fetchLatestRemarkByPR,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
+  insertProposalForPR,
+  insertPurchaseRequest,
+  insertRemark,
+  supabase,
+  type PRRow,
+  type PRStatusRow,
+  type RemarkRow,
 } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
@@ -148,8 +148,8 @@ const fmt = (n: number) =>
 
 type SortBy = "date_created" | "date_modified";
 
-// role_id 2 = Division Head, 3 = BAC, 4 = Budget, 5 = PARPO, 7 = Canvasser, 8 = Supply
-const PROCESS_ROLES = new Set([2, 3, 4, 5, 7, 8]);
+// role_id 2 = Division Head, 3 = BAC, 4 = Budget, 5 = PARPO
+const PROCESS_ROLES = new Set([2, 3, 4, 5]);
 
 // ─── Flag ID Mapping ──────────────────────────────────────────────────────────
 /**
@@ -736,19 +736,28 @@ const RecordCard: React.FC<{
           className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
-        {PROCESS_ROLES.has(roleId) ? (
+        {roleId === 6 ? (
+          record.statusId >= 6 ? (
+            <TouchableOpacity
+              onPress={() => onProcess(record)}
+              activeOpacity={0.8}
+              className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
+              <Text className="text-white text-[12px] font-bold">Process</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => onEdit(record)}
+              activeOpacity={0.8}
+              className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
+              <Text className="text-white text-[12px] font-bold">Edit</Text>
+            </TouchableOpacity>
+          )
+        ) : (
           <TouchableOpacity
             onPress={() => onProcess(record)}
             activeOpacity={0.8}
             className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
             <Text className="text-white text-[12px] font-bold">Process</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            onPress={() => onEdit(record)}
-            activeOpacity={0.8}
-            className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
-            <Text className="text-white text-[12px] font-bold">Edit</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -1460,56 +1469,43 @@ export default function PRModule({
                 setEditVisible(true);
               }}
               onProcess={(r) => {
-                /**
-                 * Route the "Process" button to the correct view based on role_id and status_id:
-                 *
-                 *  role 3  (BAC):
-                 *    - status_id = 3 → ProcessPRModal (certification step)
-                 *    - status_id >= 6 → CanvassingModule → BACView
-                 *    - status_id < 6 → disabled
-                 *
-                 *  role 7  (Canvasser):
-                 *    - status_id >= 6 → CanvassingModule → CanvasserView
-                 *    - status_id < 6 → disabled
-                 *
-                 *  role 6  (End User):
-                 *    - status_id >= 6 → CanvassingModule → EndUserView (read-only)
-                 *    - status_id < 6 → disabled
-                 *
-                 *  role 2  (Div. Head)  → ProcessPRModal   (approval step)
-                 *  role 4  (Budget)     → ProcessPRModal   (budget step)
-                 *  role 5  (PARPO)      → ProcessPRModal   (final approval)
-                 *  role 8  (Supply)     → ProcessPRModal   (supply step)
-                 *  role 1  (Admin)      → ProcessPRModal   (admin override)
-                 */
-
-                // BAC user with status = 3 → open process modal for certification
-                if (roleId === 3 && r.statusId === 3) {
-                  setProcessRecord({ id: r.id, prNo: r.prNo });
-                  setProcessVisible(true);
-                  return;
-                }
-
-                // BAC, Canvasser, or End User with status >= 6 → canvassing view
-                if (
-                  (roleId === 3 || roleId === 7 || roleId === 6) &&
-                  r.statusId >= 6
-                ) {
-                  (navigation as any).navigate(
-                    "Canvassing" as never,
-                    { prNo: r.prNo } as never,
-                  );
-                } else if (roleId === 3 || roleId === 7 || roleId === 6) {
-                  // BAC/Canvasser/End User with status < 6 → show alert
+                if (roleId === 3 || roleId === 7 || roleId === 6) {
+                  if (r.statusId >= 6 && r.statusId < 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
+                    return;
+                  }
+                  if (r.statusId === 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                    );
+                    return;
+                  }
                   Alert.alert(
                     "Not Available",
-                    `This PR is not yet in the canvassing phase (status: ${r.statusId}). Please wait until it reaches the canvassing stage.`,
+                    "This PR is not yet in the canvassing phase.",
                   );
-                } else {
-                  // Other roles → process modal
-                  setProcessRecord({ id: r.id, prNo: r.prNo });
-                  setProcessVisible(true);
+                  return;
                 }
+                if (!PROCESS_ROLES.has(roleId)) {
+                  Alert.alert(
+                    "Not Allowed",
+                    "You cannot process this purchase request from this screen.",
+                  );
+                  return;
+                }
+                if (r.statusId !== roleId) {
+                  Alert.alert(
+                    "Not Available",
+                    "Only the role that matches this PR's status can process it.",
+                  );
+                  return;
+                }
+                setProcessRecord({ id: r.id, prNo: r.prNo });
+                setProcessVisible(true);
               }}
               onMore={(r) => {
                 setMoreRecord(r);
