@@ -491,88 +491,6 @@ const FilterPanel: React.FC<{
   );
 };
 
-const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
-  records,
-  statuses,
-}) => {
-  // Build a label→count map using the live status table so labels stay in sync.
-  const countByStatus = records.reduce<Record<number, number>>((acc, r) => {
-    acc[r.statusId] = (acc[r.statusId] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const stats = [
-    {
-      label: "Total",
-      value: String(records.length),
-      color: "text-[#1a4d2e]",
-      bg: "bg-emerald-50",
-    },
-    {
-      label: "Pending",
-      value: String(countByStatus[1] ?? 0),
-      color: "text-amber-700",
-      bg: "bg-amber-50",
-    },
-    {
-      label: "Processing",
-      value: String(
-        [2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)
-      ),
-      color: "text-blue-700",
-      bg: "bg-blue-50",
-    },
-    {
-      label: "Canvassing",
-      value: String(
-        [6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)
-      ),
-      color: "text-emerald-700",
-      bg: "bg-emerald-50",
-    },
-    {
-      label: "Amount",
-      value: `₱${fmt(records.reduce((s, r) => s + r.totalCost, 0))}`,
-      color: "text-violet-700",
-      bg: "bg-violet-50",
-    },
-  ];
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      className="bg-white border-b border-gray-100 max-h-20"
-      contentContainerStyle={{
-        flexDirection: "row",
-        paddingHorizontal: 4,
-        paddingVertical: 4,
-        gap: 4,
-      }}
-    >
-      {stats.map((s) => (
-        <View
-          key={s.label}
-          className={`${s.bg} rounded-xl px-4 py-2.5 items-center border border-gray-100 min-w-[72px]`}
-        >
-          <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
-            {s.label}
-          </Text>
-          <Text
-            className={`text-[15px] font-bold ${s.color}`}
-            style={
-              s.label === "Amount"
-                ? { fontFamily: MONO, fontSize: 13 }
-                : undefined
-            }
-          >
-            {s.value}
-          </Text>
-        </View>
-      ))}
-    </ScrollView>
-  );
-};
-
 const StatusPill: React.FC<{
   statusId: number;
   label: string;
@@ -687,15 +605,6 @@ const RecordCard: React.FC<{
             {record.officeSection}
           </Text>
         </View>
-        <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-          Qty{" "}
-          <Text
-            className="text-[12px] font-semibold text-gray-600"
-            style={{ fontFamily: MONO }}
-          >
-            {record.quantity}
-          </Text>
-        </Text>
         <View className="w-px h-3.5 bg-gray-200" />
         <Text
           className="text-[11px] text-gray-400"
@@ -1430,7 +1339,6 @@ export default function PRModule({
         }
         onFilterToggle={() => setFilterOpen((o) => !o)}
       />
-      <StatStrip records={filtered} statuses={statuses} />
       <FilterPanel
         visible={filterOpen}
         records={records}

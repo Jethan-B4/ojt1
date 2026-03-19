@@ -15,7 +15,7 @@ import { MONO } from "./constants";
  */
 export const Divider = ({ label }: { label: string }) => (
   <View className="flex-row items-center gap-2 mb-2.5 mt-1">
-    <Text className="text-[9.5px] font-bold tracking-widest uppercase text-gray-400">
+    <Text className="text-[12px] font-bold tracking-widest uppercase text-gray-400">
       {label}
     </Text>
     <View className="flex-1 h-px bg-gray-200" />
@@ -59,9 +59,9 @@ export const Field = ({
 }) => (
   <View className="mb-3">
     <View className="flex-row items-center gap-1 mb-1">
-      <Text className="text-[12px] font-semibold text-gray-700">{label}</Text>
+      <Text className="text-[14px] font-semibold text-gray-700">{label}</Text>
       {required && (
-        <Text className="text-[12px] font-bold text-red-500">*</Text>
+        <Text className="text-[14px] font-bold text-red-500">*</Text>
       )}
     </View>
     {children}
@@ -95,7 +95,7 @@ export const Input = ({
       keyboardType={numeric ? "decimal-pad" : "default"}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      className={`rounded-xl px-3 py-2.5 text-[13px] ${
+      className={`rounded-xl px-3 py-2.5 text-[15px] ${
         readonly ? "bg-gray-50 text-gray-400" : "bg-white text-gray-900"
       }`}
       style={{
@@ -172,7 +172,7 @@ export const PickerField = ({
                   opt === value ? "bg-emerald-50" : ""
                 }`}>
                 <Text
-                  className={`text-[14px] ${
+                  className={`text-[16px] ${
                     opt === value ? "font-bold text-[#1a4d2e]" : "text-gray-700"
                   }`}>
                   {opt}
@@ -210,12 +210,12 @@ export const Banner = ({
     }}>
     <MaterialIcons
       name={type === "info" ? "info" : "warning"}
-      size={16}
+      size={18}
       color={type === "info" ? "#065f46" : "#92400e"}
       style={{ marginTop: 1 }}
     />
     <Text
-      className={`flex-1 text-[12.5px] leading-5 ${
+      className={`flex-1 text-[14px] leading-6 ${
         type === "info" ? "text-emerald-900" : "text-amber-900"
       }`}>
       {text}
@@ -249,7 +249,7 @@ export const Btn = ({
           : "bg-[#064E3B]"
     }`}>
     <Text
-      className={`text-[13px] font-bold ${ghost ? "text-gray-400" : "text-white"}`}>
+      className={`text-[15px] font-bold ${ghost ? "text-gray-400" : "text-white"}`}>
       {label}
     </Text>
   </TouchableOpacity>
