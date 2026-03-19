@@ -1,7 +1,7 @@
 /**
  * EditUserModal.tsx — Edit User Modal
  *
- * Form to edit an existing user's details (username, password, designation, division, role).
+ * Form to edit an existing user's details (username, password, division, role).
  */
 
 import {
@@ -45,7 +45,6 @@ export default function EditUserModal({
   const [userId, setUserId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [designation, setDesignation] = useState("");
   const [divisionId, setDivisionId] = useState<number | null>(null);
   const [roleId, setRoleId] = useState<number | null>(null);
 
@@ -60,10 +59,9 @@ export default function EditUserModal({
     if (!visible || !user) return;
     setLoading(true);
     setError(null);
-    setUserId(user.user_id);
-    setUsername(user.username);
+    setUserId(user.username);
+    setUsername(user.fullname);
     setPassword("");
-    setDesignation(user.designation ?? "");
     setDivisionId(user.division_id ?? null);
     setRoleId(user.role_id);
 
@@ -79,29 +77,28 @@ export default function EditUserModal({
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!userId.trim() || !username.trim() || !roleId) {
-      setError("User ID, Username, and Role are required");
+      setError("Username, Full Name, and Role are required");
       return;
     }
 
     setSavingLoading(true);
     try {
       const updates: any = {
-        username,
-        designation: designation.trim() || null,
+        fullname: username,
         division_id: divisionId,
         role_id: roleId,
       };
 
       // Include user_id if it has changed
-      if (userId !== user.user_id) {
-        updates.user_id = userId;
+      if (userId !== user.username) {
+        updates.username = userId;
       }
 
       if (password.trim()) {
         updates.password = password;
       }
 
-      const updated = await updateUser(user.user_id, updates);
+      const updated = await updateUser(user.username, updates);
       onUpdated(updated);
       onClose();
     } catch (err) {
@@ -117,11 +114,13 @@ export default function EditUserModal({
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet">
+      presentationStyle="pageSheet"
+    >
       <SafeAreaView style={{ flex: 1, backgroundColor: "#ffffff" }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}>
+          style={{ flex: 1 }}
+        >
           <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
             {/* Header */}
             <View
@@ -133,7 +132,8 @@ export default function EditUserModal({
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-              }}>
+              }}
+            >
               <View>
                 <Text
                   style={{
@@ -142,7 +142,8 @@ export default function EditUserModal({
                     color: "rgba(255,255,255,0.6)",
                     textTransform: "uppercase",
                     letterSpacing: 1,
-                  }}>
+                  }}
+                >
                   Edit User
                 </Text>
                 <Text
@@ -153,7 +154,8 @@ export default function EditUserModal({
                     marginTop: 4,
                     flex: 1,
                   }}
-                  numberOfLines={1}>
+                  numberOfLines={1}
+                >
                   {username}
                 </Text>
               </View>
@@ -166,7 +168,8 @@ export default function EditUserModal({
                   backgroundColor: "rgba(255,255,255,0.2)",
                   alignItems: "center",
                   justifyContent: "center",
-                }}>
+                }}
+              >
                 <MaterialIcons name="close" size={20} color="#ffffff" />
               </TouchableOpacity>
             </View>
@@ -179,7 +182,8 @@ export default function EditUserModal({
                 paddingTop: 20,
                 paddingBottom: 20,
               }}
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               {/* Error */}
               {error && (
                 <View
@@ -191,7 +195,8 @@ export default function EditUserModal({
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                     marginBottom: 16,
-                  }}>
+                  }}
+                >
                   <Text style={{ color: "#dc2626", fontSize: 12 }}>
                     {error}
                   </Text>
@@ -205,7 +210,7 @@ export default function EditUserModal({
                 </View>
               ) : (
                 <>
-                  {/* User ID */}
+                  {/* Username (login) */}
                   <View style={{ marginBottom: 16 }}>
                     <Text
                       style={{
@@ -215,8 +220,9 @@ export default function EditUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
-                      User ID <Text style={{ color: "#dc2626" }}>*</Text>
+                      }}
+                    >
+                      Username <Text style={{ color: "#dc2626" }}>*</Text>
                     </Text>
                     <TextInput
                       value={userId}
@@ -238,7 +244,7 @@ export default function EditUserModal({
                     />
                   </View>
 
-                  {/* Username */}
+                  {/* Full Name */}
                   <View style={{ marginBottom: 16 }}>
                     <Text
                       style={{
@@ -248,8 +254,9 @@ export default function EditUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
-                      Username <Text style={{ color: "#dc2626" }}>*</Text>
+                      }}
+                    >
+                      Full Name <Text style={{ color: "#dc2626" }}>*</Text>
                     </Text>
                     <TextInput
                       value={username}
@@ -279,7 +286,8 @@ export default function EditUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
+                      }}
+                    >
                       Password (Leave blank to keep unchanged)
                     </Text>
                     <TextInput
@@ -288,37 +296,6 @@ export default function EditUserModal({
                       placeholder="New password (optional)"
                       placeholderTextColor="#9ca3af"
                       secureTextEntry
-                      style={{
-                        backgroundColor: "#f9fafb",
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: "#e5e7eb",
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        fontSize: 14,
-                        color: "#111827",
-                      }}
-                    />
-                  </View>
-
-                  {/* Designation */}
-                  <View style={{ marginBottom: 16 }}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: "#374151",
-                        marginBottom: 6,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.5,
-                      }}>
-                      Designation
-                    </Text>
-                    <TextInput
-                      value={designation}
-                      onChangeText={setDesignation}
-                      placeholder="Job Title"
-                      placeholderTextColor="#9ca3af"
                       style={{
                         backgroundColor: "#f9fafb",
                         borderRadius: 10,
@@ -377,7 +354,8 @@ export default function EditUserModal({
                   gap: 10,
                   borderTopWidth: 1,
                   borderTopColor: "#f3f4f6",
-                }}>
+                }}
+              >
                 <TouchableOpacity
                   onPress={onClose}
                   style={{
@@ -386,13 +364,15 @@ export default function EditUserModal({
                     borderRadius: 10,
                     paddingVertical: 12,
                     alignItems: "center",
-                  }}>
+                  }}
+                >
                   <Text
                     style={{
                       fontSize: 14,
                       fontWeight: "700",
                       color: "#6b7280",
-                    }}>
+                    }}
+                  >
                     Cancel
                   </Text>
                 </TouchableOpacity>
@@ -405,7 +385,8 @@ export default function EditUserModal({
                     borderRadius: 10,
                     paddingVertical: 12,
                     alignItems: "center",
-                  }}>
+                  }}
+                >
                   {savingLoading ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
@@ -414,7 +395,8 @@ export default function EditUserModal({
                         fontSize: 14,
                         fontWeight: "700",
                         color: "#ffffff",
-                      }}>
+                      }}
+                    >
                       Save
                     </Text>
                   )}

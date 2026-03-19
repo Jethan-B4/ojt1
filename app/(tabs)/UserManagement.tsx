@@ -7,22 +7,22 @@
  */
 
 import {
-    fetchAllRoles,
-    fetchAllUsers,
-    type RoleRow,
-    type UserRow,
+  fetchAllRoles,
+  fetchAllUsers,
+  type RoleRow,
+  type UserRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    Platform,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import CreateUserModal from "../(modals)/CreateUserModal";
 import DeleteUserModal from "../(modals)/DeleteUserModal";
@@ -100,14 +100,16 @@ function UserAvatar({
         backgroundColor: bg,
         alignItems: "center",
         justifyContent: "center",
-      }}>
+      }}
+    >
       <Text
         style={{
           fontSize: 13,
           fontWeight: "700",
           color: "#ffffff",
           fontFamily: MONO,
-        }}>
+        }}
+      >
         {initials}
       </Text>
     </View>
@@ -144,13 +146,15 @@ function UserTableRow({
         borderBottomColor: "#f3f4f6",
         paddingHorizontal: 14,
         paddingVertical: 11,
-      }}>
+      }}
+    >
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           gap: 10,
-        }}>
+        }}
+      >
         {/* Avatar */}
         <UserAvatar initials={user.initials} roleId={user.role_id} />
 
@@ -162,26 +166,17 @@ function UserTableRow({
               alignItems: "center",
               gap: 6,
               marginBottom: 2,
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 12.5,
                 fontWeight: "700",
                 color: "#111827",
-              }}>
-              {user.username}
+              }}
+            >
+              {user.fullname}
             </Text>
-            {user.designation && (
-              <Text
-                style={{
-                  fontSize: 10,
-                  color: "#9ca3af",
-                  fontStyle: "italic",
-                }}
-                numberOfLines={1}>
-                {user.designation}
-              </Text>
-            )}
           </View>
 
           <View
@@ -191,20 +186,23 @@ function UserTableRow({
               gap: 6,
               marginBottom: 3,
               flexWrap: "wrap",
-            }}>
+            }}
+          >
             <View
               style={{
                 backgroundColor: roleColor,
                 paddingHorizontal: 7,
                 paddingVertical: 3,
                 borderRadius: 999,
-              }}>
+              }}
+            >
               <Text
                 style={{
                   fontSize: 9.5,
                   fontWeight: "700",
                   color: "#ffffff",
-                }}>
+                }}
+              >
                 {roleLabel}
               </Text>
             </View>
@@ -215,13 +213,15 @@ function UserTableRow({
                   paddingHorizontal: 7,
                   paddingVertical: 3,
                   borderRadius: 999,
-                }}>
+                }}
+              >
                 <Text
                   style={{
                     fontSize: 9.5,
                     fontWeight: "600",
                     color: "#6b7280",
-                  }}>
+                  }}
+                >
                   {user.division_name}
                 </Text>
               </View>
@@ -233,21 +233,24 @@ function UserTableRow({
               flexDirection: "row",
               alignItems: "center",
               gap: 8,
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 10,
                 color: "#9ca3af",
                 fontFamily: MONO,
-              }}>
-              ID: {user.user_id}
+              }}
+            >
+              ID: {user.username}
             </Text>
             {user.last_login && (
               <Text
                 style={{
                   fontSize: 10,
                   color: "#9ca3af",
-                }}>
+                }}
+              >
                 Last: {fmtDate(user.last_login)} {fmtTime(user.last_login)}
               </Text>
             )}
@@ -260,7 +263,8 @@ function UserTableRow({
             flexDirection: "row",
             gap: 8,
             alignItems: "center",
-          }}>
+          }}
+        >
           <TouchableOpacity
             onPress={() => onEdit?.()}
             style={{
@@ -269,7 +273,8 @@ function UserTableRow({
               backgroundColor: "#dbeafe",
               alignItems: "center",
               justifyContent: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name="edit" size={16} color="#2563eb" />
           </TouchableOpacity>
           <TouchableOpacity
@@ -280,7 +285,8 @@ function UserTableRow({
               backgroundColor: "#fee2e2",
               alignItems: "center",
               justifyContent: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name="delete" size={16} color="#ef4444" />
           </TouchableOpacity>
         </View>
@@ -322,7 +328,7 @@ export default function UserManagementScreen({ navigation }: any) {
       const rows = await fetchAllUsers();
       const processed = rows.map((u) => ({
         ...u,
-        initials: getInitials(u.username),
+        initials: getInitials(u.fullname),
       }));
       setUsers(processed);
       setFilteredUsers(processed);
@@ -349,10 +355,10 @@ export default function UserManagementScreen({ navigation }: any) {
     const q = searchQuery.toLowerCase();
     const filtered = users.filter(
       (u) =>
+        u.fullname.toLowerCase().includes(q) ||
         u.username.toLowerCase().includes(q) ||
-        u.user_id.toLowerCase().includes(q) ||
         u.division_name?.toLowerCase().includes(q) ||
-        u.designation?.toLowerCase().includes(q),
+        u.role_name?.toLowerCase().includes(q)
     );
     setFilteredUsers(filtered);
   }, [searchQuery, users]);
@@ -365,7 +371,8 @@ export default function UserManagementScreen({ navigation }: any) {
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: "#f9fafb",
-        }}>
+        }}
+      >
         <ActivityIndicator size="large" color="#064E3B" />
         <Text style={{ fontSize: 13, color: "#9ca3af", marginTop: 10 }}>
           Loading users…
@@ -383,7 +390,8 @@ export default function UserManagementScreen({ navigation }: any) {
           paddingHorizontal: 16,
           paddingTop: 14,
           paddingBottom: 16,
-        }}>
+        }}
+      >
         <Text
           style={{
             fontSize: 9.5,
@@ -391,7 +399,8 @@ export default function UserManagementScreen({ navigation }: any) {
             color: "rgba(255,255,255,0.4)",
             textTransform: "uppercase",
             letterSpacing: 1.2,
-          }}>
+          }}
+        >
           Admin · System
         </Text>
         <Text
@@ -400,7 +409,8 @@ export default function UserManagementScreen({ navigation }: any) {
             fontWeight: "800",
             color: "#ffffff",
             marginTop: 2,
-          }}>
+          }}
+        >
           User Management
         </Text>
         <Text
@@ -408,7 +418,8 @@ export default function UserManagementScreen({ navigation }: any) {
             fontSize: 12,
             color: "rgba(255,255,255,0.5)",
             marginTop: 2,
-          }}>
+          }}
+        >
           View and manage system users
         </Text>
 
@@ -418,7 +429,8 @@ export default function UserManagementScreen({ navigation }: any) {
             flexDirection: "row",
             gap: 8,
             marginTop: 14,
-          }}>
+          }}
+        >
           <View
             style={{
               flex: 1,
@@ -428,13 +440,15 @@ export default function UserManagementScreen({ navigation }: any) {
               alignItems: "center",
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.12)",
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 20,
                 fontWeight: "800",
                 color: "#ffffff",
-              }}>
+              }}
+            >
               {users.length}
             </Text>
             <Text
@@ -443,7 +457,8 @@ export default function UserManagementScreen({ navigation }: any) {
                 color: "rgba(255,255,255,0.5)",
                 marginTop: 1,
                 textAlign: "center",
-              }}>
+              }}
+            >
               Total Users
             </Text>
           </View>
@@ -456,13 +471,15 @@ export default function UserManagementScreen({ navigation }: any) {
               alignItems: "center",
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.12)",
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 20,
                 fontWeight: "800",
                 color: "#ffffff",
-              }}>
+              }}
+            >
               {users.filter((u) => u.role_id === 1).length}
             </Text>
             <Text
@@ -471,7 +488,8 @@ export default function UserManagementScreen({ navigation }: any) {
                 color: "rgba(255,255,255,0.5)",
                 marginTop: 1,
                 textAlign: "center",
-              }}>
+              }}
+            >
               Admins
             </Text>
           </View>
@@ -486,13 +504,15 @@ export default function UserManagementScreen({ navigation }: any) {
           backgroundColor: "#ffffff",
           borderBottomWidth: 1,
           borderBottomColor: "#f3f4f6",
-        }}>
+        }}
+      >
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
             gap: 8,
-          }}>
+          }}
+        >
           <View
             style={{
               flex: 1,
@@ -505,7 +525,8 @@ export default function UserManagementScreen({ navigation }: any) {
               borderColor: "#e5e7eb",
               paddingHorizontal: 12,
               paddingVertical: 9,
-            }}>
+            }}
+          >
             <MaterialIcons name="search" size={16} color="#9ca3af" />
             <TextInput
               value={searchQuery}
@@ -534,14 +555,16 @@ export default function UserManagementScreen({ navigation }: any) {
               flexDirection: "row",
               alignItems: "center",
               gap: 6,
-            }}>
+            }}
+          >
             <MaterialIcons name="add" size={18} color="#ffffff" />
             <Text
               style={{
                 fontSize: 13,
                 fontWeight: "600",
                 color: "#ffffff",
-              }}>
+              }}
+            >
               Create
             </Text>
           </TouchableOpacity>
@@ -560,13 +583,15 @@ export default function UserManagementScreen({ navigation }: any) {
             borderRadius: 10,
             paddingHorizontal: 14,
             paddingVertical: 10,
-          }}>
+          }}
+        >
           <Text
             style={{
               color: "#dc2626",
               fontSize: 12,
               fontWeight: "600",
-            }}>
+            }}
+          >
             Error: {error}
           </Text>
         </View>
@@ -575,7 +600,7 @@ export default function UserManagementScreen({ navigation }: any) {
       {/* ── Users list ── */}
       <FlatList
         data={filteredUsers}
-        keyExtractor={(item) => item.user_id}
+        keyExtractor={(item) => item.username}
         renderItem={({ item, index }) => (
           <UserTableRow
             user={item}
@@ -612,14 +637,16 @@ export default function UserManagementScreen({ navigation }: any) {
               alignItems: "center",
               paddingTop: 48,
               gap: 10,
-            }}>
+            }}
+          >
             <MaterialIcons name="people-outline" size={44} color="#d1d5db" />
             <Text
               style={{
                 fontSize: 14,
                 fontWeight: "700",
                 color: "#374151",
-              }}>
+              }}
+            >
               No users found
             </Text>
             <Text
@@ -627,7 +654,8 @@ export default function UserManagementScreen({ navigation }: any) {
                 fontSize: 12,
                 color: "#9ca3af",
                 textAlign: "center",
-              }}>
+              }}
+            >
               {searchQuery
                 ? `No users match "${searchQuery}"`
                 : "Failed to load users. Try refreshing."}
@@ -643,7 +671,7 @@ export default function UserManagementScreen({ navigation }: any) {
         onCreated={(user) => {
           setUsers([
             ...users,
-            { ...user, initials: getInitials(user.username) },
+            { ...user, initials: getInitials(user.fullname) },
           ]);
           setIsCreateModalVisible(false);
           loadUsers(true);
@@ -658,7 +686,7 @@ export default function UserManagementScreen({ navigation }: any) {
           setSelectedUser(null);
         }}
         onUpdated={(user) => {
-          setUsers(users.map((u) => (u.user_id === user.user_id ? user : u)));
+          setUsers(users.map((u) => (u.username === user.username ? user : u)));
           setIsEditModalVisible(false);
           setSelectedUser(null);
           loadUsers(true);
@@ -673,7 +701,7 @@ export default function UserManagementScreen({ navigation }: any) {
           setSelectedUser(null);
         }}
         onDeleted={(userId) => {
-          setUsers(users.filter((u) => u.user_id !== userId));
+          setUsers(users.filter((u) => u.username !== userId));
           setIsDeleteModalVisible(false);
           setSelectedUser(null);
           loadUsers(true);

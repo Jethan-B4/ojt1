@@ -49,8 +49,8 @@ export function AuthProvider({
       // Storing plain text passwords is NOT secure. This is for demonstration as requested.
       const { data, error } = await supabase
         .from("users")
-        .select("*")
-        .eq("user_id", user_id)
+        .select("id, fullname, username, password, role_id, division_id, created_at, last_login")
+        .eq("username", user_id)
         .eq("password", password)
         .single();
 
@@ -60,11 +60,11 @@ export function AuthProvider({
       }
 
       if (data) {
-        console.log("Custom Sign-in successful:", data.user_id);
+        console.log("Custom Sign-in successful:", data.username);
 
         // Update last_login timestamp
         try {
-          await updateLastLogin(data.user_id);
+          await updateLastLogin(data.username);
         } catch (loginErr) {
           console.warn("Failed to update last_login:", loginErr);
           // Don't fail auth if last_login update fails

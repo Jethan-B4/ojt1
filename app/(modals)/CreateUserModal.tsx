@@ -1,30 +1,30 @@
 /**
  * CreateUserModal.tsx — Create User Modal
  *
- * Form to create a new user with username, user_id, password, designation,
+ * Form to create a new user with username, user_id, password,
  * division, and role.
  */
 
 import {
-    createUser,
-    fetchAllDivisions,
-    fetchAllRoles,
-    type DivisionRow,
-    type RoleRow,
-    type UserRow,
+  createUser,
+  fetchAllDivisions,
+  fetchAllRoles,
+  type DivisionRow,
+  type RoleRow,
+  type UserRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DropdownPicker from "./DropdownPicker";
@@ -42,10 +42,9 @@ export default function CreateUserModal({
   onClose,
   onCreated,
 }: CreateUserModalProps) {
-  const [username, setUsername] = useState("");
-  const [userId, setUserId] = useState("");
+  const [username, setUsername] = useState(""); // full name
+  const [userId, setUserId] = useState(""); // login username
   const [password, setPassword] = useState("");
-  const [designation, setDesignation] = useState("");
   const [divisionId, setDivisionId] = useState<number | null>(null);
   const [roleId, setRoleId] = useState<number | null>(null);
 
@@ -74,7 +73,6 @@ export default function CreateUserModal({
     setUsername("");
     setUserId("");
     setPassword("");
-    setDesignation("");
     setDivisionId(null);
     setRoleId(null);
     setError(null);
@@ -83,17 +81,16 @@ export default function CreateUserModal({
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!username.trim() || !userId.trim() || !password.trim() || !roleId) {
-      setError("Username, User ID, Password, and Role are required");
+      setError("Full Name, Username, Password, and Role are required");
       return;
     }
 
     setSavingLoading(true);
     try {
       const newUser = await createUser({
-        username,
-        user_id: userId,
+        username: userId,
+        fullname: username,
         password,
-        designation: designation.trim() || null,
         division_id: divisionId,
         role_id: roleId,
         last_login: null,
@@ -114,11 +111,13 @@ export default function CreateUserModal({
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet">
+      presentationStyle="pageSheet"
+    >
       <SafeAreaView style={{ flex: 1, backgroundColor: "#ffffff" }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}>
+          style={{ flex: 1 }}
+        >
           <View style={{ flex: 1, backgroundColor: "#ffffff" }}>
             {/* Header */}
             <View
@@ -130,7 +129,8 @@ export default function CreateUserModal({
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-              }}>
+              }}
+            >
               <View>
                 <Text
                   style={{
@@ -139,7 +139,8 @@ export default function CreateUserModal({
                     color: "rgba(255,255,255,0.6)",
                     textTransform: "uppercase",
                     letterSpacing: 1,
-                  }}>
+                  }}
+                >
                   New User
                 </Text>
                 <Text
@@ -148,7 +149,8 @@ export default function CreateUserModal({
                     fontWeight: "800",
                     color: "#ffffff",
                     marginTop: 4,
-                  }}>
+                  }}
+                >
                   Create User
                 </Text>
               </View>
@@ -164,7 +166,8 @@ export default function CreateUserModal({
                   backgroundColor: "rgba(255,255,255,0.2)",
                   alignItems: "center",
                   justifyContent: "center",
-                }}>
+                }}
+              >
                 <MaterialIcons name="close" size={20} color="#ffffff" />
               </TouchableOpacity>
             </View>
@@ -177,7 +180,8 @@ export default function CreateUserModal({
                 paddingTop: 20,
                 paddingBottom: 20,
               }}
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               {/* Error */}
               {error && (
                 <View
@@ -189,7 +193,8 @@ export default function CreateUserModal({
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                     marginBottom: 16,
-                  }}>
+                  }}
+                >
                   <Text style={{ color: "#dc2626", fontSize: 12 }}>
                     {error}
                   </Text>
@@ -203,7 +208,7 @@ export default function CreateUserModal({
                 </View>
               ) : (
                 <>
-                  {/* Username */}
+                  {/* Full Name */}
                   <View style={{ marginBottom: 16 }}>
                     <Text
                       style={{
@@ -213,13 +218,14 @@ export default function CreateUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
-                      Username <Text style={{ color: "#dc2626" }}>*</Text>
+                      }}
+                    >
+                      Full Name <Text style={{ color: "#dc2626" }}>*</Text>
                     </Text>
                     <TextInput
                       value={username}
                       onChangeText={setUsername}
-                      placeholder="Full Name"
+                      placeholder="e.g., Juan Dela Cruz"
                       placeholderTextColor="#9ca3af"
                       style={{
                         backgroundColor: "#f9fafb",
@@ -244,7 +250,8 @@ export default function CreateUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
+                      }}
+                    >
                       Password <Text style={{ color: "#dc2626" }}>*</Text>
                     </Text>
                     <TextInput
@@ -266,7 +273,7 @@ export default function CreateUserModal({
                     />
                   </View>
 
-                  {/* Designation */}
+                  {/* Username (login) */}
                   <View style={{ marginBottom: 16 }}>
                     <Text
                       style={{
@@ -276,44 +283,14 @@ export default function CreateUserModal({
                         marginBottom: 6,
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
-                      }}>
-                      Designation (Optional)
-                    </Text>
-                    <TextInput
-                      value={designation}
-                      onChangeText={setDesignation}
-                      placeholder="Job Title"
-                      placeholderTextColor="#9ca3af"
-                      style={{
-                        backgroundColor: "#f9fafb",
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: "#e5e7eb",
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        fontSize: 14,
-                        color: "#111827",
                       }}
-                    />
-                  </View>
-
-                  {/* User ID */}
-                  <View style={{ marginBottom: 16 }}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: "#374151",
-                        marginBottom: 6,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.5,
-                      }}>
-                      User ID <Text style={{ color: "#dc2626" }}>*</Text>
+                    >
+                      Username <Text style={{ color: "#dc2626" }}>*</Text>
                     </Text>
                     <TextInput
                       value={userId}
                       onChangeText={setUserId}
-                      placeholder="Unique login ID"
+                      placeholder="Unique login username"
                       placeholderTextColor="#9ca3af"
                       style={{
                         backgroundColor: "#f9fafb",
@@ -374,7 +351,8 @@ export default function CreateUserModal({
                   gap: 10,
                   borderTopWidth: 1,
                   borderTopColor: "#f3f4f6",
-                }}>
+                }}
+              >
                 <TouchableOpacity
                   onPress={() => {
                     resetForm();
@@ -386,13 +364,15 @@ export default function CreateUserModal({
                     borderRadius: 10,
                     paddingVertical: 12,
                     alignItems: "center",
-                  }}>
+                  }}
+                >
                   <Text
                     style={{
                       fontSize: 14,
                       fontWeight: "700",
                       color: "#6b7280",
-                    }}>
+                    }}
+                  >
                     Cancel
                   </Text>
                 </TouchableOpacity>
@@ -405,7 +385,8 @@ export default function CreateUserModal({
                     borderRadius: 10,
                     paddingVertical: 12,
                     alignItems: "center",
-                  }}>
+                  }}
+                >
                   {savingLoading ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
@@ -414,7 +395,8 @@ export default function CreateUserModal({
                         fontSize: 14,
                         fontWeight: "700",
                         color: "#ffffff",
-                      }}>
+                      }}
+                    >
                       Create
                     </Text>
                   )}

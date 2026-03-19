@@ -234,7 +234,7 @@ function useAdminData() {
   const total = prs.length;
   const pending = prs.filter((p) => p.statusId === 1).length;
   const inProgress = prs.filter(
-    (p) => p.statusId >= 2 && p.statusId <= 4,
+    (p) => p.statusId >= 2 && p.statusId <= 4
   ).length;
   const atParpo = prs.filter((p) => p.statusId === 5).length;
   const approved = prs.filter((p) => p.statusId === 6).length;
@@ -507,7 +507,8 @@ function LoadingScreen() {
         justifyContent: "center",
         backgroundColor: "#f9fafb",
         gap: 12,
-      }}>
+      }}
+    >
       <ActivityIndicator size="large" color={CLR.brand500} />
       <Text style={{ color: "#9ca3af", fontSize: 13 }}>Loading dashboard…</Text>
     </View>
@@ -533,7 +534,8 @@ function ErrorBanner({
         flexDirection: "row",
         alignItems: "center",
         gap: 10,
-      }}>
+      }}
+    >
       <MaterialIcons name="error-outline" size={20} color="#dc2626" />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#991b1b" }}>
@@ -551,7 +553,8 @@ function ErrorBanner({
           paddingHorizontal: 12,
           paddingVertical: 6,
           borderRadius: 8,
-        }}>
+        }}
+      >
         <Text style={{ fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
           Retry
         </Text>
@@ -576,7 +579,8 @@ function LastRefreshedBadge({ time }: { time: Date | null }) {
         paddingHorizontal: 16,
         paddingTop: 6,
         paddingBottom: 2,
-      }}>
+      }}
+    >
       <MaterialIcons name="update" size={11} color="#9ca3af" />
       <Text style={{ fontSize: 10.5, color: "#9ca3af" }}>Updated {label}</Text>
     </View>
@@ -607,14 +611,16 @@ function StatPill({ card }: { card: StatCard }) {
         shadowOpacity: 0.05,
         shadowRadius: 4,
         elevation: 2,
-      }}>
+      }}
+    >
       <View
         style={{
           flexDirection: "row",
           justifyContent: "space-between",
           alignItems: "flex-start",
           marginBottom: 8,
-        }}>
+        }}
+      >
         <View
           style={{
             width: 32,
@@ -623,7 +629,8 @@ function StatPill({ card }: { card: StatCard }) {
             backgroundColor: "#f0fdf4",
             alignItems: "center",
             justifyContent: "center",
-          }}>
+          }}
+        >
           <MaterialIcons name={card.icon} size={18} color={CLR.brand900} />
         </View>
         <Text
@@ -636,7 +643,8 @@ function StatPill({ card }: { card: StatCard }) {
             textAlign: "right",
             maxWidth: "60%",
           }}
-          numberOfLines={2}>
+          numberOfLines={2}
+        >
           {card.label}
         </Text>
       </View>
@@ -647,7 +655,8 @@ function StatPill({ card }: { card: StatCard }) {
           color: CLR.brand900,
           lineHeight: 36,
           marginBottom: 6,
-        }}>
+        }}
+      >
         {card.value}
       </Text>
       <View
@@ -657,7 +666,8 @@ function StatPill({ card }: { card: StatCard }) {
           paddingVertical: 3,
           borderRadius: 999,
           alignSelf: "flex-start",
-        }}>
+        }}
+      >
         <Text style={{ fontSize: 11, fontWeight: "600", color: c.text }}>
           {card.sub}
         </Text>
@@ -684,7 +694,8 @@ function SectionHeader({
         paddingHorizontal: 16,
         paddingTop: 20,
         paddingBottom: 8,
-      }}>
+      }}
+    >
       <View style={{ flex: 1 }}>
         <Text
           style={{
@@ -692,7 +703,8 @@ function SectionHeader({
             fontWeight: "800",
             color: "#111827",
             letterSpacing: -0.3,
-          }}>
+          }}
+        >
           {title}
         </Text>
         {sub && (
@@ -704,7 +716,8 @@ function SectionHeader({
       {onViewAll && (
         <TouchableOpacity onPress={onViewAll} hitSlop={8}>
           <Text
-            style={{ fontSize: 12, fontWeight: "600", color: CLR.brand700 }}>
+            style={{ fontSize: 12, fontWeight: "600", color: CLR.brand700 }}
+          >
             View all →
           </Text>
         </TouchableOpacity>
@@ -725,7 +738,8 @@ function StatusBadge({ statusId }: { statusId: number }) {
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 999,
-      }}>
+      }}
+    >
       <View
         style={{
           width: 6,
@@ -750,7 +764,8 @@ function StageBadge({ stage }: { stage: number }) {
         paddingVertical: 2,
         borderRadius: 6,
         backgroundColor: cfg.color + "18",
-      }}>
+      }}
+    >
       <Text
         style={{
           fontSize: 9,
@@ -758,7 +773,8 @@ function StageBadge({ stage }: { stage: number }) {
           color: cfg.color,
           textTransform: "uppercase",
           letterSpacing: 0.5,
-        }}>
+        }}
+      >
         P{stage}
       </Text>
     </View>
@@ -788,7 +804,8 @@ function PRTableRow({
         borderBottomWidth: 1,
         borderBottomColor: "#f3f4f6",
         gap: 8,
-      }}>
+      }}
+    >
       <View style={{ flex: 1, gap: 2 }}>
         <Text
           style={{
@@ -796,7 +813,8 @@ function PRTableRow({
             fontWeight: "700",
             color: CLR.brand900,
             fontFamily: MONO,
-          }}>
+          }}
+        >
           {record.prNo}
         </Text>
         <Text style={{ fontSize: 10.5, color: "#6b7280" }} numberOfLines={1}>
@@ -814,7 +832,8 @@ function PRTableRow({
             paddingHorizontal: 6,
             paddingVertical: 2,
           }}
-          numberOfLines={1}>
+          numberOfLines={1}
+        >
           {record.section}
         </Text>
       </View>
@@ -830,7 +849,8 @@ function PRTableRow({
           fontFamily: MONO,
           width: 60,
           textAlign: "right",
-        }}>
+        }}
+      >
         ₱{record.totalCost.toLocaleString("en-PH")}
       </Text>
       <MaterialIcons name="chevron-right" size={16} color="#d1d5db" />
@@ -886,7 +906,8 @@ function PRTrackerCard({
         shadowOpacity: 0.05,
         shadowRadius: 6,
         elevation: 2,
-      }}>
+      }}
+    >
       {/* Header */}
       <View
         style={{
@@ -898,7 +919,8 @@ function PRTrackerCard({
           paddingBottom: 10,
           borderBottomWidth: 1,
           borderBottomColor: "#f3f4f6",
-        }}>
+        }}
+      >
         <View style={{ flex: 1 }}>
           <Text
             style={{
@@ -906,12 +928,14 @@ function PRTrackerCard({
               fontWeight: "700",
               color: CLR.brand900,
               fontFamily: MONO,
-            }}>
+            }}
+          >
             {pr.prNo}
           </Text>
           <Text
             style={{ fontSize: 11.5, color: "#6b7280", marginTop: 2 }}
-            numberOfLines={1}>
+            numberOfLines={1}
+          >
             {pr.purpose}
           </Text>
         </View>
@@ -924,7 +948,8 @@ function PRTrackerCard({
             paddingHorizontal: 10,
             paddingVertical: 4,
             borderRadius: 999,
-          }}>
+          }}
+        >
           <View
             style={{
               width: 6,
@@ -966,7 +991,8 @@ function PRTrackerCard({
                           : "#e5e7eb",
                       alignItems: "center",
                       justifyContent: "center",
-                    }}>
+                    }}
+                  >
                     <MaterialIcons
                       name={done ? "check" : step.icon}
                       size={15}
@@ -987,7 +1013,8 @@ function PRTrackerCard({
                       textAlign: "center",
                       maxWidth: 38,
                     }}
-                    numberOfLines={1}>
+                    numberOfLines={1}
+                  >
                     {step.label}
                   </Text>
                 </View>
@@ -1017,7 +1044,8 @@ function PRTrackerCard({
           alignItems: "center",
           paddingHorizontal: 16,
           paddingBottom: 12,
-        }}>
+        }}
+      >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
           <MaterialIcons name="calendar-today" size={11} color="#9ca3af" />
           <Text style={{ fontSize: 11, color: "#9ca3af" }}>{pr.date}</Text>
@@ -1030,9 +1058,11 @@ function PRTrackerCard({
                 paddingHorizontal: 6,
                 paddingVertical: 2,
                 borderRadius: 6,
-              }}>
+              }}
+            >
               <Text
-                style={{ fontSize: 9, fontWeight: "700", color: "#a7f3d0" }}>
+                style={{ fontSize: 9, fontWeight: "700", color: "#a7f3d0" }}
+              >
                 HIGH-VALUE
               </Text>
             </View>
@@ -1043,7 +1073,8 @@ function PRTrackerCard({
               fontWeight: "700",
               color: "#374151",
               fontFamily: MONO,
-            }}>
+            }}
+          >
             ₱{pr.totalCost.toLocaleString("en-PH")}
           </Text>
         </View>
@@ -1064,7 +1095,8 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
           borderRadius: 999,
           overflow: "hidden",
           backgroundColor: "#f3f4f6",
-        }}>
+        }}
+      >
         {stages.map((st) => (
           <View
             key={st.stage}
@@ -1078,7 +1110,8 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 8 }}>
+        contentContainerStyle={{ flexDirection: "row", gap: 8 }}
+      >
         {stages.map((st) => (
           <View
             key={st.stage}
@@ -1092,7 +1125,8 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
               alignItems: "center",
               gap: 2,
               minWidth: 80,
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 10,
@@ -1100,7 +1134,8 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
                 color: st.color,
                 textTransform: "uppercase",
                 letterSpacing: 0.5,
-              }}>
+              }}
+            >
               {st.shortLabel}
             </Text>
             <Text style={{ fontSize: 22, fontWeight: "800", color: st.color }}>
@@ -1113,7 +1148,8 @@ function PhasePipeline({ stages }: { stages: StageCount[] }) {
                 textAlign: "center",
                 fontWeight: "500",
               }}
-              numberOfLines={1}>
+              numberOfLines={1}
+            >
               {st.label}
             </Text>
           </View>
@@ -1139,7 +1175,8 @@ function ApprovalFunnelChart({
             color: "#9ca3af",
             textAlign: "center",
             paddingVertical: 8,
-          }}>
+          }}
+        >
           No purchase requests yet.
         </Text>
       ) : (
@@ -1150,10 +1187,12 @@ function ApprovalFunnelChart({
                 flexDirection: "row",
                 justifyContent: "space-between",
                 marginBottom: 4,
-              }}>
+              }}
+            >
               <Text
                 style={{ fontSize: 11, color: "#6b7280", flex: 1 }}
-                numberOfLines={1}>
+                numberOfLines={1}
+              >
                 {b.label}
               </Text>
               <Text
@@ -1162,7 +1201,8 @@ function ApprovalFunnelChart({
                   fontWeight: "700",
                   color: "#374151",
                   fontFamily: MONO,
-                }}>
+                }}
+              >
                 {b.count}
                 <Text style={{ color: "#9ca3af", fontWeight: "400" }}>
                   {" "}
@@ -1175,7 +1215,8 @@ function ApprovalFunnelChart({
                 height: 7,
                 borderRadius: 999,
                 backgroundColor: "#f3f4f6",
-              }}>
+              }}
+            >
               <View
                 style={{
                   height: 7,
@@ -1208,13 +1249,15 @@ function WelcomeHeader({
         paddingHorizontal: 20,
         paddingTop: 20,
         paddingBottom: 20,
-      }}>
+      }}
+    >
       <View
         style={{
           flexDirection: "row",
           alignItems: "flex-start",
           justifyContent: "space-between",
-        }}>
+        }}
+      >
         <View style={{ flex: 1 }}>
           <View
             style={{
@@ -1222,14 +1265,16 @@ function WelcomeHeader({
               alignItems: "center",
               gap: 8,
               marginBottom: 4,
-            }}>
+            }}
+          >
             <View
               style={{
                 backgroundColor: "rgba(255,255,255,0.12)",
                 paddingHorizontal: 8,
                 paddingVertical: 3,
                 borderRadius: 6,
-              }}>
+              }}
+            >
               <Text
                 style={{
                   fontSize: 10,
@@ -1237,7 +1282,8 @@ function WelcomeHeader({
                   color: CLR.brand100,
                   textTransform: "uppercase",
                   letterSpacing: 0.8,
-                }}>
+                }}
+              >
                 {roleLabel}
               </Text>
             </View>
@@ -1248,7 +1294,8 @@ function WelcomeHeader({
               fontWeight: "800",
               color: "#ffffff",
               letterSpacing: -0.4,
-            }}>
+            }}
+          >
             {username}
           </Text>
           <Text style={{ fontSize: 12, color: CLR.brand100, marginTop: 2 }}>
@@ -1314,10 +1361,11 @@ function AdminDashboard({ navigation }: any) {
           onRefresh={onRefresh}
           tintColor={CLR.brand500}
         />
-      }>
+      }
+    >
       <WelcomeHeader
         roleLabel="Admin · System Overview"
-        username={currentUser?.username ?? "Administrator"}
+        username={currentUser?.fullname ?? "Administrator"}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1331,7 +1379,8 @@ function AdminDashboard({ navigation }: any) {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: 8,
-        }}>
+        }}
+      >
         {statCards.map((card) => (
           <StatPill key={card.label} card={card} />
         ))}
@@ -1359,14 +1408,16 @@ function AdminDashboard({ navigation }: any) {
           shadowOpacity: 0.05,
           shadowRadius: 6,
           elevation: 2,
-        }}>
+        }}
+      >
         <Text
           style={{
             fontSize: 13,
             fontWeight: "800",
             color: "#111827",
             marginBottom: 12,
-          }}>
+          }}
+        >
           Approval Funnel
         </Text>
         <ApprovalFunnelChart breakdown={statusBreakdown} />
@@ -1387,7 +1438,8 @@ function AdminDashboard({ navigation }: any) {
           shadowOpacity: 0.05,
           shadowRadius: 6,
           elevation: 2,
-        }}>
+        }}
+      >
         <SectionHeader
           title="All Recent Purchase Requests"
           sub={`${prs.length} total across all divisions`}
@@ -1402,7 +1454,8 @@ function AdminDashboard({ navigation }: any) {
             paddingBottom: 8,
             borderBottomWidth: 1,
             borderBottomColor: "#f3f4f6",
-          }}>
+          }}
+        >
           {[
             { label: "PR / Purpose", flex: 1 },
             { label: "Section", w: 68 },
@@ -1421,7 +1474,8 @@ function AdminDashboard({ navigation }: any) {
                 flex: (h as any).flex,
                 width: (h as any).w,
                 textAlign: h.right ? "right" : "left",
-              }}>
+              }}
+            >
               {h.label}
             </Text>
           ))}
@@ -1500,10 +1554,11 @@ function ProcessorDashboard({
           onRefresh={onRefresh}
           tintColor={CLR.brand500}
         />
-      }>
+      }
+    >
       <WelcomeHeader
         roleLabel={roleLabel}
-        username={currentUser?.username ?? roleLabel}
+        username={currentUser?.fullname ?? roleLabel}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1517,7 +1572,8 @@ function ProcessorDashboard({
           flexDirection: "row",
           flexWrap: "wrap",
           gap: 8,
-        }}>
+        }}
+      >
         {statCards.map((card) => (
           <StatPill key={card.label} card={card} />
         ))}
@@ -1530,7 +1586,8 @@ function ProcessorDashboard({
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
-          }}>
+          }}
+        >
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: "800", color: "#111827" }}>
               Your Action Queue
@@ -1548,13 +1605,15 @@ function ProcessorDashboard({
                 borderRadius: 999,
                 borderWidth: 1,
                 borderColor: queueCfg.dot + "60",
-              }}>
+              }}
+            >
               <Text
                 style={{
                   fontSize: 12,
                   fontWeight: "800",
                   color: queueCfg.text,
-                }}>
+                }}
+              >
                 {queue.length} pending
               </Text>
             </View>
@@ -1573,10 +1632,12 @@ function ProcessorDashboard({
             padding: 28,
             alignItems: "center",
             gap: 8,
-          }}>
+          }}
+        >
           <MaterialIcons name="check-circle" size={40} color={CLR.brand500} />
           <Text
-            style={{ fontSize: 14, fontWeight: "700", color: CLR.brand900 }}>
+            style={{ fontSize: 14, fontWeight: "700", color: CLR.brand900 }}
+          >
             Queue is clear!
           </Text>
           <Text style={{ fontSize: 12, color: "#6b7280", textAlign: "center" }}>
@@ -1597,7 +1658,8 @@ function ProcessorDashboard({
             shadowOpacity: 0.05,
             shadowRadius: 6,
             elevation: 2,
-          }}>
+          }}
+        >
           {queue.map((record, i) => (
             <PRTableRow
               key={record.id}
@@ -1625,7 +1687,8 @@ function ProcessorDashboard({
             shadowOpacity: 0.05,
             shadowRadius: 6,
             elevation: 2,
-          }}>
+          }}
+        >
           <SectionHeader
             title="Other PRs in System"
             sub="Not currently in your queue"
@@ -1678,10 +1741,11 @@ function EndUserDashboard({ navigation }: any) {
           onRefresh={onRefresh}
           tintColor={CLR.brand500}
         />
-      }>
+      }
+    >
       <WelcomeHeader
         roleLabel={currentUser?.division_name ?? "End User"}
-        username={currentUser?.username ?? "Welcome"}
+        username={currentUser?.fullname ?? "Welcome"}
         // onNewPR={() => navigation?.navigate?.("Procurement")}
       />
 
@@ -1696,7 +1760,8 @@ function EndUserDashboard({ navigation }: any) {
           flexDirection: "row",
           flexWrap: "wrap",
           gap: 8,
-        }}>
+        }}
+      >
         {statCards.map((card) => (
           <StatPill key={card.label} card={card} />
         ))}
@@ -1726,7 +1791,8 @@ function EndUserDashboard({ navigation }: any) {
             padding: 28,
             alignItems: "center",
             gap: 10,
-          }}>
+          }}
+        >
           <MaterialIcons name="description" size={36} color="#d1d5db" />
           <Text style={{ fontSize: 14, fontWeight: "700", color: "#374151" }}>
             No Purchase Requests
@@ -1829,7 +1895,8 @@ function QuickActionGrid({
         paddingHorizontal: 12,
         gap: 8,
         flexWrap: "wrap",
-      }}>
+      }}
+    >
       {actions.map((a) => (
         <TouchableOpacity
           key={a.label}
@@ -1852,7 +1919,8 @@ function QuickActionGrid({
             shadowOpacity: 0.04,
             shadowRadius: 4,
             elevation: 1,
-          }}>
+          }}
+        >
           <View
             style={{
               width: 36,
@@ -1861,7 +1929,8 @@ function QuickActionGrid({
               backgroundColor: "#ecfdf5",
               alignItems: "center",
               justifyContent: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name={a.icon} size={20} color={CLR.brand900} />
           </View>
           <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#111827" }}>

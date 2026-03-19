@@ -219,9 +219,11 @@ const SubTabRow: React.FC<{
           key={sub.key}
           onPress={() => onSelect(sub.key)}
           activeOpacity={0.8}
-          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}>
+          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
+        >
           <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}>
+            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+          >
             {sub.label}
           </Text>
         </TouchableOpacity>
@@ -275,7 +277,8 @@ const SearchBar: React.FC<{
         backgroundColor: filterActive ? "#064E3B" : "#ffffff",
         borderWidth: 1.5,
         borderColor: filterActive ? "#064E3B" : "#e5e7eb",
-      }}>
+      }}
+    >
       <MaterialIcons
         name="filter-list"
         size={18}
@@ -286,7 +289,8 @@ const SearchBar: React.FC<{
       <Pressable
         onPress={onCreatePress}
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}>
+        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
+      >
         <Text className="text-white text-[18px] leading-none font-light">
           +
         </Text>
@@ -317,7 +321,8 @@ const FilterChip: React.FC<{
         backgroundColor: bg,
         borderWidth: 1.5,
         borderColor: border,
-      }}>
+      }}
+    >
       <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>
         {label}
       </Text>
@@ -354,7 +359,7 @@ const FilterPanel: React.FC<{
   if (!visible) return null;
 
   const presentStatusIds = [...new Set(records.map((r) => r.statusId))].sort(
-    (a, b) => a - b,
+    (a, b) => a - b
   );
   const presentSections = [
     "All",
@@ -371,7 +376,8 @@ const FilterPanel: React.FC<{
         shadowOpacity: 0.05,
         shadowRadius: 6,
         elevation: 2,
-      }}>
+      }}
+    >
       {/* ── Status ── */}
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         Status
@@ -379,7 +385,8 @@ const FilterPanel: React.FC<{
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
+      >
         <FilterChip
           label="All"
           active={statusFilter === null}
@@ -406,7 +413,8 @@ const FilterPanel: React.FC<{
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
+      >
         {presentSections.map((s) => (
           <FilterChip
             key={s}
@@ -450,7 +458,8 @@ const FilterPanel: React.FC<{
                 active
                   ? "bg-[#064E3B] border-[#064E3B]"
                   : "bg-white border-gray-200"
-              }`}>
+              }`}
+            >
               <MaterialIcons
                 name={opt.icon}
                 size={13}
@@ -461,7 +470,8 @@ const FilterPanel: React.FC<{
                   fontSize: 11.5,
                   fontWeight: "700",
                   color: active ? "#ffffff" : "#6b7280",
-                }}>
+                }}
+              >
                 {opt.label}
               </Text>
             </TouchableOpacity>
@@ -507,7 +517,7 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
     {
       label: "Processing",
       value: String(
-        [2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0),
+        [2, 3, 4, 5].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)
       ),
       color: "text-blue-700",
       bg: "bg-blue-50",
@@ -515,7 +525,7 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
     {
       label: "Canvassing",
       value: String(
-        [6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0),
+        [6, 8, 9, 10, 11].reduce((s, id) => s + (countByStatus[id] ?? 0), 0)
       ),
       color: "text-emerald-700",
       bg: "bg-emerald-50",
@@ -537,11 +547,13 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
         paddingHorizontal: 4,
         paddingVertical: 4,
         gap: 4,
-      }}>
+      }}
+    >
       {stats.map((s) => (
         <View
           key={s.label}
-          className={`${s.bg} rounded-xl px-4 py-2.5 items-center border border-gray-100 min-w-[72px]`}>
+          className={`${s.bg} rounded-xl px-4 py-2.5 items-center border border-gray-100 min-w-[72px]`}
+        >
           <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
             {s.label}
           </Text>
@@ -551,7 +563,8 @@ const StatStrip: React.FC<{ records: PRRecord[]; statuses: PRStatusRow[] }> = ({
               s.label === "Amount"
                 ? { fontFamily: MONO, fontSize: 13 }
                 : undefined
-            }>
+            }
+          >
             {s.value}
           </Text>
         </View>
@@ -577,7 +590,8 @@ const StatusPill: React.FC<{
         paddingVertical: 4,
         borderRadius: 999,
         backgroundColor: cfg.bg,
-      }}>
+      }}
+    >
       <View
         style={{
           width: 6,
@@ -598,7 +612,8 @@ const StatusPill: React.FC<{
           fontWeight: "600",
           color: cfg.text,
           opacity: 0.7,
-        }}>
+        }}
+      >
         {elapsed}
       </Text>
     </View>
@@ -642,17 +657,20 @@ const RecordCard: React.FC<{
         shadowOpacity: 0.07,
         shadowRadius: 6,
         elevation: 3,
-      }}>
+      }}
+    >
       <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
         <View className="flex-1 pr-3">
           <Text
             className="text-[13px] font-bold text-[#1a4d2e] mb-0.5"
-            style={{ fontFamily: MONO }}>
+            style={{ fontFamily: MONO }}
+          >
             {record.prNo}
           </Text>
           <Text
             className="text-[12.5px] text-gray-700 leading-5"
-            numberOfLines={2}>
+            numberOfLines={2}
+          >
             {record.itemDescription}
           </Text>
         </View>
@@ -673,20 +691,23 @@ const RecordCard: React.FC<{
           Qty{" "}
           <Text
             className="text-[12px] font-semibold text-gray-600"
-            style={{ fontFamily: MONO }}>
+            style={{ fontFamily: MONO }}
+          >
             {record.quantity}
           </Text>
         </Text>
         <View className="w-px h-3.5 bg-gray-200" />
         <Text
           className="text-[11px] text-gray-400"
-          style={{ fontFamily: MONO }}>
+          style={{ fontFamily: MONO }}
+        >
           {record.date}
         </Text>
         <View className="flex-1" />
         <Text
           className="text-[12.5px] font-bold text-gray-700"
-          style={{ fontFamily: MONO }}>
+          style={{ fontFamily: MONO }}
+        >
           ₱{fmt(record.totalCost)}
         </Text>
       </View>
@@ -706,10 +727,12 @@ const RecordCard: React.FC<{
                 backgroundColor: flag.bg,
                 borderWidth: 1,
                 borderColor: flag.dot + "40",
-              }}>
+              }}
+            >
               <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
               <Text
-                style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}>
+                style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}
+              >
                 {flag.label}
               </Text>
             </View>
@@ -721,7 +744,8 @@ const RecordCard: React.FC<{
             {latestFlag?.remark && (
               <Text
                 className="flex-1 text-[10.5px] text-gray-500"
-                numberOfLines={1}>
+                numberOfLines={1}
+              >
                 · {latestFlag.remark}
               </Text>
             )}
@@ -733,7 +757,8 @@ const RecordCard: React.FC<{
         <TouchableOpacity
           onPress={() => onView(record)}
           activeOpacity={0.8}
-          className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
+          className="flex-1 bg-blue-600 rounded-xl py-2 items-center"
+        >
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
         {roleId === 6 ? (
@@ -741,14 +766,16 @@ const RecordCard: React.FC<{
             <TouchableOpacity
               onPress={() => onProcess(record)}
               activeOpacity={0.8}
-              className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
+              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+            >
               <Text className="text-white text-[12px] font-bold">Process</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               onPress={() => onEdit(record)}
               activeOpacity={0.8}
-              className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
+              className="flex-1 bg-amber-500 rounded-xl py-2 items-center"
+            >
               <Text className="text-white text-[12px] font-bold">Edit</Text>
             </TouchableOpacity>
           )
@@ -756,14 +783,16 @@ const RecordCard: React.FC<{
           <TouchableOpacity
             onPress={() => onProcess(record)}
             activeOpacity={0.8}
-            className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
+            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+          >
             <Text className="text-white text-[12px] font-bold">Process</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
-          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center">
+          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
+        >
           <Text className="text-white text-[11px] font-bold tracking-widest">
             •••
           </Text>
@@ -811,7 +840,8 @@ const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
           style={{
             backgroundColor: flag ? flag.dot + "22" : "#f3f4f6",
             borderColor: flag ? flag.dot + "55" : "#e5e7eb",
-          }}>
+          }}
+        >
           {flag ? (
             <MaterialIcons name={flag.icon} size={13} color={flag.dot} />
           ) : (
@@ -835,7 +865,8 @@ const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
           {flag && (
             <View
-              className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full border ${flag.bg} ${flag.border}`}>
+              className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full border ${flag.bg} ${flag.border}`}
+            >
               <View
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ backgroundColor: flag.dot }}
@@ -859,7 +890,8 @@ const RemarkRow: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
             shadowOpacity: 0.04,
             shadowRadius: 4,
             elevation: 1,
-          }}>
+          }}
+        >
           <Text className="text-[13px] text-gray-700 leading-[19px]">
             {entry.remark}
           </Text>
@@ -895,7 +927,7 @@ const RemarkSheet: React.FC<{
     supabase
       .from("remarks")
       .select(
-        "id, remark, status_flag_id, created_at, user_id, users(username)",
+        "id, remark, status_flag_id, created_at, user_id, users(fullname)"
       )
       .eq("pr_id", record.id)
       .order("created_at", { ascending: false })
@@ -911,8 +943,8 @@ const RemarkSheet: React.FC<{
             status_flag_id: r.status_flag_id as number | null,
             created_at: r.created_at,
             user_id: r.user_id,
-            username: r.users?.username ?? undefined,
-          })),
+            username: r.users?.fullname ?? undefined,
+          }))
         );
       });
     setLoadingHist(false);
@@ -934,7 +966,7 @@ const RemarkSheet: React.FC<{
         record.id,
         currentUser?.id,
         remarksText,
-        getStatusFlagId(statusFlag),
+        getStatusFlagId(statusFlag)
       );
       // Optimistically prepend to history
       const newEntry: RemarkEntry = {
@@ -943,7 +975,7 @@ const RemarkSheet: React.FC<{
         status_flag_id: getStatusFlagId(statusFlag),
         created_at: new Date().toISOString(),
         user_id: currentUser?.id ?? null,
-        username: currentUser?.username ?? "You",
+        username: currentUser?.fullname ?? "You",
       };
       setHistory((prev) => [newEntry, ...prev]);
       setRemarksText("");
@@ -963,11 +995,13 @@ const RemarkSheet: React.FC<{
         visible={visible}
         transparent
         animationType="slide"
-        onRequestClose={onClose}>
+        onRequestClose={onClose}
+      >
         <Pressable className="flex-1 bg-black/40" onPress={onClose} />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ maxHeight: "85%" }}>
+          style={{ maxHeight: "85%" }}
+        >
           <View
             className="bg-gray-50 rounded-t-3xl overflow-hidden"
             style={{
@@ -976,7 +1010,8 @@ const RemarkSheet: React.FC<{
               shadowOpacity: 0.12,
               shadowRadius: 16,
               elevation: 16,
-            }}>
+            }}
+          >
             {/* ── Header ── */}
             <View className="bg-[#064E3B] px-5 pt-4 pb-4">
               <View className="w-10 h-1 rounded-full bg-white/20 self-center mb-3" />
@@ -987,19 +1022,22 @@ const RemarkSheet: React.FC<{
                   </Text>
                   <Text
                     className="text-[15px] font-extrabold text-white"
-                    style={{ fontFamily: MONO }}>
+                    style={{ fontFamily: MONO }}
+                  >
                     {record.prNo}
                   </Text>
                   <Text
                     className="text-[11px] text-white/50 mt-0.5"
-                    numberOfLines={1}>
+                    numberOfLines={1}
+                  >
                     {record.officeSection} · {record.itemDescription}
                   </Text>
                 </View>
                 <TouchableOpacity
                   onPress={onClose}
                   hitSlop={10}
-                  className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center mt-0.5">
+                  className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center mt-0.5"
+                >
                   <Text className="text-white text-[20px] leading-none font-light">
                     ×
                   </Text>
@@ -1011,7 +1049,8 @@ const RemarkSheet: React.FC<{
               ref={scrollRef}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}>
+              contentContainerStyle={{ paddingBottom: 24 }}
+            >
               {/* ── Add Remark form ── */}
               <View
                 className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
@@ -1020,7 +1059,8 @@ const RemarkSheet: React.FC<{
                   shadowOpacity: 0.05,
                   shadowRadius: 6,
                   elevation: 2,
-                }}>
+                }}
+              >
                 <View className="px-4 pt-3.5 pb-1 border-b border-gray-100">
                   <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                     Add Remark
@@ -1061,7 +1101,8 @@ const RemarkSheet: React.FC<{
                       !remarksText.trim() || saving
                         ? "bg-gray-200"
                         : "bg-[#064E3B]"
-                    }`}>
+                    }`}
+                  >
                     {saving ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
@@ -1076,7 +1117,8 @@ const RemarkSheet: React.FC<{
                         !remarksText.trim() || saving
                           ? "text-gray-400"
                           : "text-white"
-                      }`}>
+                      }`}
+                    >
                       {saving ? "Saving…" : "Save Remark"}
                     </Text>
                   </TouchableOpacity>
@@ -1165,7 +1207,7 @@ export default function PRModule({
   const roleId = currentUser?.role_id ?? 0;
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(
-    initialSubTab ?? "pr",
+    initialSubTab ?? "pr"
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
@@ -1190,7 +1232,7 @@ export default function PRModule({
 
   // Process PR modal state (Division Head / BAC / Budget)
   const [processRecord, setProcessRecord] = useState<ProcessRecord | null>(
-    null,
+    null
   );
   const [processVisible, setProcessVisible] = useState(false);
 
@@ -1219,14 +1261,14 @@ export default function PRModule({
           roleId === 1 || PROCESS_ROLES.has(roleId)
             ? await fetchPurchaseRequests()
             : await fetchPurchaseRequestsByDivision(
-                currentUser?.division_id ?? -1,
+                currentUser?.division_id ?? -1
               );
       } else if (activeSubTab === "canvass") {
         rows =
           roleId === 1 || PROCESS_ROLES.has(roleId)
             ? await fetchCanvassablePRs()
             : await fetchCanvassablePRsByDivision(
-                currentUser?.division_id ?? -1,
+                currentUser?.division_id ?? -1
               );
       } else if (activeSubTab === "abstract_of_awards") {
         // Only fetch PRs with status_id = 11 (AAA Issuance)
@@ -1235,7 +1277,7 @@ export default function PRModule({
             ? (await fetchPurchaseRequests()).filter((r) => r.status_id === 11)
             : (
                 await fetchPurchaseRequestsByDivision(
-                  currentUser?.division_id ?? -1,
+                  currentUser?.division_id ?? -1
                 )
               ).filter((r) => r.status_id === 11);
       } else {
@@ -1248,10 +1290,10 @@ export default function PRModule({
       const remarkEntries = await Promise.all(
         rows.map(async (r) => {
           const remark = await fetchLatestRemarkByPR(String(r.id)).catch(
-            () => null,
+            () => null
           );
           return [String(r.id), remark] as [string, RemarkRow | null];
-        }),
+        })
       );
       setLatestRemarks(Object.fromEntries(remarkEntries));
     } catch {}
@@ -1282,7 +1324,7 @@ export default function PRModule({
         await insertProposalForPR(
           saved.id,
           payload.proposalNo,
-          payload.divisionId,
+          payload.divisionId
         );
       } catch {}
       setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
@@ -1309,7 +1351,7 @@ export default function PRModule({
       setPage(1);
       Alert.alert(
         "Saved locally",
-        `Could not reach the server. Record will sync when online. ${message}`,
+        `Could not reach the server. Record will sync when online. ${message}`
       );
     } finally {
       setSaving(false);
@@ -1337,8 +1379,8 @@ export default function PRModule({
               totalCost: payload.totalCost,
               quantity: payload.items.length,
               itemDescription: `${payload.officeSection} procurement request`,
-            },
-      ),
+            }
+      )
     );
     // TODO: persist via supabase updatePurchaseRequest(payload)
   }, []);
@@ -1448,7 +1490,8 @@ export default function PRModule({
             tintColor="#064E3B"
             colors={["#064E3B"]}
           />
-        }>
+        }
+      >
         {paged.length === 0 ? (
           <EmptyState label="No records found" />
         ) : (
@@ -1473,34 +1516,34 @@ export default function PRModule({
                   if (r.statusId >= 6 && r.statusId < 11) {
                     (navigation as any).navigate(
                       "Canvassing" as never,
-                      { prNo: r.prNo } as never,
+                      { prNo: r.prNo } as never
                     );
                     return;
                   }
                   if (r.statusId === 11) {
                     (navigation as any).navigate(
                       "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never
                     );
                     return;
                   }
                   Alert.alert(
                     "Not Available",
-                    "This PR is not yet in the canvassing phase.",
+                    "This PR is not yet in the canvassing phase."
                   );
                   return;
                 }
                 if (!PROCESS_ROLES.has(roleId)) {
                   Alert.alert(
                     "Not Allowed",
-                    "You cannot process this purchase request from this screen.",
+                    "You cannot process this purchase request from this screen."
                   );
                   return;
                 }
                 if (r.statusId !== roleId) {
                   Alert.alert(
                     "Not Available",
-                    "Only the role that matches this PR's status can process it.",
+                    "Only the role that matches this PR's status can process it."
                   );
                   return;
                 }
@@ -1527,7 +1570,7 @@ export default function PRModule({
             { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
             ...Array.from(
               { length: Math.min(5, totalPages) },
-              (_, i) => i + 1,
+              (_, i) => i + 1
             ).map((p) => ({
               label: String(p),
               page: p,
@@ -1551,7 +1594,8 @@ export default function PRModule({
                   : btn.disabled
                     ? "bg-gray-50 border-gray-100"
                     : "bg-white border-gray-200"
-              }`}>
+              }`}
+            >
               <Text
                 className={`text-[12px] font-bold ${
                   (btn as any).active
@@ -1559,7 +1603,8 @@ export default function PRModule({
                     : btn.disabled
                       ? "text-gray-300"
                       : "text-gray-500"
-                }`}>
+                }`}
+              >
                 {btn.label}
               </Text>
             </TouchableOpacity>
@@ -1613,8 +1658,8 @@ export default function PRModule({
           // Update the record in-place so the list reflects the new state immediately.
           setRecords((prev) =>
             prev.map((r) =>
-              r.id === id ? { ...r, statusId: Number(newStatusId) } : r,
-            ),
+              r.id === id ? { ...r, statusId: Number(newStatusId) } : r
+            )
           );
         }}
       />

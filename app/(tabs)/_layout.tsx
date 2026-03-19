@@ -40,7 +40,8 @@ export default function TabLayout() {
       }}
       drawerContent={(props) => (
         <CustomDrawer {...props} onSignOut={handleSignOut} />
-      )}>
+      )}
+    >
       <Drawer.Screen
         name="Dashboard"
         component={DashboardScreen}
@@ -124,7 +125,8 @@ function BrandHeader({ navigation }: { navigation: any }) {
           backgroundColor: "#064E3B",
           paddingHorizontal: 12,
           paddingVertical: 10,
-        }}>
+        }}
+      >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Pressable
             onPress={() => navigation?.openDrawer?.()}
@@ -133,7 +135,8 @@ function BrandHeader({ navigation }: { navigation: any }) {
               width: 40,
               alignItems: "center",
               justifyContent: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name="menu" size={24} color="#ffffff" />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -148,7 +151,8 @@ function BrandHeader({ navigation }: { navigation: any }) {
               justifyContent: "center",
               borderWidth: 1,
               borderColor: "#e5e7eb",
-            }}>
+            }}
+          >
             <MaterialIcons name="calendar-month" size={22} color="#064E3B" />
           </Pressable>
           <Pressable
@@ -161,7 +165,8 @@ function BrandHeader({ navigation }: { navigation: any }) {
               justifyContent: "center",
               borderWidth: 1,
               borderColor: "#e5e7eb",
-            }}>
+            }}
+          >
             <MaterialIcons name="notifications" size={22} color="#064E3B" />
           </Pressable>
         </View>
@@ -187,7 +192,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
   return (
     <DrawerContentScrollView
       {...props}
-      contentContainerStyle={{ backgroundColor: "#064E3B", flexGrow: 1 }}>
+      contentContainerStyle={{ backgroundColor: "#064E3B", flexGrow: 1 }}
+    >
       {/* ── App branding ── */}
       <View
         style={{
@@ -195,7 +201,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
           paddingVertical: 24,
           paddingHorizontal: 20,
           backgroundColor: "#064E3B",
-        }}>
+        }}
+      >
         <Image
           source={require("@/assets/images/dar.png")}
           style={{
@@ -212,7 +219,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             fontSize: 18,
             fontWeight: "700",
             color: "#ffffff",
-          }}>
+          }}
+        >
           DAR Procurement
         </Text>
         <Text
@@ -221,7 +229,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             fontSize: 13,
             color: "#A7F3D0",
             textAlign: "center",
-          }}>
+          }}
+        >
           Monitoring & Automation System
         </Text>
       </View>
@@ -245,7 +254,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             borderRadius: 14,
             backgroundColor: "rgba(255,255,255,0.06)",
             padding: 14,
-          }}>
+          }}
+        >
           {/* Avatar row */}
           <View
             style={{
@@ -253,7 +263,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
               alignItems: "center",
               gap: 10,
               marginBottom: 10,
-            }}>
+            }}
+          >
             <View
               style={{
                 width: 38,
@@ -262,22 +273,26 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 backgroundColor: "#10B981",
                 alignItems: "center",
                 justifyContent: "center",
-              }}>
+              }}
+            >
               <Text
-                style={{ fontSize: 16, fontWeight: "800", color: "#ffffff" }}>
-                {currentUser.username?.charAt(0).toUpperCase() ?? "?"}
+                style={{ fontSize: 16, fontWeight: "800", color: "#ffffff" }}
+              >
+                {currentUser.fullname?.charAt(0).toUpperCase() ?? "?"}
               </Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text
                 style={{ fontSize: 13, fontWeight: "700", color: "#ffffff" }}
-                numberOfLines={1}>
-                {currentUser.username}
+                numberOfLines={1}
+              >
+                {currentUser.fullname}
               </Text>
               <Text
                 style={{ fontSize: 11, color: "#A7F3D0", marginTop: 1 }}
-                numberOfLines={1}>
-                {currentUser.designation ?? currentUser.user_id}
+                numberOfLines={1}
+              >
+                {currentUser.role_name ?? currentUser.username}
               </Text>
             </View>
           </View>
@@ -294,7 +309,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
               alignItems: "center",
               justifyContent: "space-between",
               marginBottom: 6,
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 10,
@@ -302,7 +318,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 color: "#6ee7b7",
                 textTransform: "uppercase",
                 letterSpacing: 0.6,
-              }}>
+              }}
+            >
               Role
             </Text>
             <Text
@@ -315,7 +332,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 maxWidth: "65%",
                 marginTop: 4,
               }}
-              numberOfLines={2}>
+              numberOfLines={2}
+            >
               {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
             </Text>
             {/* <View style={{flexShrink: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
@@ -331,7 +349,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
-            }}>
+            }}
+          >
             <Text
               style={{
                 fontSize: 10,
@@ -339,7 +358,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 color: "#6ee7b7",
                 textTransform: "uppercase",
                 letterSpacing: 0.6,
-              }}>
+              }}
+            >
               Division
             </Text>
             <Text
@@ -351,7 +371,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
                 textAlign: "right",
                 maxWidth: "65%",
               }}
-              numberOfLines={2}>
+              numberOfLines={2}
+            >
               {currentUser.division_name ??
                 `Division ${currentUser.division_id}`}
             </Text>
@@ -392,7 +413,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
           backgroundColor: "rgba(239,68,68,0.12)",
           borderWidth: 1,
           borderColor: "rgba(239,68,68,0.25)",
-        }}>
+        }}
+      >
         <MaterialIcons name="logout" size={20} color="#f87171" />
         <Text
           style={{
@@ -400,7 +422,8 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             fontWeight: "700",
             color: "#f87171",
             flex: 1,
-          }}>
+          }}
+        >
           Sign Out
         </Text>
         <MaterialIcons name="chevron-right" size={16} color="#f87171" />

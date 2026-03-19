@@ -191,7 +191,7 @@ export default function CanvasserView({ pr, onBack }: {
           unitPrice:   up && up > 0 ? up.toFixed(2) : "",
         };
       }),
-      canvasserNames: currentUser?.username ? [currentUser.username] : [],
+      canvasserNames: currentUser?.fullname ? [currentUser.fullname] : [],
     };
   };
 

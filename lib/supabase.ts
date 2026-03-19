@@ -255,7 +255,7 @@ export async function fetchPurchaseRequests(): Promise<PRRow[]> {
 }
 
 export async function fetchPurchaseRequestsByDivision(
-  divisionId: number,
+  divisionId: number
 ): Promise<PRRow[]> {
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -276,7 +276,7 @@ export async function fetchCanvassablePRs(): Promise<PRRow[]> {
 }
 
 export async function fetchCanvassablePRsByDivision(
-  divisionId: number,
+  divisionId: number
 ): Promise<PRRow[]> {
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -309,7 +309,7 @@ export async function fetchPRStatuses(): Promise<PRStatusRow[]> {
 
 // Fetch PR header and items by header id
 export async function fetchPRWithItemsById(
-  prId: string,
+  prId: string
 ): Promise<{ header: PRRow; items: PRItemRow[] }> {
   let headerResp = await supabase
     .from("purchase_requests")
@@ -329,7 +329,7 @@ export async function fetchPRWithItemsById(
   const { data: items, error: iErr } = await supabase
     .from("purchase_request_items")
     .select(
-      "id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id",
+      "id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id"
     )
     .eq("pr_id", (header as any).id ?? (header as any).pr_id);
   if (iErr) throw iErr;
@@ -356,7 +356,7 @@ export async function generatePRNumber(): Promise<string> {
 
 export async function insertPurchaseRequest(
   pr: Omit<PRRow, "id" | "created_at">,
-  items: Omit<PRItemRow, "id" | "pr_id">[],
+  items: Omit<PRItemRow, "id" | "pr_id">[]
 ): Promise<PRRow> {
   // Build payload with only defined, non-empty fields to avoid 400 from unknown/invalid values
   const base: Record<string, any> = {
@@ -392,7 +392,7 @@ export async function insertPurchaseRequest(
     const parentId = (data as any).id ?? (data as any).pr_id;
     if (!parentId)
       throw new Error(
-        "Insert succeeded but no primary key was returned for purchase_requests",
+        "Insert succeeded but no primary key was returned for purchase_requests"
       );
     const { error: itemsError } = await supabase
       .from("purchase_request_items")
@@ -407,7 +407,7 @@ export async function insertPurchaseRequest(
 export async function insertProposalForPR(
   prId: string,
   proposalNo: string,
-  divisionId?: number,
+  divisionId?: number
 ): Promise<void> {
   if (!proposalNo) return;
   const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
@@ -432,7 +432,7 @@ export async function setPRNumber(prId: string, prNo: string): Promise<PRRow> {
 export async function updatePurchaseRequest(
   id: string,
   pr: Partial<Omit<PRRow, "id" | "pr_no" | "created_at">>,
-  items: Omit<PRItemRow, "id" | "pr_id">[],
+  items: Omit<PRItemRow, "id" | "pr_id">[]
 ): Promise<PRRow> {
   // Build update payload — only include defined, non-empty fields
   const patch: Record<string, any> = {};
@@ -558,7 +558,7 @@ export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
  * the correct canvass stage from pr_status.id without a second query.
  */
 export async function fetchPRMetaByNo(
-  prNo: string,
+  prNo: string
 ): Promise<{ id: string; status_id: number } | null> {
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -600,7 +600,7 @@ export const CANVASS_PR_STATUS: Record<string, number> = {
  */
 export async function updatePRStatus(
   prId: string,
-  statusId: number,
+  statusId: number
 ): Promise<void> {
   const { error } = await supabase
     .from("purchase_requests")
@@ -611,7 +611,7 @@ export async function updatePRStatus(
 
 export async function ensureCanvassSession(
   prId: string,
-  initial?: Partial<CanvassSessionRow>,
+  initial?: Partial<CanvassSessionRow>
 ): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
@@ -640,7 +640,7 @@ export async function ensureCanvassSession(
 
 export async function updateCanvassStage(
   sessionId: string,
-  stage: string,
+  stage: string
 ): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
@@ -654,7 +654,7 @@ export async function updateCanvassStage(
 
 export async function updateCanvassSessionMeta(
   sessionId: string,
-  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>,
+  patch: Partial<Pick<CanvassSessionRow, "deadline" | "bac_no" | "status">>
 ): Promise<CanvassSessionRow> {
   const { data, error } = await supabase
     .from("canvass_sessions")
@@ -667,7 +667,7 @@ export async function updateCanvassSessionMeta(
 }
 
 export async function fetchDivisionIdByName(
-  name: string,
+  name: string
 ): Promise<number | null> {
   const { data, error } = await supabase
     .from("divisions")
@@ -684,7 +684,7 @@ export async function insertAssignmentsForDivisions(
     division_id: number;
     canvasser_id?: number;
     released_at?: string;
-  }>,
+  }>
 ): Promise<CanvasserAssignmentRow[]> {
   if (!assignments.length) return [];
   const rows = assignments.map((a) => ({
@@ -705,7 +705,7 @@ export async function insertAssignmentsForDivisions(
 export async function markAssignmentReturned(
   sessionId: string,
   division_id: number,
-  returned_at?: string,
+  returned_at?: string
 ): Promise<CanvasserAssignmentRow> {
   const { data, error } = await supabase
     .from("canvasser_assignments")
@@ -725,7 +725,7 @@ export async function insertAssignmentReleased(
   sessionId: string,
   division_id: number,
   canvasser_id?: number | null,
-  released_at?: string,
+  released_at?: string
 ): Promise<CanvasserAssignmentRow> {
   const now = released_at ?? new Date().toISOString();
   const { data, error } = await supabase
@@ -748,7 +748,7 @@ export async function updateAssignmentReleased(
   sessionId: string,
   division_id: number,
   canvasser_id?: number | null,
-  released_at?: string,
+  released_at?: string
 ): Promise<CanvasserAssignmentRow> {
   const now = released_at ?? new Date().toISOString();
   const { data, error } = await supabase
@@ -769,7 +769,7 @@ export async function updateAssignmentReleased(
 
 export async function insertSupplierQuotesForSession(
   sessionId: string,
-  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>,
+  quotes: Array<Omit<CanvassEntryRow, "id" | "session_id">>
 ): Promise<CanvassEntryRow[]> {
   if (!quotes.length) return [];
   const rows = quotes.map((q) => ({ ...q, session_id: sessionId }));
@@ -782,7 +782,7 @@ export async function insertSupplierQuotesForSession(
 }
 
 export async function fetchAssignmentsForSession(
-  sessionId: string,
+  sessionId: string
 ): Promise<CanvasserAssignmentRow[]> {
   const { data, error } = await supabase
     .from("canvasser_assignments")
@@ -793,7 +793,7 @@ export async function fetchAssignmentsForSession(
 }
 
 export async function fetchQuotesForSession(
-  sessionId: string,
+  sessionId: string
 ): Promise<CanvassEntryRow[]> {
   const { data, error } = await supabase
     .from("canvass_entries")
@@ -805,7 +805,7 @@ export async function fetchQuotesForSession(
 
 export async function insertBACResolution(
   sessionId: string,
-  payload: Omit<BACResolutionRow, "id" | "session_id">,
+  payload: Omit<BACResolutionRow, "id" | "session_id">
 ): Promise<BACResolutionRow> {
   const { data, error } = await supabase
     .from("bac_resolution")
@@ -818,7 +818,7 @@ export async function insertBACResolution(
 
 export async function insertAAAForSession(
   sessionId: string,
-  payload: Omit<AAADocumentRow, "id" | "session_id">,
+  payload: Omit<AAADocumentRow, "id" | "session_id">
 ): Promise<AAADocumentRow> {
   const { data, error } = await supabase
     .from("aaa_documents")
@@ -865,7 +865,7 @@ export interface OrsEntryRow {
 // ── Fetch all budget rows for a fiscal year, joined with division name ────────
 
 export async function fetchBudgets(
-  fiscalYear: number,
+  fiscalYear: number
 ): Promise<DivisionBudgetRow[]> {
   const { data, error } = await supabase
     .from("division_budgets")
@@ -881,7 +881,7 @@ export async function fetchBudgets(
 
 export async function fetchBudgetByDivision(
   divisionId: number,
-  fiscalYear: number,
+  fiscalYear: number
 ): Promise<DivisionBudgetRow | null> {
   const { data, error } = await supabase
     .from("division_budgets")
@@ -903,7 +903,7 @@ export async function insertDivisionBudget(
   divisionId: number,
   fiscalYear: number,
   allocated: number,
-  notes?: string,
+  notes?: string
 ): Promise<DivisionBudgetRow> {
   const { data, error } = await supabase
     .from("division_budgets")
@@ -927,7 +927,7 @@ export async function updateDivisionBudget(
   id: string,
   fiscalYear: number,
   allocated: number,
-  notes?: string,
+  notes?: string
 ): Promise<DivisionBudgetRow> {
   const { data, error } = await supabase
     .from("division_budgets")
@@ -951,7 +951,7 @@ export async function updateDivisionBudget(
 
 export async function fetchOrsEntries(
   fiscalYear: number,
-  divisionId?: number,
+  divisionId?: number
 ): Promise<OrsEntryRow[]> {
   let q = supabase
     .from("ors_entries")
@@ -968,10 +968,7 @@ export async function fetchOrsEntries(
 }
 
 export async function insertOrsEntry(
-  entry: Omit<
-    OrsEntryRow,
-    "id" | "created_at" | "updated_at" | "division_name"
-  >,
+  entry: Omit<OrsEntryRow, "id" | "created_at" | "updated_at" | "division_name">
 ): Promise<OrsEntryRow> {
   const { data, error } = await supabase
     .from("ors_entries")
@@ -988,7 +985,7 @@ export async function insertOrsEntry(
 export async function updateOrsStatus(
   orsId: string,
   status: OrsEntryRow["status"],
-  approvedBy?: number,
+  approvedBy?: number
 ): Promise<OrsEntryRow> {
   const patch: Record<string, any> = { status };
   if (approvedBy !== undefined) patch.approved_by = approvedBy;
@@ -1012,7 +1009,7 @@ export async function updateOrsEntry(
       OrsEntryRow,
       "ors_no" | "pr_no" | "amount" | "status" | "notes" | "approved_by"
     >
-  >,
+  >
 ): Promise<OrsEntryRow> {
   const { data, error } = await supabase
     .from("ors_entries")
@@ -1084,17 +1081,17 @@ export interface CanvassUserRow {
  * with actual End Users (role 6) and Canvassers (role 7) from the DB.
  */
 export async function fetchUsersByRole(
-  roleIds: number[],
+  roleIds: number[]
 ): Promise<CanvassUserRow[]> {
   const { data, error } = await supabase
     .from("users")
-    .select("id, username, role_id, division_id, divisions(division_name)")
+    .select("id, fullname, role_id, division_id, divisions(division_name)")
     .in("role_id", roleIds)
-    .order("username");
+    .order("fullname");
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
     id: r.id,
-    username: r.username,
+    username: r.fullname,
     role_id: r.role_id,
     division_id: r.division_id ?? null,
     division_name: r.divisions?.division_name ?? null,
@@ -1137,7 +1134,7 @@ export async function insertRemark(
   prId: number | string,
   userId: number | string,
   remark: string,
-  status_flag_Id: number | null,
+  status_flag_Id: number | null
 ): Promise<RemarkRow> {
   const { data, error } = await supabase
     .from("remarks")
@@ -1148,7 +1145,7 @@ export async function insertRemark(
       status_flag_id: status_flag_Id ?? null,
     })
     .select(
-      "id, pr_id, user_id, remark, status_flag_id, created_at, status_flag(*)",
+      "id, pr_id, user_id, remark, status_flag_id, created_at, status_flag(*)"
     )
     .single();
   if (error) throw error;
@@ -1168,12 +1165,12 @@ export async function insertRemark(
  * Joins users(username) and status_flag table.
  */
 export async function fetchRemarksByPR(
-  prId: number | string,
+  prId: number | string
 ): Promise<RemarkRow[]> {
   const { data, error } = await supabase
     .from("remarks")
     .select(
-      "id, pr_id, user_id, remark, status_flag_id, created_at, users(username), status_flag(*)",
+      "id, pr_id, user_id, remark, status_flag_id, created_at, users(fullname), status_flag(*)"
     )
     .eq("pr_id", prId)
     .order("created_at", { ascending: false });
@@ -1185,7 +1182,7 @@ export async function fetchRemarksByPR(
     remark: r.remark,
     status_flag_id: r.status_flag_id,
     created_at: r.created_at,
-    username: r.users?.username ?? undefined,
+    username: r.users?.fullname ?? undefined,
     status_flag: r.status_flag ?? undefined,
   })) as RemarkRow[];
 }
@@ -1195,12 +1192,12 @@ export async function fetchRemarksByPR(
  * Returns null if none exist.
  */
 export async function fetchLatestRemarkByPR(
-  prId: number | string,
+  prId: number | string
 ): Promise<RemarkRow | null> {
   const { data, error } = await supabase
     .from("remarks")
     .select(
-      "id, pr_id, user_id, remark, status_flag_id, created_at, users(username), status_flag(*)",
+      "id, pr_id, user_id, remark, status_flag_id, created_at, users(fullname), status_flag(*)"
     )
     .eq("pr_id", prId)
     .order("created_at", { ascending: false })
@@ -1214,7 +1211,7 @@ export async function fetchLatestRemarkByPR(
     remark: (data as any).remark,
     status_flag_id: (data as any).status_flag_id,
     created_at: (data as any).created_at,
-    username: (data as any).users?.username ?? undefined,
+    username: (data as any).users?.fullname ?? undefined,
     status_flag: (data as any).status_flag ?? undefined,
   };
 }
@@ -1235,10 +1232,9 @@ export async function deleteRemark(remarkId: number): Promise<void> {
  * Used by the user management screen.
  */
 export interface UserRow {
-  user_id: string;
+  username: string; // login id
   id?: string;
-  username: string;
-  designation: string | null;
+  fullname: string;
   password: string;
   division_id: number | null;
   role_id: number;
@@ -1254,10 +1250,9 @@ export async function fetchAllUsers(): Promise<UserRow[]> {
     .from("users")
     .select(
       `
-      user_id,
       id,
       username,
-      designation,
+      fullname,
       password,
       division_id,
       role_id,
@@ -1265,17 +1260,16 @@ export async function fetchAllUsers(): Promise<UserRow[]> {
       created_at,
       divisions(division_name),
       roles(role_name)
-    `,
+    `
     )
-    .order("username");
+    .order("fullname");
 
   if (error) throw error;
 
   return (data ?? []).map((r: any) => ({
-    user_id: r.user_id,
     id: r.id,
     username: r.username,
-    designation: r.designation ?? null,
+    fullname: r.fullname,
     password: r.password,
     division_id: r.division_id ?? null,
     role_id: r.role_id,
@@ -1294,7 +1288,7 @@ export async function updateLastLogin(userId: string): Promise<void> {
   const { error } = await supabase
     .from("users")
     .update({ last_login: new Date().toISOString() })
-    .eq("user_id", userId);
+    .eq("username", userId);
 
   if (error) throw error;
 }
@@ -1322,16 +1316,15 @@ export async function fetchAllRoles(): Promise<RoleRow[]> {
  * Create a new user.
  */
 export async function createUser(
-  user: Omit<UserRow, "id" | "created_at" | "division_name" | "role_name">,
+  user: Omit<UserRow, "id" | "created_at" | "division_name" | "role_name">
 ): Promise<UserRow> {
   const { data, error } = await supabase
     .from("users")
     .insert([
       {
-        user_id: user.user_id,
         username: user.username,
+        fullname: user.fullname,
         password: user.password,
-        designation: user.designation ?? null,
         division_id: user.division_id ?? null,
         role_id: user.role_id,
       },
@@ -1354,12 +1347,12 @@ export async function updateUser(
   userId: string,
   patch: Partial<
     Omit<UserRow, "id" | "created_at" | "division_name" | "role_name">
-  >,
+  >
 ): Promise<UserRow> {
   const { data, error } = await supabase
     .from("users")
     .update(patch)
-    .eq("user_id", userId)
+    .eq("username", userId)
     .select()
     .single();
 
@@ -1371,7 +1364,10 @@ export async function updateUser(
  * Delete a user by user_id.
  */
 export async function deleteUser(userId: string): Promise<void> {
-  const { error } = await supabase.from("users").delete().eq("user_id", userId);
+  const { error } = await supabase
+    .from("users")
+    .delete()
+    .eq("username", userId);
 
   if (error) throw error;
 }

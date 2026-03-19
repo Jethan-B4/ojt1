@@ -34,8 +34,8 @@ export default function DeleteUserModal({
     setDeleting(true);
     setError(null);
     try {
-      await deleteUser(user.user_id);
-      onDeleted(user.user_id);
+      await deleteUser(user.username);
+      onDeleted(user.username);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete user");
@@ -55,7 +55,8 @@ export default function DeleteUserModal({
           alignItems: "center",
           justifyContent: "center",
           paddingHorizontal: 24,
-        }}>
+        }}
+      >
         <View
           style={{
             backgroundColor: "#ffffff",
@@ -65,7 +66,8 @@ export default function DeleteUserModal({
             width: "100%",
             maxWidth: 360,
             gap: 16,
-          }}>
+          }}
+        >
           {/* Icon */}
           <View
             style={{
@@ -76,7 +78,8 @@ export default function DeleteUserModal({
               alignItems: "center",
               justifyContent: "center",
               alignSelf: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name="warning" size={28} color="#dc2626" />
           </View>
 
@@ -87,7 +90,8 @@ export default function DeleteUserModal({
               fontWeight: "800",
               color: "#111827",
               textAlign: "center",
-            }}>
+            }}
+          >
             Delete User?
           </Text>
 
@@ -98,10 +102,11 @@ export default function DeleteUserModal({
               color: "#6b7280",
               textAlign: "center",
               lineHeight: 20,
-            }}>
+            }}
+          >
             Are you sure you want to delete{" "}
             <Text style={{ fontWeight: "700", color: "#111827" }}>
-              {user.username}
+              {user.fullname ?? user.username}
             </Text>
             ? This action cannot be undone.
           </Text>
@@ -116,7 +121,8 @@ export default function DeleteUserModal({
                 borderRadius: 10,
                 paddingHorizontal: 12,
                 paddingVertical: 10,
-              }}>
+              }}
+            >
               <Text style={{ color: "#dc2626", fontSize: 12 }}>{error}</Text>
             </View>
           )}
@@ -127,7 +133,8 @@ export default function DeleteUserModal({
               flexDirection: "row",
               gap: 10,
               marginTop: 8,
-            }}>
+            }}
+          >
             <TouchableOpacity
               onPress={onClose}
               disabled={deleting}
@@ -137,13 +144,15 @@ export default function DeleteUserModal({
                 borderRadius: 10,
                 paddingVertical: 12,
                 alignItems: "center",
-              }}>
+              }}
+            >
               <Text
                 style={{
                   fontSize: 14,
                   fontWeight: "700",
                   color: "#6b7280",
-                }}>
+                }}
+              >
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -156,7 +165,8 @@ export default function DeleteUserModal({
                 borderRadius: 10,
                 paddingVertical: 12,
                 alignItems: "center",
-              }}>
+              }}
+            >
               {deleting ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
@@ -165,7 +175,8 @@ export default function DeleteUserModal({
                     fontSize: 14,
                     fontWeight: "700",
                     color: "#ffffff",
-                  }}>
+                  }}
+                >
                   Delete
                 </Text>
               )}
