@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
+import * as FileSystem from "expo-file-system/legacy";
+import { decode } from "base64-arraybuffer";
 import "react-native-url-polyfill/auto";
 
 const supabaseUrl =
@@ -1223,6 +1225,111 @@ export async function fetchLatestRemarkByPR(
 export async function deleteRemark(remarkId: number): Promise<void> {
   const { error } = await supabase.from("remarks").delete().eq("id", remarkId);
   if (error) throw error;
+}
+
+// ─── Storage: Upload PR-related files ─────────────────────────────────────────
+
+/**
+ * Upload a local file (file:// or content:// URI) to the 'pr_files' bucket
+ * and return its public URL.
+ *
+ * Approach:
+ *   1. Read the file as a base64 string via expo-file-system (avoids fetch(file://…) issues).
+ *   2. Decode base64 → ArrayBuffer via `base64-arraybuffer`'s `decode()`.
+ *      This is the officially recommended pattern for Supabase + Expo uploads
+ *      and sidesteps the broken `fetch("data:…")` behaviour in React Native.
+ *   3. Upload the ArrayBuffer directly to Supabase Storage.
+ *
+ * Dependencies (add if missing):
+ *   npx expo install expo-file-system
+ *   npm install base64-arraybuffer
+ *
+ * Note: Uses `expo-file-system/legacy` — required for Expo SDK 51+.
+ *   The top-level `expo-file-system` namespace deprecated `getInfoAsync`,
+ *   `readAsStringAsync`, and `EncodingType` in favour of the new File/Directory
+ *   class API. Importing from `/legacy` restores the old functional API.
+ *
+ * @param localUri    - Expo file URI, e.g. `file:///data/…/document.pdf`
+ * @param remotePath  - Destination path inside the bucket, e.g.
+ *                      `${prNo}/${Date.now()}-proposal.pdf`
+ *                      Must be unique per upload — always include a timestamp
+ *                      or UUID to prevent silent overwrites.
+ * @param contentType - MIME type, e.g. `"application/pdf"` or `"image/jpeg"`.
+ *                      Defaults to `"application/octet-stream"`.
+ * @param onProgress  - Optional callback fired at key stages (values: 10, 30, 100).
+ */
+export async function uploadPRFile(
+  localUri: string,
+  remotePath: string,
+  contentType?: string,
+  onProgress?: (percent: number) => void
+): Promise<{ path: string; publicUrl: string }> {
+  // ── 1. Resolve MIME type once ─────────────────────────────────────────────
+  const mimeType = contentType ?? "application/octet-stream";
+
+  try {
+    // ── 2. Validate: file must exist and be within the 20 MB limit ───────────
+    const info = await FileSystem.getInfoAsync(localUri);
+    if (!info.exists) {
+      throw new Error("Selected file no longer exists.");
+    }
+    if (typeof info.size === "number" && info.size > 20 * 1024 * 1024) {
+      throw new Error("File is too large. Maximum size is 20 MB.");
+    }
+
+    // ── 3. Read file as base64 string ────────────────────────────────────────
+    //    `FileSystem.EncodingType.Base64` was removed from the namespace in
+    //    expo-file-system v17+ (Expo SDK 51+). Use the string literal "base64"
+    //    directly — it is always accepted and requires no extra import.
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: "base64" as any,
+    });
+
+    onProgress?.(10); // file read complete
+
+    // ── 4. Decode base64 → ArrayBuffer ───────────────────────────────────────
+    //    `decode()` from `base64-arraybuffer` is the Supabase-recommended way
+    //    to prepare binary data for storage uploads in React Native / Expo.
+    const arrayBuffer = decode(base64);
+
+    onProgress?.(30); // buffer ready, upload starting
+
+    // ── 5. Upload ArrayBuffer to Supabase Storage ─────────────────────────────
+    //    `upsert: false` is intentional — it prevents silent overwrites.
+    //    A 409 "already exists" error means `remotePath` is not unique; the
+    //    caller should include a timestamp or UUID in the path.
+    const { data, error: uploadError } = await supabase.storage
+      .from("pr_files")
+      .upload(remotePath, arrayBuffer, {
+        contentType: mimeType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      if (
+        uploadError.message?.toLowerCase().includes("already exists") ||
+        (uploadError as any).statusCode === 409
+      ) {
+        throw new Error(
+          `A file already exists at "${remotePath}". ` +
+            `Include a timestamp or UUID in the path to make it unique.`
+        );
+      }
+      throw uploadError;
+    }
+
+    onProgress?.(100); // upload complete
+
+    // ── 6. Resolve and return the public URL ──────────────────────────────────
+    const { data: urlData } = supabase.storage
+      .from("pr_files")
+      .getPublicUrl(remotePath);
+
+    return { path: data.path, publicUrl: urlData.publicUrl };
+  } catch (e: any) {
+    const msg = e?.message ?? String(e);
+    throw new Error(`Upload failed: ${msg}`);
+  }
 }
 
 // ─── User Management ───────────────────────────────────────────────────────────

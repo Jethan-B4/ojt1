@@ -1,6 +1,5 @@
 /* eslint-disable import/namespace, import/no-named-as-default, import/no-named-as-default-member */
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import "../global-typography";
 import {
   createDrawerNavigator,
   DrawerContentScrollView,
@@ -9,6 +8,7 @@ import {
 import { Image } from "expo-image";
 import React, { useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
+import "../global-typography";
 import { useStatusBar } from "../StatusBarContext";
 
 import CalendarModal from "../(modals)/CalendarModal";
@@ -289,12 +289,12 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
               >
                 {currentUser.fullname}
               </Text>
-              <Text
+              {/* <Text
                 style={{ fontSize: 11, color: "#A7F3D0", marginTop: 1 }}
                 numberOfLines={1}
               >
                 {currentUser.role_name ?? currentUser.username}
-              </Text>
+              </Text> */}
             </View>
           </View>
 
@@ -337,11 +337,6 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             >
               {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
             </Text>
-            {/* <View style={{flexShrink: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#10B981", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-              <Text style={{ flexShrink: 1, alignSelf: "center", justifyContent: "center", fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
-                {currentUser.role_name ?? `Role ID ${currentUser.role_id}`}
-              </Text>
-            </View> */}
           </View>
 
           {/* Division */}

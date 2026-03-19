@@ -39,6 +39,8 @@ import {
     View,
 } from "react-native";
 import { useAuth } from "../AuthContext";
+import * as DocumentPicker from "expo-document-picker";
+import { uploadPRFile } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -671,22 +673,52 @@ function DivisionHeadModal({
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
       setRemarks("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     }
   }, [visible]);
+
+  const pickFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const f = res.assets[0];
+      setFileName(f.name ?? "attachment");
+      setFileUri(f.uri);
+      setFileType(f.mimeType);
+    } catch (e: any) {
+      Alert.alert("File error", e?.message ?? "Could not pick file.");
+    }
+  };
 
   const handleSign = async () => {
     if (!record || !remarks.trim()) return;
     setSaving(true);
     try {
+      let finalRemark = remarks.trim();
+      if (fileUri && fileName) {
+        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remote = `${record.prNo}/${Date.now()}-${safe}`;
+        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        finalRemark += `\nAttachment: ${uploaded.publicUrl}`;
+      }
       await insertRemark(
         record.id,
         currentUser!.id,
-        remarks,
+        finalRemark,
         getStatusFlagId(statusFlag),
       );
       const { error } = await supabase
@@ -744,6 +776,30 @@ function DivisionHeadModal({
                   multiline
                 />
               </Field>
+              <Field label="Attachment (optional)">
+                <TouchableOpacity
+                  onPress={pickFile}
+                  activeOpacity={0.8}
+                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
+                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
+                  }`}>
+                  <Text className="text-[13px] font-semibold text-gray-700">
+                    {fileName ?? "Tap to attach a file"}
+                  </Text>
+                  {fileName && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFileName(null);
+                        setFileUri(null);
+                        setFileType(undefined);
+                      }}
+                      hitSlop={8}
+                      className="mt-1">
+                      <Text className="text-[11px] text-red-500">Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              </Field>
             </ScrollView>
           )}
           <ModalFooter
@@ -784,6 +840,9 @@ function BACModal({
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
@@ -791,18 +850,45 @@ function BACModal({
       setAppNo("");
       setCertNotes("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     }
   }, [visible]);
+
+  const pickFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const f = res.assets[0];
+      setFileName(f.name ?? "attachment");
+      setFileUri(f.uri);
+      setFileType(f.mimeType);
+    } catch (e: any) {
+      Alert.alert("File error", e?.message ?? "Could not pick file.");
+    }
+  };
 
   const handleCertify = async () => {
     if (!record || !assignedPR.trim()) return;
     setSaving(true);
     try {
-      if (certNotes.trim()) {
+      let finalNotes = certNotes.trim();
+      if (fileUri && fileName) {
+        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remote = `${record.prNo}/${Date.now()}-${safe}`;
+        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        finalNotes = `${finalNotes ? finalNotes + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
+      }
+      if (finalNotes) {
         await insertRemark(
           record.id,
           currentUser!.id,
-          certNotes,
+          finalNotes,
           getStatusFlagId(statusFlag),
         );
       }
@@ -879,6 +965,30 @@ function BACModal({
                   multiline
                 />
               </Field>
+              <Field label="Attachment (optional)">
+                <TouchableOpacity
+                  onPress={pickFile}
+                  activeOpacity={0.8}
+                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
+                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
+                  }`}>
+                  <Text className="text-[13px] font-semibold text-gray-700">
+                    {fileName ?? "Tap to attach a file"}
+                  </Text>
+                  {fileName && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFileName(null);
+                        setFileUri(null);
+                        setFileType(undefined);
+                      }}
+                      hitSlop={8}
+                      className="mt-1">
+                      <Text className="text-[11px] text-red-500">Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              </Field>
             </ScrollView>
           )}
           <ModalFooter
@@ -919,6 +1029,9 @@ function BudgetModal({
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
@@ -926,6 +1039,9 @@ function BudgetModal({
       setPapCode("");
       setEarmarkNote("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     }
   }, [visible]);
 
@@ -939,11 +1055,18 @@ function BudgetModal({
     if (!record || !budgetNo.trim() || !papCode.trim()) return;
     setSaving(true);
     try {
-      if (earmarkNote.trim()) {
+      let finalNote = earmarkNote.trim();
+      if (fileUri && fileName) {
+        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remote = `${record.prNo}/${Date.now()}-${safe}`;
+        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        finalNote = `${finalNote ? finalNote + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
+      }
+      if (finalNote) {
         await insertRemark(
           record.id,
           currentUser!.id,
-          earmarkNote,
+          finalNote,
           getStatusFlagId(statusFlag),
         );
       }
@@ -1020,6 +1143,45 @@ function BudgetModal({
                   multiline
                 />
               </Field>
+              <Field label="Attachment (optional)">
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      const res = await DocumentPicker.getDocumentAsync({
+                        type: "*/*",
+                        multiple: false,
+                        copyToCacheDirectory: true,
+                      });
+                      if (res.canceled || !res.assets?.length) return;
+                      const f = res.assets[0];
+                      setFileName(f.name ?? "attachment");
+                      setFileUri(f.uri);
+                      setFileType(f.mimeType);
+                    } catch (e: any) {
+                      Alert.alert("File error", e?.message ?? "Could not pick file.");
+                    }
+                  }}
+                  activeOpacity={0.8}
+                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
+                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
+                  }`}>
+                  <Text className="text-[13px] font-semibold text-gray-700">
+                    {fileName ?? "Tap to attach a file"}
+                  </Text>
+                  {fileName && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFileName(null);
+                        setFileUri(null);
+                        setFileType(undefined);
+                      }}
+                      hitSlop={8}
+                      className="mt-1">
+                      <Text className="text-[11px] text-red-500">Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              </Field>
             </ScrollView>
           )}
           <ModalFooter
@@ -1058,11 +1220,17 @@ function PARPOModal({
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (visible) {
       setNotes("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     }
   }, [visible]);
 
@@ -1070,11 +1238,18 @@ function PARPOModal({
     if (!record) return;
     setSaving(true);
     try {
-      if (notes.trim()) {
+      let final = notes.trim();
+      if (fileUri && fileName) {
+        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remote = `${record.prNo}/${Date.now()}-${safe}`;
+        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        final = `${final ? final + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
+      }
+      if (final) {
         await insertRemark(
           record.id,
           currentUser!.id,
-          notes,
+          final,
           getStatusFlagId(statusFlag),
         );
       }
@@ -1132,6 +1307,45 @@ function PARPOModal({
                   placeholder="e.g. Approved. Proceed to canvassing."
                   multiline
                 />
+              </Field>
+              <Field label="Attachment (optional)">
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      const res = await DocumentPicker.getDocumentAsync({
+                        type: "*/*",
+                        multiple: false,
+                        copyToCacheDirectory: true,
+                      });
+                      if (res.canceled || !res.assets?.length) return;
+                      const f = res.assets[0];
+                      setFileName(f.name ?? "attachment");
+                      setFileUri(f.uri);
+                      setFileType(f.mimeType);
+                    } catch (e: any) {
+                      Alert.alert("File error", e?.message ?? "Could not pick file.");
+                    }
+                  }}
+                  activeOpacity={0.8}
+                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
+                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-50 border-gray-300"
+                  }`}>
+                  <Text className="text-[13px] font-semibold text-gray-700">
+                    {fileName ?? "Tap to attach a file"}
+                  </Text>
+                  {fileName && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFileName(null);
+                        setFileUri(null);
+                        setFileType(undefined);
+                      }}
+                      hitSlop={8}
+                      className="mt-1">
+                      <Text className="text-[11px] text-red-500">Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
               </Field>
             </ScrollView>
           )}

@@ -569,7 +569,8 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, currentUser }
   const isHighValue = total >= HIGH_VALUE_THRESHOLD;
   const hasItems    = form.items.some((i) => i.desc && i.qty && i.price);
   const hvComplete  = !isHighValue || (!!form.budgetNumber && !!form.papCode);
-  const isValid     = hasItems && hvComplete && !!form.officeSection && !!form.purpose && !!form.proposalNumber;
+  const requiresProposal = total >= HIGH_VALUE_THRESHOLD;
+  const isValid     = hasItems && hvComplete && !!form.officeSection && !!form.purpose && (!requiresProposal || !!form.proposalNumber);
 
   useEffect(() => {
     if (isHighValue && !prevHighValue.current) {
@@ -735,11 +736,15 @@ export function PurchaseRequestModal({ visible, onClose, onSubmit, currentUser }
             <ReadonlyInput value={form.officeSection || currentUser?.division_name || "—"} />
           </Field>
 
-          <SectionLabel>Proposal</SectionLabel>
-          <Field label="Proposal Number" required hint="Required for all PRs">
-            <StyledInput value={form.proposalNumber} onChangeText={(v) => setField("proposalNumber", v)}
-              placeholder="e.g. 2026-PROP-00123" />
-          </Field>
+          {isHighValue && (
+            <>
+              <SectionLabel>Proposal</SectionLabel>
+              <Field label="Proposal Number" required hint="Required for high-value PRs">
+                <StyledInput value={form.proposalNumber} onChangeText={(v) => setField("proposalNumber", v)}
+                  placeholder="e.g. 2026-PROP-00123" />
+              </Field>
+            </>
+          )}
 
           <SectionLabel>Items Requested</SectionLabel>
           {form.items.map((item) => (

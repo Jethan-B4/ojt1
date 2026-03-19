@@ -1,6 +1,7 @@
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
+import * as DocumentPicker from "expo-document-picker";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -42,6 +43,7 @@ import {
   insertPurchaseRequest,
   insertRemark,
   supabase,
+  uploadPRFile,
   type PRRow,
   type PRStatusRow,
   type RemarkRow,
@@ -824,6 +826,9 @@ const RemarkSheet: React.FC<{
   const [history, setHistory] = useState<RemarkEntry[]>([]);
   const [loadingHist, setLoadingHist] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | undefined>(undefined);
   const scrollRef = useRef<ScrollView>(null);
 
   // Load history whenever sheet opens for a PR
@@ -864,23 +869,50 @@ const RemarkSheet: React.FC<{
     if (!visible) {
       setRemarksText("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     }
   }, [visible]);
+
+  const handlePickFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const f = res.assets[0];
+      setFileName(f.name ?? "attachment");
+      setFileUri(f.uri);
+      setFileType(f.mimeType);
+    } catch (e: any) {
+      Alert.alert("File error", e?.message ?? "Could not pick file.");
+    }
+  };
 
   const handleSubmit = async () => {
     if (!record || !remarksText.trim()) return;
     setSaving(true);
     try {
+      let finalRemark = remarksText.trim();
+      if (fileUri && fileName) {
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remote = `${record.prNo}/${Date.now()}-${safeName}`;
+        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        finalRemark += `\nAttachment: ${uploaded.publicUrl}`;
+      }
       await insertRemark(
         record.id,
         currentUser?.id,
-        remarksText,
+        finalRemark,
         getStatusFlagId(statusFlag)
       );
       // Optimistically prepend to history
       const newEntry: RemarkEntry = {
         id: Date.now(),
-        remark: remarksText.trim(),
+        remark: finalRemark,
         status_flag_id: getStatusFlagId(statusFlag),
         created_at: new Date().toISOString(),
         user_id: currentUser?.id ?? null,
@@ -889,6 +921,9 @@ const RemarkSheet: React.FC<{
       setHistory((prev) => [newEntry, ...prev]);
       setRemarksText("");
       setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType(undefined);
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not save remark.");
     } finally {
@@ -1000,6 +1035,40 @@ const RemarkSheet: React.FC<{
                       className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
                       style={{ minHeight: 80, textAlignVertical: "top" }}
                     />
+                  </View>
+                  {/* Attachment */}
+                  <View>
+                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                      Attachment (optional)
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handlePickFile}
+                      activeOpacity={0.8}
+                      className={`rounded-xl border-2 border-dashed px-4 py-3 items-center ${
+                        fileName
+                          ? "border-emerald-400 bg-emerald-50"
+                          : "border-gray-300 bg-gray-50"
+                      }`}
+                    >
+                      <Text className="text-[12.5px] font-semibold text-gray-700">
+                        {fileName ?? "Tap to attach a file"}
+                      </Text>
+                      {fileName && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setFileName(null);
+                            setFileUri(null);
+                            setFileType(undefined);
+                          }}
+                          hitSlop={8}
+                          className="mt-1"
+                        >
+                          <Text className="text-[10.5px] text-red-500">
+                            Remove
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </TouchableOpacity>
                   </View>
                   {/* Submit */}
                   <TouchableOpacity

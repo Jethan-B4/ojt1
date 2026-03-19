@@ -451,7 +451,8 @@ export default function EditPRModal({ visible, record, onClose, onSave, currentU
   );
   const isHighValue = total >= HIGH_VALUE_THRESHOLD;
   const hvComplete  = !isHighValue || (!!budgetNumber && !!papCode);
-  const isValid     = !!officeSection && !!purpose && !!proposalNo && items.some((i) => i.desc && i.qty && i.price) && hvComplete;
+  const requiresProposal = total >= HIGH_VALUE_THRESHOLD;
+  const isValid     = !!officeSection && !!purpose && (!requiresProposal || !!proposalNo) && items.some((i) => i.desc && i.qty && i.price) && hvComplete;
 
   const handleSave = useCallback(async () => {
     if (!record) return;
@@ -660,10 +661,12 @@ export default function EditPRModal({ visible, record, onClose, onSave, currentU
             </View>
           </View>
 
-          <Field label="Proposal Number" required hint="Required for all PRs">
-            <StyledInput value={proposalNo} onChangeText={setProposalNo}
-              placeholder="e.g. 2026-PROP-00123" />
-          </Field>
+          {isHighValue && (
+            <Field label="Proposal Number" required hint="Required for high-value PRs">
+              <StyledInput value={proposalNo} onChangeText={setProposalNo}
+                placeholder="e.g. 2026-PROP-00123" />
+            </Field>
+          )}
 
           <Field label="Entity Name" required>
             <StyledInput value={entityName} onChangeText={setEntityName}
