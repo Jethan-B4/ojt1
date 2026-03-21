@@ -24,6 +24,7 @@ import {
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Platform,
@@ -631,9 +632,11 @@ export default function ProcurementLog({ navigation }: any) {
     [isEndUser, divisionId],
   );
 
-  useEffect(() => {
-    loadPRs();
-  }, [loadPRs]);
+  useFocusEffect(
+    useCallback(() => {
+      loadPRs();
+    }, [loadPRs]),
+  );
 
   // ── Lazy-load remarks on expand ───────────────────────────────────────────────
   const handleToggle = useCallback(

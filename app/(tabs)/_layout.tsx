@@ -9,7 +9,6 @@ import { Image } from "expo-image";
 import React, { useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import "../global-typography";
-import { useStatusBar } from "../StatusBarContext";
 
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
@@ -28,6 +27,7 @@ export default function TabLayout() {
   return (
     <Drawer.Navigator
       initialRouteName="Dashboard"
+      detachInactiveScreens={true}
       screenOptions={{
         drawerActiveTintColor: "#ffffff",
         drawerActiveBackgroundColor: "#10B981",
@@ -188,8 +188,6 @@ function BrandHeader({ navigation }: { navigation: any }) {
 function CustomDrawer(props: any & { onSignOut: () => void }) {
   const { currentUser } = useAuth();
   const { onSignOut } = props;
-  const { visible: statusBarVisible, setVisible: setStatusBarVisible } =
-    useStatusBar();
   return (
     <DrawerContentScrollView
       {...props}

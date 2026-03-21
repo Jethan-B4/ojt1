@@ -4,39 +4,32 @@
  * DAR Procurement Dashboard — real-time Supabase data, role-aware views.
  *
  * Role routing:
- *   role_id 1  → AdminDashboard     — system-wide overview (all PRs, pipeline, KPIs)
- *   role_id 2  → ProcessorDashboard — Division Head: sees PRs pending their review (status_id 1)
- *   role_id 3  → ProcessorDashboard — BAC: sees PRs at status_id 2
- *   role_id 4  → ProcessorDashboard — Budget: sees PRs at status_id 3
- *   role_id 5  → ProcessorDashboard — PARPO: sees PRs at status_id 4
- *   role_id 6+ → EndUserDashboard   — own division's PRs only
- *
- * Status ID → approval step mapping:
- *   1 = Pending          (submitted, awaiting Division Head)
- *   2 = Division Head    (being reviewed by Div. Head)
- *   3 = BAC              (being reviewed by BAC)
- *   4 = Budget           (being reviewed by Budget Office)
- *   5 = PARPO            (awaiting final PARPO approval)
- *   6 = Approved         (Phase 1 complete)
+ *   role_id 1  → AdminDashboard      — system-wide KPIs, approval funnel, recent PRs
+ *   role_id 2  → ProcessorDashboard  — Division Head: queue of status_id 1 PRs
+ *   role_id 3  → ProcessorDashboard  — BAC: queue of status_id 2 PRs
+ *   role_id 4  → ProcessorDashboard  — Budget: queue of status_id 3 PRs
+ *   role_id 5  → ProcessorDashboard  — PARPO: queue of status_id 4 PRs
+ *   role_id 6+ → EndUserDashboard    — own division's PRs only
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useState } from "react";
 import {
-    ActivityIndicator,
-    Dimensions,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import type { PRRow, PRStatusRow } from "../../lib/supabase";
 import {
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
 
@@ -51,70 +44,19 @@ const CLR = {
   brand100: "#A7F3D0",
 } as const;
 
-/**
- * status_id → UI colour / label config.
- * Colours match the approval chain: yellow → blue → purple → orange → green → teal.
- */
 const STATUS_ID_CFG: Record<
   number,
   { bg: string; text: string; dot: string; label: string }
 > = {
   1: { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending" },
-  2: {
-    bg: "#eff6ff",
-    text: "#1e40af",
-    dot: "#3b82f6",
-    label: "Div. Head Review",
-  },
-  3: { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC Review" },
-  4: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget Review" },
-  5: {
-    bg: "#ecfdf5",
-    text: "#065f46",
-    dot: "#10b981",
-    label: "PARPO Approval",
-  },
+  2: { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6", label: "Div. Head" },
+  3: { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC" },
+  4: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget" },
+  5: { bg: "#ecfdf5", text: "#065f46", dot: "#10b981", label: "PARPO" },
   6: { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", label: "Approved" },
 };
 
-const STAGE_CFG = [
-  {
-    stage: 1,
-    label: "Request & Approval",
-    shortLabel: "Phase 1",
-    color: "#3b82f6",
-  },
-  {
-    stage: 2,
-    label: "Canvass & Evaluation",
-    shortLabel: "Phase 2",
-    color: "#f59e0b",
-  },
-  {
-    stage: 3,
-    label: "Order & Delivery",
-    shortLabel: "Phase 3",
-    color: "#10b981",
-  },
-  {
-    stage: 4,
-    label: "Payment & Closure",
-    shortLabel: "Phase 4",
-    color: "#8b5cf6",
-  },
-];
-
-/**
- * Maps each processor role_id to the status_id they are responsible for reviewing.
- * Division Head (2) reviews status_id 1 (Pending),
- * BAC (3) reviews status_id 2, and so on.
- */
-const ROLE_QUEUE_STATUS: Record<number, number> = {
-  2: 1,
-  3: 2,
-  4: 3,
-  5: 4,
-};
+const ROLE_QUEUE_STATUS: Record<number, number> = { 2: 1, 3: 2, 4: 3, 5: 4 };
 
 const ROLE_LABELS: Record<number, string> = {
   1: "Admin",
@@ -140,20 +82,11 @@ interface PRSummary {
   proposalNo: string;
 }
 
-interface StageCount {
-  stage: number;
-  label: string;
-  shortLabel: string;
-  count: number;
-  color: string;
-}
-
 interface StatCard {
   label: string;
   value: number | string;
-  sub: string;
-  subType: "up" | "warn" | "ok" | "info" | "neutral";
   icon: keyof typeof MaterialIcons.glyphMap;
+  accent: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -196,7 +129,6 @@ function rowToSummary(row: PRRow, statuses: PRStatusRow[]): PRSummary {
 
 // ─── Data hooks ───────────────────────────────────────────────────────────────
 
-/** Admin hook — all PRs system-wide + pr_status labels. */
 function useAdminData() {
   const [rows, setRows] = useState<PRRow[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
@@ -222,85 +154,46 @@ function useAdminData() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 8);
-
   const total = prs.length;
   const pending = prs.filter((p) => p.statusId === 1).length;
   const inProgress = prs.filter(
-    (p) => p.statusId >= 2 && p.statusId <= 4
+    (p) => p.statusId >= 2 && p.statusId <= 4,
   ).length;
   const atParpo = prs.filter((p) => p.statusId === 5).length;
   const approved = prs.filter((p) => p.statusId === 6).length;
-  const highValue = prs.filter((p) => p.isHighValue).length;
-
-  const thisWeek = (() => {
-    const ago = new Date();
-    ago.setDate(ago.getDate() - 7);
-    return rows.filter((r) => r.created_at && new Date(r.created_at) >= ago)
-      .length;
-  })();
 
   const statCards: StatCard[] = [
-    {
-      label: "Total PRs",
-      value: total,
-      sub: `+${thisWeek} this week`,
-      subType: "up",
-      icon: "description",
-    },
+    { label: "Total", value: total, icon: "description", accent: CLR.brand700 },
     {
       label: "Pending",
       value: pending,
-      sub: "Awaiting Div. Head review",
-      subType: "warn",
       icon: "pending-actions",
+      accent: "#d97706",
     },
     {
-      label: "In Approval Flow",
+      label: "In Flow",
       value: inProgress,
-      sub: "Div. Head → BAC → Budget",
-      subType: "info",
       icon: "autorenew",
+      accent: "#3b82f6",
     },
     {
-      label: "Awaiting PARPO",
+      label: "At PARPO",
       value: atParpo,
-      sub: "Final approval step",
-      subType: "warn",
       icon: "verified-user",
+      accent: "#8b5cf6",
     },
     {
       label: "Approved",
       value: approved,
-      sub: "Phase 1 complete",
-      subType: "ok",
       icon: "check-circle",
-    },
-    {
-      label: "High-Value PRs",
-      value: highValue,
-      sub: "Total cost > ₱10,000",
-      subType: "neutral",
-      icon: "star",
+      accent: "#16a34a",
     },
   ];
 
-  // All live PRs are in Phase 1; future phases would need additional tables.
-  const stages: StageCount[] = [
-    { ...STAGE_CFG[0], count: total },
-    { ...STAGE_CFG[1], count: 0 },
-    { ...STAGE_CFG[2], count: 0 },
-    { ...STAGE_CFG[3], count: 0 },
-  ];
-
-  // Approval funnel breakdown for the status chart.
   const statusBreakdown = [1, 2, 3, 4, 5, 6]
     .map((sid) => ({
       id: sid,
@@ -316,7 +209,6 @@ function useAdminData() {
     prs,
     recent,
     statCards,
-    stages,
     statusBreakdown,
     loading,
     error,
@@ -325,13 +217,8 @@ function useAdminData() {
   };
 }
 
-/**
- * Processor hook (role 2–5).
- * Fetches all PRs and surfaces the subset this role is responsible for.
- */
 function useProcessorData(roleId: number) {
   const queueStatusId = ROLE_QUEUE_STATUS[roleId] ?? 1;
-
   const [rows, setRows] = useState<PRRow[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -356,56 +243,45 @@ function useProcessorData(roleId: number) {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const queue = prs.filter((p) => p.statusId === queueStatusId);
   const forwarded = prs.filter((p) => p.statusId > queueStatusId);
   const approved = prs.filter((p) => p.statusId === 6).length;
+  const recentOther = prs
+    .filter((p) => p.statusId !== queueStatusId)
+    .slice(0, 6);
 
   const statCards: StatCard[] = [
     {
       label: "Action Required",
       value: queue.length,
-      sub: queue.length > 0 ? "PRs awaiting your review" : "Queue is clear",
-      subType: queue.length > 0 ? "warn" : "ok",
       icon: "pending-actions",
+      accent: queue.length > 0 ? "#d97706" : "#16a34a",
     },
     {
-      label: "Total System PRs",
+      label: "Total PRs",
       value: prs.length,
-      sub: "All divisions",
-      subType: "info",
       icon: "description",
+      accent: CLR.brand700,
     },
     {
       label: "Forwarded",
       value: forwarded.length,
-      sub: "Past your approval step",
-      subType: "up",
       icon: "forward",
+      accent: "#3b82f6",
     },
     {
-      label: "Fully Approved",
+      label: "Approved",
       value: approved,
-      sub: "Phase 1 complete",
-      subType: "ok",
       icon: "check-circle",
+      accent: "#16a34a",
     },
   ];
-
-  // Recent PRs that are NOT in this role's queue (read-only reference).
-  const recentOther = prs
-    .filter((p) => p.statusId !== queueStatusId)
-    .slice(0, 6);
 
   return {
     queue,
     recentOther,
     statCards,
-    totalCount: prs.length,
     loading,
     error,
     refresh: load,
@@ -414,7 +290,6 @@ function useProcessorData(roleId: number) {
   };
 }
 
-/** End-user hook — only their division's PRs. */
 function useEndUserData(divisionId: number | null) {
   const [rows, setRows] = useState<PRRow[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
@@ -442,10 +317,6 @@ function useEndUserData(divisionId: number | null) {
     }
   }, [divisionId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -458,45 +329,28 @@ function useEndUserData(divisionId: number | null) {
     {
       label: "My PRs",
       value: prs.length,
-      sub: "Total submitted",
-      subType: "info",
       icon: "description",
+      accent: CLR.brand700,
     },
     {
       label: "Pending",
       value: pending,
-      sub: "Awaiting Div. Head review",
-      subType: "warn",
       icon: "pending-actions",
+      accent: "#d97706",
     },
-    {
-      label: "In Approval Flow",
-      value: inFlow,
-      sub: "Being reviewed",
-      subType: "up",
-      icon: "autorenew",
-    },
+    { label: "In Flow", value: inFlow, icon: "autorenew", accent: "#3b82f6" },
     {
       label: "Approved",
       value: approved,
-      sub: "Phase 1 complete",
-      subType: "ok",
       icon: "check-circle",
+      accent: "#16a34a",
     },
   ];
 
-  return {
-    prs,
-    recent,
-    statCards,
-    loading,
-    error,
-    refresh: load,
-    lastRefresh,
-  };
+  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
 }
 
-// ─── Shared micro-components ─────────────────────────────────────────────────
+// ─── Micro-components ─────────────────────────────────────────────────────────
 
 function LoadingScreen() {
   return (
@@ -525,34 +379,27 @@ function ErrorBanner({
   return (
     <View
       style={{
-        margin: 16,
+        margin: 12,
         backgroundColor: "#fef2f2",
-        borderRadius: 12,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: "#fecaca",
-        padding: 14,
+        padding: 12,
         flexDirection: "row",
         alignItems: "center",
         gap: 10,
       }}
     >
-      <MaterialIcons name="error-outline" size={20} color="#dc2626" />
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#991b1b" }}>
-          Failed to load data
-        </Text>
-        <Text style={{ fontSize: 11.5, color: "#b91c1c", marginTop: 2 }}>
-          {message}
-        </Text>
-      </View>
+      <MaterialIcons name="error-outline" size={18} color="#dc2626" />
+      <Text style={{ flex: 1, fontSize: 12, color: "#991b1b" }}>{message}</Text>
       <TouchableOpacity
         onPress={onRetry}
         activeOpacity={0.8}
         style={{
           backgroundColor: "#dc2626",
-          paddingHorizontal: 12,
-          paddingVertical: 6,
-          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+          borderRadius: 7,
         }}
       >
         <Text style={{ fontSize: 11, fontWeight: "700", color: "#ffffff" }}>
@@ -565,10 +412,6 @@ function ErrorBanner({
 
 function LastRefreshedBadge({ time }: { time: Date | null }) {
   if (!time) return null;
-  const label = time.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   return (
     <View
       style={{
@@ -576,102 +419,83 @@ function LastRefreshedBadge({ time }: { time: Date | null }) {
         alignItems: "center",
         gap: 4,
         alignSelf: "flex-end",
-        paddingHorizontal: 16,
-        paddingTop: 6,
+        paddingHorizontal: 14,
+        paddingTop: 4,
         paddingBottom: 2,
       }}
     >
-      <MaterialIcons name="update" size={11} color="#9ca3af" />
-      <Text style={{ fontSize: 10.5, color: "#9ca3af" }}>Updated {label}</Text>
+      <MaterialIcons name="update" size={10} color="#9ca3af" />
+      <Text style={{ fontSize: 10, color: "#9ca3af" }}>
+        Updated{" "}
+        {time.toLocaleTimeString("en-PH", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </Text>
     </View>
   );
 }
 
-function StatPill({ card }: { card: StatCard }) {
-  const subColors: Record<string, { text: string; bg: string }> = {
-    up: { text: "#166534", bg: "#dcfce7" },
-    warn: { text: "#854d0e", bg: "#fef9c3" },
-    ok: { text: "#166534", bg: "#dcfce7" },
-    info: { text: "#1e40af", bg: "#dbeafe" },
-    neutral: { text: "#374151", bg: "#f3f4f6" },
-  };
-  const c = subColors[card.subType] ?? subColors.neutral;
+/**
+ * Compact stat tile — 4-per-row.
+ * Icon tinted with accent colour, large number, small uppercase label.
+ */
+function StatTile({ card }: { card: StatCard }) {
+  const tileW = (SCREEN_W - 12 * 2 - 6 * 4) / 4; // 4 cols, 12px side padding, 6px gaps
   return (
     <View
       style={{
+        width: tileW,
         backgroundColor: "#ffffff",
-        borderRadius: 16,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: "#e5e7eb",
-        padding: 16,
-        flex: 1,
-        minWidth: (SCREEN_W - 48) / 2,
+        paddingVertical: 10,
+        paddingHorizontal: 6,
+        alignItems: "center",
+        gap: 4,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowOpacity: 0.04,
+        shadowRadius: 3,
+        elevation: 1,
       }}
     >
       <View
         style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 8,
+          width: 26,
+          height: 26,
+          borderRadius: 7,
+          backgroundColor: card.accent + "18",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <View
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            backgroundColor: "#f0fdf4",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <MaterialIcons name={card.icon} size={18} color={CLR.brand900} />
-        </View>
-        <Text
-          style={{
-            fontSize: 10,
-            color: "#9ca3af",
-            fontWeight: "600",
-            textTransform: "uppercase",
-            letterSpacing: 0.5,
-            textAlign: "right",
-            maxWidth: "60%",
-          }}
-          numberOfLines={2}
-        >
-          {card.label}
-        </Text>
+        <MaterialIcons name={card.icon} size={14} color={card.accent} />
       </View>
       <Text
         style={{
-          fontSize: 32,
+          fontSize: 20,
           fontWeight: "800",
           color: CLR.brand900,
-          lineHeight: 36,
-          marginBottom: 6,
+          lineHeight: 24,
         }}
       >
         {card.value}
       </Text>
-      <View
+      <Text
         style={{
-          backgroundColor: c.bg,
-          paddingHorizontal: 8,
-          paddingVertical: 3,
-          borderRadius: 999,
-          alignSelf: "flex-start",
+          fontSize: 9,
+          fontWeight: "600",
+          color: "#9ca3af",
+          textAlign: "center",
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
         }}
+        numberOfLines={1}
       >
-        <Text style={{ fontSize: 11, fontWeight: "600", color: c.text }}>
-          {card.sub}
-        </Text>
-      </View>
+        {card.label}
+      </Text>
     </View>
   );
 }
@@ -691,24 +515,24 @@ function SectionHeader({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        paddingHorizontal: 16,
-        paddingTop: 20,
+        paddingHorizontal: 14,
+        paddingTop: 16,
         paddingBottom: 8,
       }}
     >
       <View style={{ flex: 1 }}>
         <Text
           style={{
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: "800",
             color: "#111827",
-            letterSpacing: -0.3,
+            letterSpacing: -0.2,
           }}
         >
           {title}
         </Text>
         {sub && (
-          <Text style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>
+          <Text style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 1 }}>
             {sub}
           </Text>
         )}
@@ -716,7 +540,7 @@ function SectionHeader({
       {onViewAll && (
         <TouchableOpacity onPress={onViewAll} hitSlop={8}>
           <Text
-            style={{ fontSize: 12, fontWeight: "600", color: CLR.brand700 }}
+            style={{ fontSize: 11.5, fontWeight: "600", color: CLR.brand700 }}
           >
             View all →
           </Text>
@@ -733,55 +557,29 @@ function StatusBadge({ statusId }: { statusId: number }) {
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 4,
+        gap: 3,
         backgroundColor: cfg.bg,
-        paddingHorizontal: 8,
-        paddingVertical: 3,
+        paddingHorizontal: 7,
+        paddingVertical: 2,
         borderRadius: 999,
       }}
     >
       <View
         style={{
-          width: 6,
-          height: 6,
-          borderRadius: 3,
+          width: 5,
+          height: 5,
+          borderRadius: 2.5,
           backgroundColor: cfg.dot,
         }}
       />
-      <Text style={{ fontSize: 10, fontWeight: "700", color: cfg.text }}>
+      <Text style={{ fontSize: 9.5, fontWeight: "700", color: cfg.text }}>
         {cfg.label}
       </Text>
     </View>
   );
 }
 
-function StageBadge({ stage }: { stage: number }) {
-  const cfg = STAGE_CFG[(stage - 1) % STAGE_CFG.length];
-  return (
-    <View
-      style={{
-        paddingHorizontal: 7,
-        paddingVertical: 2,
-        borderRadius: 6,
-        backgroundColor: cfg.color + "18",
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 9,
-          fontWeight: "700",
-          color: cfg.color,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-        }}
-      >
-        P{stage}
-      </Text>
-    </View>
-  );
-}
-
-/** Compact table row used in admin + processor views */
+/** Compact PR row — no stage badge, tighter padding */
 function PRTableRow({
   record,
   isEven,
@@ -798,15 +596,88 @@ function PRTableRow({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 14,
-        paddingVertical: 11,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
         backgroundColor: isEven ? "#ffffff" : "#f9fafb",
         borderBottomWidth: 1,
         borderBottomColor: "#f3f4f6",
         gap: 8,
       }}
     >
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: "700",
+            color: CLR.brand900,
+            fontFamily: MONO,
+          }}
+        >
+          {record.prNo}
+        </Text>
+        <Text style={{ fontSize: 10, color: "#6b7280" }} numberOfLines={1}>
+          {record.purpose}
+        </Text>
+      </View>
+      <StatusBadge statusId={record.statusId} />
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: "700",
+          color: "#374151",
+          fontFamily: MONO,
+          minWidth: 54,
+          textAlign: "right",
+        }}
+      >
+        ₱{record.totalCost.toLocaleString("en-PH")}
+      </Text>
+      <MaterialIcons name="chevron-right" size={14} color="#d1d5db" />
+    </TouchableOpacity>
+  );
+}
+
+/** Slim PR card for End-User — status pill + cost, no step tracker */
+function PRSummaryCard({
+  pr,
+  onPress,
+}: {
+  pr: PRSummary;
+  onPress: () => void;
+}) {
+  const cfg = statusCfgFor(pr.statusId);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={{
+        backgroundColor: "#ffffff",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#e5e7eb",
+        marginHorizontal: 12,
+        marginBottom: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 11,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 1,
+      }}
+    >
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: cfg.dot,
+        }}
+      />
+      <View style={{ flex: 1 }}>
         <Text
           style={{
             fontSize: 11.5,
@@ -815,426 +686,117 @@ function PRTableRow({
             fontFamily: MONO,
           }}
         >
-          {record.prNo}
+          {pr.prNo}
         </Text>
-        <Text style={{ fontSize: 10.5, color: "#6b7280" }} numberOfLines={1}>
-          {record.purpose}
-        </Text>
-      </View>
-      <View style={{ width: 68, alignItems: "center" }}>
         <Text
-          style={{
-            fontSize: 9.5,
-            fontWeight: "700",
-            color: CLR.brand700,
-            backgroundColor: "#ecfdf5",
-            borderRadius: 6,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-          }}
+          style={{ fontSize: 10.5, color: "#6b7280", marginTop: 1 }}
           numberOfLines={1}
         >
-          {record.section}
+          {pr.purpose}
         </Text>
       </View>
-      <View style={{ width: 90, alignItems: "center" }}>
-        <StatusBadge statusId={record.statusId} />
-      </View>
-      <StageBadge stage={1} />
-      <Text
-        style={{
-          fontSize: 10.5,
-          fontWeight: "700",
-          color: "#374151",
-          fontFamily: MONO,
-          width: 60,
-          textAlign: "right",
-        }}
-      >
-        ₱{record.totalCost.toLocaleString("en-PH")}
-      </Text>
-      <MaterialIcons name="chevron-right" size={16} color="#d1d5db" />
-    </TouchableOpacity>
-  );
-}
-
-/** Phase 1 step tracker — status_id drives which nodes are filled */
-const PR_STEPS = [
-  { key: "submitted", label: "Submitted", icon: "description" as const },
-  { key: "div_head", label: "Div. Head", icon: "how-to-reg" as const },
-  { key: "bac", label: "BAC", icon: "gavel" as const },
-  { key: "budget", label: "Budget", icon: "account-balance" as const },
-  { key: "parpo", label: "PARPO", icon: "verified" as const },
-];
-
-/**
- * status_id → active step index (0-based).
- *   1 → step 0 active (just submitted)
- *   2 → step 1 active (at Div. Head)
- *   …
- *   6 → all done
- */
-function statusIdToStep(statusId: number): number {
-  if (statusId >= 6) return PR_STEPS.length;
-  return Math.max(0, statusId - 1);
-}
-
-function PRTrackerCard({
-  pr,
-  onPress,
-}: {
-  pr: PRSummary;
-  onPress: () => void;
-}) {
-  const currentStep = statusIdToStep(pr.statusId);
-  const cfg = statusCfgFor(pr.statusId);
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      style={{
-        backgroundColor: "#ffffff",
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "#e5e7eb",
-        marginHorizontal: 12,
-        marginBottom: 12,
-        overflow: "hidden",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-        elevation: 2,
-      }}
-    >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: 16,
-          paddingTop: 14,
-          paddingBottom: 10,
-          borderBottomWidth: 1,
-          borderBottomColor: "#f3f4f6",
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text
-            style={{
-              fontSize: 12,
-              fontWeight: "700",
-              color: CLR.brand900,
-              fontFamily: MONO,
-            }}
-          >
-            {pr.prNo}
-          </Text>
-          <Text
-            style={{ fontSize: 11.5, color: "#6b7280", marginTop: 2 }}
-            numberOfLines={1}
-          >
-            {pr.purpose}
-          </Text>
-        </View>
+      <View style={{ alignItems: "flex-end", gap: 3 }}>
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
             backgroundColor: cfg.bg,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
+            paddingHorizontal: 7,
+            paddingVertical: 2,
             borderRadius: 999,
           }}
         >
-          <View
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: cfg.dot,
-            }}
-          />
-          <Text style={{ fontSize: 10, fontWeight: "700", color: cfg.text }}>
+          <Text style={{ fontSize: 9.5, fontWeight: "700", color: cfg.text }}>
             {cfg.label}
           </Text>
         </View>
+        <Text
+          style={{
+            fontSize: 10.5,
+            fontWeight: "700",
+            color: "#374151",
+            fontFamily: MONO,
+          }}
+        >
+          ₱{pr.totalCost.toLocaleString("en-PH")}
+        </Text>
       </View>
-
-      {/* Step tracker */}
-      <View style={{ paddingHorizontal: 14, paddingVertical: 14 }}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {PR_STEPS.map((step, i) => {
-            const done = i < currentStep;
-            const active = i === currentStep;
-            return (
-              <React.Fragment key={step.key}>
-                <View style={{ alignItems: "center", gap: 4 }}>
-                  <View
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      backgroundColor: done
-                        ? CLR.brand900
-                        : active
-                          ? "#ecfdf5"
-                          : "#f9fafb",
-                      borderWidth: active ? 2 : 1,
-                      borderColor: active
-                        ? CLR.brand500
-                        : done
-                          ? CLR.brand900
-                          : "#e5e7eb",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <MaterialIcons
-                      name={done ? "check" : step.icon}
-                      size={15}
-                      color={
-                        done ? "#ffffff" : active ? CLR.brand500 : "#d1d5db"
-                      }
-                    />
-                  </View>
-                  <Text
-                    style={{
-                      fontSize: 8.5,
-                      fontWeight: active || done ? "700" : "500",
-                      color: done
-                        ? CLR.brand900
-                        : active
-                          ? CLR.brand500
-                          : "#9ca3af",
-                      textAlign: "center",
-                      maxWidth: 38,
-                    }}
-                    numberOfLines={1}
-                  >
-                    {step.label}
-                  </Text>
-                </View>
-                {i < PR_STEPS.length - 1 && (
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 2,
-                      marginBottom: 14,
-                      marginHorizontal: 2,
-                      backgroundColor:
-                        i < currentStep ? CLR.brand900 : "#e5e7eb",
-                    }}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Footer */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingBottom: 12,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <MaterialIcons name="calendar-today" size={11} color="#9ca3af" />
-          <Text style={{ fontSize: 11, color: "#9ca3af" }}>{pr.date}</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {pr.isHighValue && (
-            <View
-              style={{
-                backgroundColor: "#022c22",
-                paddingHorizontal: 6,
-                paddingVertical: 2,
-                borderRadius: 6,
-              }}
-            >
-              <Text
-                style={{ fontSize: 9, fontWeight: "700", color: "#a7f3d0" }}
-              >
-                HIGH-VALUE
-              </Text>
-            </View>
-          )}
-          <Text
-            style={{
-              fontSize: 12,
-              fontWeight: "700",
-              color: "#374151",
-              fontFamily: MONO,
-            }}
-          >
-            ₱{pr.totalCost.toLocaleString("en-PH")}
-          </Text>
-        </View>
-      </View>
+      <MaterialIcons name="chevron-right" size={14} color="#d1d5db" />
     </TouchableOpacity>
   );
 }
 
-/** Horizontal progress bar + phase chips */
-function PhasePipeline({ stages }: { stages: StageCount[] }) {
-  const total = stages.reduce((s, st) => s + st.count, 0) || 1;
-  return (
-    <View style={{ paddingHorizontal: 16, paddingBottom: 4, gap: 10 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          height: 6,
-          borderRadius: 999,
-          overflow: "hidden",
-          backgroundColor: "#f3f4f6",
-        }}
-      >
-        {stages.map((st) => (
-          <View
-            key={st.stage}
-            style={{
-              flex: Math.max(st.count / total, 0.01),
-              backgroundColor: st.color,
-            }}
-          />
-        ))}
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 8 }}
-      >
-        {stages.map((st) => (
-          <View
-            key={st.stage}
-            style={{
-              backgroundColor: st.color + "15",
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: st.color + "40",
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              alignItems: "center",
-              gap: 2,
-              minWidth: 80,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 10,
-                fontWeight: "700",
-                color: st.color,
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-              }}
-            >
-              {st.shortLabel}
-            </Text>
-            <Text style={{ fontSize: 22, fontWeight: "800", color: st.color }}>
-              {st.count}
-            </Text>
-            <Text
-              style={{
-                fontSize: 9.5,
-                color: st.color + "cc",
-                textAlign: "center",
-                fontWeight: "500",
-              }}
-              numberOfLines={1}
-            >
-              {st.label}
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-/** Horizontal bar chart showing how many PRs sit at each status */
+/** Compact horizontal-bar approval funnel */
 function ApprovalFunnelChart({
   breakdown,
 }: {
   breakdown: { id: number; label: string; count: number; color: string }[];
 }) {
   const total = breakdown.reduce((s, b) => s + b.count, 0) || 1;
+  if (breakdown.length === 0) {
+    return (
+      <Text
+        style={{
+          fontSize: 12,
+          color: "#9ca3af",
+          textAlign: "center",
+          paddingVertical: 12,
+        }}
+      >
+        No purchase requests yet.
+      </Text>
+    );
+  }
   return (
-    <View style={{ gap: 10 }}>
-      {breakdown.length === 0 ? (
-        <Text
-          style={{
-            fontSize: 12,
-            color: "#9ca3af",
-            textAlign: "center",
-            paddingVertical: 8,
-          }}
-        >
-          No purchase requests yet.
-        </Text>
-      ) : (
-        breakdown.map((b) => (
-          <View key={b.id}>
-            <View
+    <View style={{ gap: 8 }}>
+      {breakdown.map((b) => (
+        <View key={b.id}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginBottom: 3,
+            }}
+          >
+            <Text
+              style={{ fontSize: 10.5, color: "#6b7280" }}
+              numberOfLines={1}
+            >
+              {b.label}
+            </Text>
+            <Text
               style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                marginBottom: 4,
+                fontSize: 10.5,
+                fontWeight: "700",
+                color: "#374151",
+                fontFamily: MONO,
               }}
             >
-              <Text
-                style={{ fontSize: 11, color: "#6b7280", flex: 1 }}
-                numberOfLines={1}
-              >
-                {b.label}
+              {b.count}
+              <Text style={{ color: "#9ca3af", fontWeight: "400" }}>
+                {" "}
+                ({Math.round((b.count / total) * 100)}%)
               </Text>
-              <Text
-                style={{
-                  fontSize: 11,
-                  fontWeight: "700",
-                  color: "#374151",
-                  fontFamily: MONO,
-                }}
-              >
-                {b.count}
-                <Text style={{ color: "#9ca3af", fontWeight: "400" }}>
-                  {" "}
-                  ({Math.round((b.count / total) * 100)}%)
-                </Text>
-              </Text>
-            </View>
-            <View
-              style={{
-                height: 7,
-                borderRadius: 999,
-                backgroundColor: "#f3f4f6",
-              }}
-            >
-              <View
-                style={{
-                  height: 7,
-                  borderRadius: 999,
-                  backgroundColor: b.color,
-                  width:
-                    `${Math.max(Math.round((b.count / total) * 100), 2)}%` as any,
-                }}
-              />
-            </View>
+            </Text>
           </View>
-        ))
-      )}
+          <View
+            style={{ height: 5, borderRadius: 999, backgroundColor: "#f3f4f6" }}
+          >
+            <View
+              style={{
+                height: 5,
+                borderRadius: 999,
+                backgroundColor: b.color,
+                width:
+                  `${Math.max(Math.round((b.count / total) * 100), 2)}%` as any,
+              }}
+            />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
-/** Shared green welcome header bar */
+/** Compact green welcome header */
 function WelcomeHeader({
   roleLabel,
   username,
@@ -1246,68 +808,166 @@ function WelcomeHeader({
     <View
       style={{
         backgroundColor: CLR.brand900,
-        paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 20,
+        paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 16,
       }}
     >
       <View
         style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
+          backgroundColor: "rgba(255,255,255,0.10)",
+          paddingHorizontal: 7,
+          paddingVertical: 2,
+          borderRadius: 5,
+          alignSelf: "flex-start",
+          marginBottom: 6,
         }}
       >
-        <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            fontSize: 9.5,
+            fontWeight: "700",
+            color: CLR.brand100,
+            textTransform: "uppercase",
+            letterSpacing: 0.7,
+          }}
+        >
+          {roleLabel}
+        </Text>
+      </View>
+      <Text
+        style={{
+          fontSize: 18,
+          fontWeight: "800",
+          color: "#ffffff",
+          letterSpacing: -0.3,
+        }}
+      >
+        {username}
+      </Text>
+      <Text style={{ fontSize: 11, color: CLR.brand100, marginTop: 2 }}>
+        {new Date().toLocaleDateString("en-PH", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </Text>
+    </View>
+  );
+}
+
+/** 2-column quick action grid */
+const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
+  {
+    1: [
+      { label: "Manage PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      {
+        label: "User Management",
+        icon: "manage-accounts",
+        nav: "UserManagement",
+      },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
+    2: [
+      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
+      { label: "All PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
+    3: [
+      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
+      { label: "All PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
+    4: [
+      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
+      { label: "All PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      { label: "Budget", icon: "account-balance-wallet", nav: "Budget" },
+    ],
+    5: [
+      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
+      { label: "All PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
+    6: [
+      { label: "New PR", icon: "add-circle-outline", nav: "Procurement" },
+      { label: "Track PR", icon: "track-changes", nav: "Procurement" },
+      { label: "View History", icon: "history", nav: "ProcurementLog" },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
+  };
+
+function QuickActionGrid({
+  navigation,
+  roleId,
+}: {
+  navigation: any;
+  roleId: number;
+}) {
+  const actions = ACTION_GRID[roleId] ?? ACTION_GRID[6];
+  const colW = (SCREEN_W - 36) / 2;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        paddingHorizontal: 12,
+        gap: 8,
+      }}
+    >
+      {actions.map((a) => (
+        <TouchableOpacity
+          key={a.label}
+          onPress={() => navigation?.navigate?.(a.nav)}
+          activeOpacity={0.8}
+          style={{
+            width: colW,
+            backgroundColor: "#ffffff",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            paddingVertical: 11,
+            paddingHorizontal: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 9,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.04,
+            shadowRadius: 3,
+            elevation: 1,
+          }}
+        >
           <View
             style={{
-              flexDirection: "row",
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              backgroundColor: "#ecfdf5",
               alignItems: "center",
-              gap: 8,
-              marginBottom: 4,
+              justifyContent: "center",
             }}
           >
-            <View
-              style={{
-                backgroundColor: "rgba(255,255,255,0.12)",
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 6,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  color: CLR.brand100,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                }}
-              >
-                {roleLabel}
-              </Text>
-            </View>
+            <MaterialIcons name={a.icon} size={17} color={CLR.brand900} />
           </View>
           <Text
             style={{
-              fontSize: 20,
-              fontWeight: "800",
-              color: "#ffffff",
-              letterSpacing: -0.4,
+              fontSize: 12,
+              fontWeight: "700",
+              color: "#111827",
+              flexShrink: 1,
             }}
+            numberOfLines={1}
           >
-            {username}
+            {a.label}
           </Text>
-          <Text style={{ fontSize: 12, color: CLR.brand100, marginTop: 2 }}>
-            {new Date().toLocaleDateString("en-PH", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </Text>
-        </View>
-      </View>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -1317,15 +977,13 @@ function WelcomeHeader({
 export default function DashboardScreen({ navigation }: any) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 6;
-
   if (roleId === 1) return <AdminDashboard navigation={navigation} />;
   if (roleId in ROLE_QUEUE_STATUS)
     return <ProcessorDashboard navigation={navigation} roleId={roleId} />;
   return <EndUserDashboard navigation={navigation} />;
 }
 
-// ─── Admin Dashboard (role_id 1) ─────────────────────────────────────────────
-// System-wide overview: all PRs, KPI cards, approval funnel, pipeline.
+// ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
 function AdminDashboard({ navigation }: any) {
   const { currentUser } = useAuth();
@@ -1333,13 +991,18 @@ function AdminDashboard({ navigation }: any) {
     prs,
     recent,
     statCards,
-    stages,
     statusBreakdown,
     loading,
     error,
     refresh,
     lastRefresh,
   } = useAdminData();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -1371,121 +1034,65 @@ function AdminDashboard({ navigation }: any) {
       {error && <ErrorBanner message={error} onRetry={refresh} />}
       <LastRefreshedBadge time={lastRefresh} />
 
-      {/* ── KPI stat cards ── */}
+      {/* ── KPI tiles — 4 across ── */}
       <View
         style={{
-          paddingHorizontal: 12,
-          paddingTop: 8,
           flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 8,
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          gap: 6,
         }}
       >
         {statCards.map((card) => (
-          <StatPill key={card.label} card={card} />
+          <StatTile key={card.label} card={card} />
         ))}
       </View>
 
-      {/* ── Phase pipeline ── */}
-      <SectionHeader
-        title="Procurement Pipeline"
-        sub="Current phase distribution across all PRs"
-      />
-      <PhasePipeline stages={stages} />
-
       {/* ── Approval funnel ── */}
+      <SectionHeader title="Approval Funnel" sub="PRs by current status" />
       <View
         style={{
           marginHorizontal: 12,
-          marginTop: 16,
           backgroundColor: "#ffffff",
-          borderRadius: 16,
+          borderRadius: 12,
           borderWidth: 1,
           borderColor: "#e5e7eb",
-          padding: 16,
+          padding: 14,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 6,
-          elevation: 2,
+          shadowOpacity: 0.04,
+          shadowRadius: 4,
+          elevation: 1,
         }}
       >
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: "800",
-            color: "#111827",
-            marginBottom: 12,
-          }}
-        >
-          Approval Funnel
-        </Text>
         <ApprovalFunnelChart breakdown={statusBreakdown} />
       </View>
 
-      {/* ── Recent PRs table ── */}
+      {/* ── Recent PRs ── */}
+      <SectionHeader
+        title="Recent Purchase Requests"
+        sub={`${prs.length} total`}
+        onViewAll={() => navigation?.navigate?.("Procurement")}
+      />
       <View
         style={{
           marginHorizontal: 12,
-          marginTop: 12,
           backgroundColor: "#ffffff",
-          borderRadius: 16,
+          borderRadius: 12,
           borderWidth: 1,
           borderColor: "#e5e7eb",
           overflow: "hidden",
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 6,
-          elevation: 2,
+          shadowOpacity: 0.04,
+          shadowRadius: 4,
+          elevation: 1,
         }}
       >
-        <SectionHeader
-          title="All Recent Purchase Requests"
-          sub={`${prs.length} total across all divisions`}
-          onViewAll={() => navigation?.navigate?.("Procurement")}
-        />
-
-        {/* Column headers */}
-        <View
-          style={{
-            flexDirection: "row",
-            paddingHorizontal: 14,
-            paddingBottom: 8,
-            borderBottomWidth: 1,
-            borderBottomColor: "#f3f4f6",
-          }}
-        >
-          {[
-            { label: "PR / Purpose", flex: 1 },
-            { label: "Section", w: 68 },
-            { label: "Status", w: 90 },
-            { label: "Ph", w: 24 },
-            { label: "Amount", w: 60, right: true },
-          ].map((h) => (
-            <Text
-              key={h.label}
-              style={{
-                fontSize: 9,
-                fontWeight: "700",
-                color: "#9ca3af",
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                flex: (h as any).flex,
-                width: (h as any).w,
-                textAlign: h.right ? "right" : "left",
-              }}
-            >
-              {h.label}
-            </Text>
-          ))}
-          <View style={{ width: 16 }} />
-        </View>
-
         {recent.length === 0 ? (
-          <View style={{ paddingVertical: 28, alignItems: "center", gap: 8 }}>
-            <MaterialIcons name="inbox" size={32} color="#d1d5db" />
-            <Text style={{ fontSize: 13, color: "#9ca3af" }}>
+          <View style={{ paddingVertical: 24, alignItems: "center", gap: 6 }}>
+            <MaterialIcons name="inbox" size={28} color="#d1d5db" />
+            <Text style={{ fontSize: 12, color: "#9ca3af" }}>
               No purchase requests found.
             </Text>
           </View>
@@ -1501,15 +1108,14 @@ function AdminDashboard({ navigation }: any) {
         )}
       </View>
 
-      {/* ── Admin quick actions ── */}
-      <SectionHeader title="Admin Actions" />
+      {/* ── Quick actions ── */}
+      <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={1} />
     </ScrollView>
   );
 }
 
-// ─── Processor Dashboard (role_id 2–5) ────────────────────────────────────────
-// Shows the role's personal action queue prominently, plus visibility into all PRs.
+// ─── Processor Dashboard ──────────────────────────────────────────────────────
 
 function ProcessorDashboard({
   navigation,
@@ -1529,6 +1135,12 @@ function ProcessorDashboard({
     lastRefresh,
     queueStatusId,
   } = useProcessorData(roleId);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -1564,61 +1176,57 @@ function ProcessorDashboard({
       {error && <ErrorBanner message={error} onRetry={refresh} />}
       <LastRefreshedBadge time={lastRefresh} />
 
-      {/* ── Stat cards ── */}
+      {/* ── KPI tiles ── */}
       <View
         style={{
-          paddingHorizontal: 12,
-          paddingTop: 8,
           flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 8,
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          gap: 6,
         }}
       >
         {statCards.map((card) => (
-          <StatPill key={card.label} card={card} />
+          <StatTile key={card.label} card={card} />
         ))}
       </View>
 
       {/* ── Action queue ── */}
-      <View style={{ marginTop: 20, paddingHorizontal: 16, paddingBottom: 10 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: "800", color: "#111827" }}>
-              Your Action Queue
-            </Text>
-            <Text style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>
-              PRs waiting for your review and sign-off
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 14,
+          paddingTop: 16,
+          paddingBottom: 8,
+        }}
+      >
+        <View>
+          <Text style={{ fontSize: 13, fontWeight: "800", color: "#111827" }}>
+            Your Action Queue
+          </Text>
+          <Text style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 1 }}>
+            PRs awaiting your review
+          </Text>
+        </View>
+        {queue.length > 0 && (
+          <View
+            style={{
+              backgroundColor: queueCfg.bg,
+              paddingHorizontal: 9,
+              paddingVertical: 3,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: queueCfg.dot + "60",
+            }}
+          >
+            <Text
+              style={{ fontSize: 11, fontWeight: "800", color: queueCfg.text }}
+            >
+              {queue.length} pending
             </Text>
           </View>
-          {queue.length > 0 && (
-            <View
-              style={{
-                backgroundColor: queueCfg.bg,
-                paddingHorizontal: 10,
-                paddingVertical: 4,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: queueCfg.dot + "60",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: "800",
-                  color: queueCfg.text,
-                }}
-              >
-                {queue.length} pending
-              </Text>
-            </View>
-          )}
-        </View>
+        )}
       </View>
 
       {queue.length === 0 ? (
@@ -1626,22 +1234,24 @@ function ProcessorDashboard({
           style={{
             marginHorizontal: 12,
             backgroundColor: "#f0fdf4",
-            borderRadius: 16,
+            borderRadius: 12,
             borderWidth: 1,
             borderColor: "#bbf7d0",
-            padding: 28,
+            padding: 24,
             alignItems: "center",
-            gap: 8,
+            gap: 6,
           }}
         >
-          <MaterialIcons name="check-circle" size={40} color={CLR.brand500} />
+          <MaterialIcons name="check-circle" size={36} color={CLR.brand500} />
           <Text
-            style={{ fontSize: 14, fontWeight: "700", color: CLR.brand900 }}
+            style={{ fontSize: 13, fontWeight: "700", color: CLR.brand900 }}
           >
             Queue is clear!
           </Text>
-          <Text style={{ fontSize: 12, color: "#6b7280", textAlign: "center" }}>
-            No PRs require your attention right now.{"\n"}Pull down to refresh.
+          <Text
+            style={{ fontSize: 11.5, color: "#6b7280", textAlign: "center" }}
+          >
+            {"No PRs require your attention.\nPull down to refresh."}
           </Text>
         </View>
       ) : (
@@ -1649,15 +1259,15 @@ function ProcessorDashboard({
           style={{
             marginHorizontal: 12,
             backgroundColor: "#ffffff",
-            borderRadius: 16,
+            borderRadius: 12,
             borderWidth: 1,
             borderColor: "#e5e7eb",
             overflow: "hidden",
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.05,
-            shadowRadius: 6,
-            elevation: 2,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 1,
           }}
         >
           {queue.map((record, i) => (
@@ -1671,38 +1281,39 @@ function ProcessorDashboard({
         </View>
       )}
 
-      {/* ── Other PRs in system (read-only) ── */}
+      {/* ── Other PRs ── */}
       {recentOther.length > 0 && (
-        <View
-          style={{
-            marginHorizontal: 12,
-            marginTop: 16,
-            backgroundColor: "#ffffff",
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: "#e5e7eb",
-            overflow: "hidden",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.05,
-            shadowRadius: 6,
-            elevation: 2,
-          }}
-        >
+        <>
           <SectionHeader
             title="Other PRs in System"
             sub="Not currently in your queue"
             onViewAll={() => navigation?.navigate?.("Procurement")}
           />
-          {recentOther.map((record, i) => (
-            <PRTableRow
-              key={record.id}
-              record={record}
-              isEven={i % 2 === 0}
-              onPress={() => navigation?.navigate?.("Procurement")}
-            />
-          ))}
-        </View>
+          <View
+            style={{
+              marginHorizontal: 12,
+              backgroundColor: "#ffffff",
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "#e5e7eb",
+              overflow: "hidden",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 1,
+            }}
+          >
+            {recentOther.map((record, i) => (
+              <PRTableRow
+                key={record.id}
+                record={record}
+                isEven={i % 2 === 0}
+                onPress={() => navigation?.navigate?.("Procurement")}
+              />
+            ))}
+          </View>
+        </>
       )}
 
       {/* ── Quick actions ── */}
@@ -1712,14 +1323,19 @@ function ProcessorDashboard({
   );
 }
 
-// ─── End-User Dashboard (role_id 6+) ─────────────────────────────────────────
-// Personal view: own division's PRs, tracker cards, quick actions.
+// ─── End-User Dashboard ───────────────────────────────────────────────────────
 
 function EndUserDashboard({ navigation }: any) {
   const { currentUser } = useAuth();
   const divisionId = currentUser?.division_id ?? null;
   const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
     useEndUserData(divisionId);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -1746,28 +1362,26 @@ function EndUserDashboard({ navigation }: any) {
       <WelcomeHeader
         roleLabel={currentUser?.division_name ?? "End User"}
         username={currentUser?.fullname ?? "Welcome"}
-        // onNewPR={() => navigation?.navigate?.("Procurement")}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
       <LastRefreshedBadge time={lastRefresh} />
 
-      {/* ── Stat cards ── */}
+      {/* ── KPI tiles ── */}
       <View
         style={{
-          paddingHorizontal: 12,
-          paddingTop: 8,
           flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 8,
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          gap: 6,
         }}
       >
         {statCards.map((card) => (
-          <StatPill key={card.label} card={card} />
+          <StatTile key={card.label} card={card} />
         ))}
       </View>
 
-      {/* ── My PRs (tracker cards) ── */}
+      {/* ── PR list ── */}
       <SectionHeader
         title="My Purchase Requests"
         sub={
@@ -1785,36 +1399,29 @@ function EndUserDashboard({ navigation }: any) {
           style={{
             marginHorizontal: 12,
             backgroundColor: "#f9fafb",
-            borderRadius: 16,
+            borderRadius: 12,
             borderWidth: 1,
             borderColor: "#e5e7eb",
-            padding: 28,
+            padding: 24,
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
-          <MaterialIcons name="description" size={36} color="#d1d5db" />
-          <Text style={{ fontSize: 14, fontWeight: "700", color: "#374151" }}>
+          <MaterialIcons name="description" size={32} color="#d1d5db" />
+          <Text style={{ fontSize: 13, fontWeight: "700", color: "#374151" }}>
             No Purchase Requests
           </Text>
-          <Text style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
-            You haven't submitted any PRs yet.{"\n"}Tap "New PR" to get started.
+          <Text
+            style={{ fontSize: 11.5, color: "#9ca3af", textAlign: "center" }}
+          >
+            {
+              "You haven't submitted any PRs yet.\nGo to Procurement to create one."
+            }
           </Text>
-          {/* <TouchableOpacity
-            onPress={() => navigation?.navigate?.("Procurement")}
-            activeOpacity={0.8}
-            style={{
-              marginTop: 4, backgroundColor: CLR.brand900,
-              paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10,
-            }}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#ffffff" }}>
-              Create First PR
-            </Text>
-          </TouchableOpacity> */}
         </View>
       ) : (
         recent.map((pr) => (
-          <PRTrackerCard
+          <PRSummaryCard
             key={pr.id}
             pr={pr}
             onPress={() => navigation?.navigate?.("Procurement")}
@@ -1826,118 +1433,5 @@ function EndUserDashboard({ navigation }: any) {
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={6} />
     </ScrollView>
-  );
-}
-
-// ─── Shared action grid ───────────────────────────────────────────────────────
-
-const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
-  {
-    1: [
-      { label: "Manage PRs", icon: "description", nav: "Procurement" },
-      { label: "Canvassing", icon: "create", nav: "Canvassing" },
-      { label: "Track Delivery", icon: "local-shipping", nav: "Procurement" },
-      { label: "Payment", icon: "account-balance-wallet", nav: "Procurement" },
-      { label: "Reports", icon: "bar-chart", nav: "Procurement" },
-      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      {
-        label: "User Management",
-        icon: "manage-accounts",
-        nav: "UserManagement",
-      },
-    ],
-    2: [
-      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
-      { label: "All PRs", icon: "description", nav: "Procurement" },
-      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "create", nav: "Canvassing" },
-    ],
-    3: [
-      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
-      { label: "All PRs", icon: "description", nav: "Procurement" },
-      { label: "APP Tracking", icon: "gavel", nav: "Procurement" },
-      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "create", nav: "Canvassing" },
-    ],
-    4: [
-      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
-      { label: "All PRs", icon: "description", nav: "Procurement" },
-      { label: "Budget Codes", icon: "account-balance", nav: "Procurement" },
-      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-    ],
-    5: [
-      { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
-      { label: "All PRs", icon: "description", nav: "Procurement" },
-      { label: "Reports", icon: "bar-chart", nav: "Procurement" },
-      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "create", nav: "Canvassing" },
-    ],
-    6: [
-      { label: "New PR", icon: "add-circle-outline", nav: "Procurement" },
-      { label: "Track PR", icon: "track-changes", nav: "Procurement" },
-      { label: "View History", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "create", nav: "Canvassing" },
-    ],
-  };
-
-function QuickActionGrid({
-  navigation,
-  roleId,
-}: {
-  navigation: any;
-  roleId: number;
-}) {
-  const actions = ACTION_GRID[roleId] ?? ACTION_GRID[6];
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        paddingHorizontal: 12,
-        gap: 8,
-        flexWrap: "wrap",
-      }}
-    >
-      {actions.map((a) => (
-        <TouchableOpacity
-          key={a.label}
-          onPress={() => navigation?.navigate?.(a.nav)}
-          activeOpacity={0.8}
-          style={{
-            flex: 1,
-            minWidth: (SCREEN_W - 56) / 2,
-            backgroundColor: "#ffffff",
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: "#e5e7eb",
-            paddingVertical: 14,
-            paddingHorizontal: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            elevation: 1,
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: "#ecfdf5",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <MaterialIcons name={a.icon} size={20} color={CLR.brand900} />
-          </View>
-          <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#111827" }}>
-            {a.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
   );
 }
