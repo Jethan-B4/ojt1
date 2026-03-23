@@ -1,23 +1,18 @@
 /**
- * CanvassPreviewModal.tsx
+ * BACResolutionPreviewModal.tsx
  *
- * React Native modal that renders the DAR canvass / RFQ form as an HTML
- * document inside a WebView.  Follows the same emerald design system used
- * throughout BACView / PRModule.
+ * React Native modal that renders the BAC Resolution document inside a WebView.
+ * Mirrors the pattern of CanvassPreviewModal — same header chrome, info strip,
+ * print + download footer actions.
  *
- * Usage:
- *   <CanvassPreviewModal
- *     visible={previewOpen}
- *     data={buildCanvassData(pr, bacNo, canvassUsers, supps)}
- *     onClose={() => setPreviewOpen(false)}
+ * Usage (from Step 9 in BACView):
+ *   <BACResolutionPreviewModal
+ *     visible={resolutionPreviewOpen}
+ *     data={buildResolutionData()}
+ *     onClose={() => setResolutionPreviewOpen(false)}
  *   />
  *
- * The modal chrome (header, close button) is React Native.
- * The document body is rendered inside a WebView so the HTML table layout
- * is pixel-accurate to the paper form, matching PRPreview's approach.
- *
- * Note: requires react-native-webview
- *   npx expo install react-native-webview
+ * Requires: react-native-webview, expo-print, expo-sharing
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -35,22 +30,22 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import {
-  buildCanvassHTML,
-  type CanvassPreviewData,
-} from "../(components)/CanvassPreview";
+  buildBACResolutionHTML,
+  type BACResolutionData,
+} from "../(components)/BACResolutionPreview";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function CanvassPreviewModal({
+export default function BACResolutionPreviewModal({
   visible,
   data,
   onClose,
 }: {
   visible: boolean;
-  data: CanvassPreviewData;
+  data: BACResolutionData;
   onClose: () => void;
 }) {
-  const html = React.useMemo(() => buildCanvassHTML(data), [data]);
+  const html = React.useMemo(() => buildBACResolutionHTML(data), [data]);
 
   const handlePrint = async () => {
     try {
@@ -66,7 +61,7 @@ export default function CanvassPreviewModal({
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: "application/pdf",
-          dialogTitle: `Download ${data.quotationNo}`,
+          dialogTitle: `BAC Resolution ${data.resolutionNo}`,
         });
       } else {
         Alert.alert("Download", "Sharing is not available on this device.");
@@ -83,9 +78,8 @@ export default function CanvassPreviewModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      {/* ── Modal chrome ── */}
       <View style={{ flex: 1, backgroundColor: "#f9fafb" }}>
-        {/* Header */}
+        {/* ── Header ── */}
         <View
           style={{
             backgroundColor: "#064E3B",
@@ -111,7 +105,7 @@ export default function CanvassPreviewModal({
               DAR · Procurement › Canvassing
             </Text>
             <Text style={{ fontSize: 17, fontWeight: "800", color: "#ffffff" }}>
-              Request for Quotation
+              BAC Resolution
             </Text>
             <Text
               style={{
@@ -121,11 +115,10 @@ export default function CanvassPreviewModal({
                 fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace",
               }}
             >
-              {data.quotationNo} · {data.prNo}
+              Resolution No. {data.resolutionNo}
             </Text>
           </View>
 
-          {/* Close button */}
           <TouchableOpacity
             onPress={onClose}
             hitSlop={10}
@@ -143,7 +136,7 @@ export default function CanvassPreviewModal({
           </TouchableOpacity>
         </View>
 
-        {/* Sub-header info strip */}
+        {/* ── Info strip ── */}
         <View
           style={{
             flexDirection: "row",
@@ -156,16 +149,16 @@ export default function CanvassPreviewModal({
           }}
         >
           {[
+            { icon: "event" as const, label: "Date", value: data.resolvedDate },
             {
-              icon: "calendar-today" as const,
-              label: "Date",
-              value: data.date,
+              icon: "gavel" as const,
+              label: "Res. No",
+              value: data.resolutionNo,
             },
-            { icon: "event" as const, label: "Deadline", value: data.deadline },
             {
               icon: "location-city" as const,
-              label: "Section",
-              value: data.officeSection,
+              label: "Office",
+              value: data.provincialOffice,
             },
           ].map((item) => (
             <View
@@ -195,7 +188,7 @@ export default function CanvassPreviewModal({
           ))}
         </View>
 
-        {/* Print hint */}
+        {/* ── Print hint ── */}
         <View
           style={{
             flexDirection: "row",
@@ -210,12 +203,11 @@ export default function CanvassPreviewModal({
         >
           <MaterialIcons name="info-outline" size={13} color="#047857" />
           <Text style={{ fontSize: 11, color: "#047857" }}>
-            This is a preview of the official DAR RFQ form (DARCS1-QF-STO-009
-            Rev 01).
+            This is a preview of the official DAR BAC Resolution document.
           </Text>
         </View>
 
-        {/* WebView document */}
+        {/* ── WebView document ── */}
         <WebView
           source={{ html }}
           style={{ flex: 1, backgroundColor: "#ffffff" }}
@@ -238,13 +230,13 @@ export default function CanvassPreviewModal({
             >
               <ActivityIndicator size="large" color="#064E3B" />
               <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>
-                Rendering form…
+                Rendering resolution…
               </Text>
             </View>
           )}
         />
 
-        {/* Footer action bar */}
+        {/* ── Footer ── */}
         <View
           style={{
             flexDirection: "row",

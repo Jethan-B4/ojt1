@@ -12,57 +12,60 @@
  */
 
 import {
-    CANVASS_PR_STATUS,
-    ensureCanvassSession,
-    fetchAssignmentsForSession,
-    fetchPRIdByNo,
-    fetchPRWithItemsById,
-    fetchQuotesForSession,
-    fetchUsersByRole,
-    insertAssignmentReleased,
-    insertAssignmentsForDivisions,
-    insertBACResolution,
-    insertSupplierQuotesForSession,
-    markAssignmentReturned,
-    updateAssignmentReleased,
-    updateCanvassSessionMeta,
-    updateCanvassStage,
-    updatePRStatus,
-    type CanvassEntryRow,
-    type CanvassUserRow,
-    type CanvasserAssignmentRow,
+  CANVASS_PR_STATUS,
+  ensureCanvassSession,
+  fetchAssignmentsForSession,
+  fetchPRIdByNo,
+  fetchPRWithItemsById,
+  fetchQuotesForSession,
+  fetchUsersByRole,
+  insertAssignmentReleased,
+  insertAssignmentsForDivisions,
+  insertBACResolution,
+  markAssignmentReturned,
+  replaceSupplierQuotesForSession,
+  supabase,
+  updateAssignmentReleased,
+  updateCanvassSessionMeta,
+  updateCanvassStage,
+  updatePRStatus,
+  type CanvassEntryRow,
+  type CanvassUserRow,
+  type CanvasserAssignmentRow,
 } from "@/lib/supabase";
 import type {
-    BACMember,
-    CanvassStage,
-    CanvassingPR,
-    CanvassingPRItem,
-    SupplierQ,
+  BACMember,
+  CanvassStage,
+  CanvassingPR,
+  CanvassingPRItem,
+  SupplierQ,
 } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import type { CanvassPreviewData } from "../../(modals)/CanvassPreview";
+import type { BACResolutionData } from "../../(components)/BACResolutionPreview";
+import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
+import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
 import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
 import { useAuth } from "../../AuthContext";
+import RFQReviewModal from "./RFQReviewModal";
 
 /* Import modularized components */
 import {
-    AssignmentList,
-    CompletedBanner,
-    ItemsTable,
-    PRCard,
-    StageStrip,
-    StepHeader,
-    StepNav,
+  AssignmentList,
+  CompletedBanner,
+  ItemsTable,
+  StageStrip,
+  StepHeader,
+  StepNav,
 } from "./components";
 import { CANVASS_ROLE_IDS, PROC_MODES, STAGE_ORDER } from "./constants";
 import { Banner, Card, Divider, Field, Input, PickerField } from "./ui";
@@ -139,6 +142,9 @@ export default function BACView({
   const [canvassEntries, setCanvassEntries] = useState<CanvassEntryRow[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
+  const [prExpanded, setPrExpanded] = useState(false);
+  const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
 
   // ── Navigation & State Management ──────────────────────────────────────────
 
@@ -190,6 +196,54 @@ export default function BACView({
       .finally(() => setEntriesLoading(false));
   }, [sessionId]);
 
+  // ── Realtime: refresh entries + assignments when canvassers submit ──────────
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const entriesChannel = supabase
+      .channel(`bac-entries-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "canvass_entries",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async () => {
+          try {
+            const fresh = await fetchQuotesForSession(sessionId);
+            setCanvassEntries(fresh);
+          } catch {}
+        },
+      )
+      .subscribe();
+
+    const assignmentsChannel = supabase
+      .channel(`bac-assignments-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canvasser_assignments",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async () => {
+          try {
+            const fresh = await fetchAssignmentsForSession(sessionId);
+            setAssignments(fresh);
+          } catch {}
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(entriesChannel);
+      supabase.removeChannel(assignmentsChannel);
+    };
+  }, [sessionId]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -204,16 +258,48 @@ export default function BACView({
           setDone(new Set(STAGE_ORDER.slice(0, dbIdx)));
         }
         const { items } = await fetchPRWithItemsById(prId);
-        setLiveItems(
-          items.map((i) => ({
-            id: parseInt(String(i.id)),
-            desc: i.description,
-            stock: i.stock_no,
-            unit: i.unit,
-            qty: i.quantity,
-            unitCost: i.unit_price,
-          })),
-        );
+        const mappedItems = items.map((i) => ({
+          id: parseInt(String(i.id)),
+          desc: i.description,
+          stock: i.stock_no,
+          unit: i.unit,
+          qty: i.quantity,
+          unitCost: i.unit_price,
+        }));
+        setLiveItems(mappedItems);
+
+        // ── Prefill supplier quotation form from existing DB entries ───────────
+        // When the BAC navigates back to edit an already-submitted step, the
+        // supps inputs must be pre-populated from the saved quotes.  Without
+        // this, the form starts blank and re-submitting would wipe the DB entries
+        // with an empty list (or the old insert path would create duplicates).
+        const existingQuotes = await fetchQuotesForSession(session.id);
+        if (existingQuotes.length > 0) {
+          // Group entries by supplier_name to reconstruct each SupplierQ block
+          const supplierMap = new Map<string, SupplierQ>();
+          let nextId = 1;
+          existingQuotes.forEach((e) => {
+            const name = e.supplier_name || `Supplier ${nextId}`;
+            if (!supplierMap.has(name)) {
+              supplierMap.set(name, {
+                id: nextId++,
+                name,
+                address: "",
+                contact: "",
+                tin: "",
+                days: "",
+                prices: {},
+                remarks: "",
+              });
+            }
+            const sp = supplierMap.get(name)!;
+            sp.prices[parseInt(String(e.item_no))] = String(e.unit_price);
+          });
+          if (supplierMap.size > 0) {
+            setSupps(Array.from(supplierMap.values()));
+          }
+          setCanvassEntries(existingQuotes);
+        }
       } catch {}
     })();
   }, [pr.prNo]);
@@ -291,8 +377,9 @@ export default function BACView({
             });
         });
       });
-      if (quotes.length)
-        await insertSupplierQuotesForSession(sessionId, quotes);
+      // Always use replace (delete-then-insert) so that re-encoding or editing
+      // never accumulates duplicate rows in canvass_entries.
+      await replaceSupplierQuotesForSession(sessionId, quotes);
       await updatePRStatus(prId, CANVASS_PR_STATUS.collect_canvass);
       await updateCanvassStage(sessionId, "bac_resolution");
       fetchQuotesForSession(sessionId)
@@ -321,8 +408,17 @@ export default function BACView({
         resolved_at: new Date().toISOString(),
         notes: null,
       });
-      await updatePRStatus(prId, CANVASS_PR_STATUS.bac_resolution);
-      advance("bac_resolution");
+      // Move PR to AAA Issuance immediately after resolution
+      await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);
+      await updateCanvassStage(sessionId, "aaa_preparation");
+      advance("aaa_preparation");
+      // Notify parent so the shell route can jump back to Procurement → AAA tab
+      onComplete?.({
+        pr_no: pr.prNo,
+        resolution_no: resNo,
+        mode,
+        stage: "aaa_preparation",
+      });
     } catch (e: any) {
       Alert.alert(
         "Resolution failed",
@@ -420,12 +516,90 @@ export default function BACView({
     };
   };
 
+  const buildResolutionData = (): BACResolutionData => {
+    // Compute per-item winner (lowest unit price) from all canvass entries
+    const winners = liveItems.map((item) => {
+      const itemEntries = canvassEntries.filter(
+        (e) => e.item_no === item.id && e.unit_price > 0,
+      );
+      const best = itemEntries.reduce<(typeof itemEntries)[0] | null>(
+        (min, e) => (min == null || e.unit_price < min.unit_price ? e : min),
+        null,
+      );
+      return {
+        item,
+        winner: best,
+        total: best ? best.unit_price * item.qty : 0,
+      };
+    });
+    const winnersTotal = winners.reduce((s, w) => s + w.total, 0);
+    const recommendedSummary =
+      winners
+        .filter((w) => w.winner)
+        .map(
+          (w) =>
+            `${w.item.desc} → ${w.winner!.supplier_name} (₱${fmt(
+              w.winner!.unit_price,
+            )}/unit)`,
+        )
+        .join("; ") || "—";
+
+    const chairperson =
+      members.find((m) => m.designation.includes("Chairperson"))?.name ??
+      "BAC Chairperson";
+    const viceChair =
+      members.find((m) => m.designation.includes("Vice"))?.name ?? "";
+    const bacMems = members
+      .filter((m) => m.designation === "BAC Member")
+      .map((m) => m.name);
+    const approver =
+      members.find((m) => m.designation.includes("PARPO"))?.name ?? "PARPO II";
+    const totalCost =
+      winnersTotal || liveItems.reduce((s, i) => s + i.qty * i.unitCost, 0);
+    return {
+      resolutionNo: resNo || "—",
+      resolvedDate: new Date().toLocaleDateString("en-PH", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      location: "HL Bldg. Carnation St. Triangulo Naga City",
+      prEntries: [
+        {
+          prNo: pr.prNo,
+          date: pr.date,
+          estimatedCost: totalCost.toLocaleString("en-PH", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+          endUser: pr.officeSection,
+          procMode: mode,
+        },
+      ],
+      whereasText:
+        pr.purpose +
+        (recommendedSummary && recommendedSummary !== "—"
+          ? `\n\nRecommended suppliers (per item, lowest quote): ${recommendedSummary}.`
+          : ""),
+      requestingOffice: pr.officeSection,
+      provincialOffice: "DARPO-CAMARINES SUR I",
+      bacChairperson: chairperson,
+      bacViceChairperson: viceChair,
+      bacMembers:
+        bacMems.length >= 2 ? [bacMems[0], bacMems[1]] : [bacMems[0] ?? "", ""],
+      approvedBy: approver,
+      approvedByDesig: "HOPE",
+      procurementModeTitle: mode.toUpperCase(),
+    };
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-gray-50"
-      behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <View className="bg-[#064E3B] px-4 pt-3">
         <View className="flex-row items-center justify-between mb-2.5">
           <View className="flex-row items-center gap-2">
@@ -433,7 +607,8 @@ export default function BACView({
               <TouchableOpacity
                 onPress={onBack}
                 hitSlop={10}
-                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
+                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
+              >
                 <Text className="text-white text-[20px] leading-none font-light">
                   ←
                 </Text>
@@ -461,8 +636,181 @@ export default function BACView({
         className="flex-1"
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
-        <PRCard pr={{ ...pr, items: liveItems }} />
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Expandable PR pill ── */}
+        <TouchableOpacity
+          onPress={() => setPrExpanded((v) => !v)}
+          activeOpacity={0.8}
+          className="bg-white rounded-2xl border border-gray-200 mb-3 overflow-hidden"
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
+        >
+          {/* Collapsed header — always visible */}
+          <View className="flex-row items-center px-4 py-3 gap-3">
+            <View className="flex-1">
+              <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                Purchase Request
+              </Text>
+              <Text
+                className="text-[14px] font-extrabold text-[#064E3B]"
+                style={{
+                  fontFamily:
+                    Platform.OS === "ios" ? "Courier New" : "monospace",
+                }}
+              >
+                {pr.prNo}
+              </Text>
+            </View>
+            <View className="items-end">
+              <Text
+                className="text-[12px] font-bold text-gray-800"
+                style={{
+                  fontFamily:
+                    Platform.OS === "ios" ? "Courier New" : "monospace",
+                }}
+              >
+                ₱
+                {liveItems
+                  .reduce((s, i) => s + i.qty * i.unitCost, 0)
+                  .toLocaleString("en-PH", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+              </Text>
+              <Text className="text-[10.5px] text-gray-400">
+                {liveItems.length} item{liveItems.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+            <MaterialIcons
+              name={prExpanded ? "expand-less" : "expand-more"}
+              size={20}
+              color="#9ca3af"
+            />
+          </View>
+
+          {/* Expanded detail — PR meta + items table */}
+          {prExpanded && (
+            <View style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+              {/* Meta row */}
+              <View className="flex-row items-center gap-4 px-4 py-2.5 bg-gray-50">
+                <View>
+                  <Text className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                    Section
+                  </Text>
+                  <Text className="text-[11.5px] font-semibold text-gray-700">
+                    {pr.officeSection}
+                  </Text>
+                </View>
+                <View>
+                  <Text className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                    Date
+                  </Text>
+                  <Text className="text-[11.5px] font-semibold text-gray-700">
+                    {pr.date}
+                  </Text>
+                </View>
+                {pr.isHighValue && (
+                  <View className="bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                    <Text className="text-[9.5px] font-bold text-amber-800">
+                      HIGH VALUE
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {/* Purpose */}
+              <View className="px-4 py-2.5">
+                <Text className="text-[9px] font-bold uppercase tracking-wide text-gray-400 mb-1">
+                  Purpose
+                </Text>
+                <Text className="text-[12px] text-gray-600 leading-[18px]">
+                  {pr.purpose}
+                </Text>
+              </View>
+              {/* Line items mini-table */}
+              <View className="px-4 pb-3">
+                <Text className="text-[9px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">
+                  Line Items
+                </Text>
+                <View className="rounded-xl overflow-hidden border border-gray-100">
+                  <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
+                    {["Description", "Unit", "Qty", "Unit Cost", "Total"].map(
+                      (h, i) => (
+                        <Text
+                          key={h}
+                          className="text-[8.5px] font-bold uppercase tracking-wide text-white/70"
+                          style={{
+                            flex: i === 0 ? 2 : 1,
+                            textAlign: i > 1 ? "right" : "left",
+                          }}
+                        >
+                          {h}
+                        </Text>
+                      ),
+                    )}
+                  </View>
+                  {liveItems.map((item, i) => (
+                    <View
+                      key={item.id}
+                      className={`flex-row px-2.5 py-1.5 ${i % 2 ? "bg-gray-50" : "bg-white"}`}
+                      style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}
+                    >
+                      <Text
+                        className="flex-[2] text-[11px] text-gray-700"
+                        numberOfLines={1}
+                      >
+                        {item.desc}
+                      </Text>
+                      <Text className="flex-1 text-[11px] text-gray-500">
+                        {item.unit}
+                      </Text>
+                      <Text
+                        className="flex-1 text-[11px] text-gray-700 text-right"
+                        style={{
+                          fontFamily:
+                            Platform.OS === "ios" ? "Courier New" : "monospace",
+                        }}
+                      >
+                        {item.qty}
+                      </Text>
+                      <Text
+                        className="flex-1 text-[11px] text-gray-700 text-right"
+                        style={{
+                          fontFamily:
+                            Platform.OS === "ios" ? "Courier New" : "monospace",
+                        }}
+                      >
+                        ₱
+                        {item.unitCost.toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Text>
+                      <Text
+                        className="flex-1 text-[11px] font-semibold text-[#2d6a4f] text-right"
+                        style={{
+                          fontFamily:
+                            Platform.OS === "ios" ? "Courier New" : "monospace",
+                        }}
+                      >
+                        ₱
+                        {(item.qty * item.unitCost).toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* ── Step 6: PR Received ── */}
         {stage === "pr_received" && (
@@ -567,11 +915,13 @@ export default function BACView({
                           st.status !== "pending"
                             ? "bg-emerald-50 border-emerald-200"
                             : "bg-white border-gray-200"
-                        }`}>
+                        }`}
+                      >
                         <View className="w-16 bg-emerald-100 px-1.5 py-0.5 rounded-md">
                           <Text
                             className="text-[9.5px] font-bold text-emerald-800 text-center"
-                            numberOfLines={1}>
+                            numberOfLines={1}
+                          >
                             {user.division_name ?? "—"}
                           </Text>
                         </View>
@@ -579,13 +929,16 @@ export default function BACView({
                         <View className="flex-1 px-2">
                           <Text
                             className="text-[12.5px] text-gray-700 font-semibold"
-                            numberOfLines={1}>
+                            numberOfLines={1}
+                          >
                             {user.username}
                           </Text>
                           <View
-                            className={`self-start px-1.5 py-0.5 rounded-md ${roleBg} mt-0.5`}>
+                            className={`self-start px-1.5 py-0.5 rounded-md ${roleBg} mt-0.5`}
+                          >
                             <Text
-                              className={`text-[9px] font-bold ${roleText}`}>
+                              className={`text-[9px] font-bold ${roleText}`}
+                            >
                               {roleLabel}
                             </Text>
                           </View>
@@ -598,7 +951,8 @@ export default function BACView({
                               : st.status === "released"
                                 ? "bg-emerald-100"
                                 : "bg-blue-100"
-                          }`}>
+                          }`}
+                        >
                           <Text
                             className={`text-[10px] font-bold ${
                               st.status === "pending"
@@ -606,7 +960,8 @@ export default function BACView({
                                 : st.status === "released"
                                   ? "text-emerald-700"
                                   : "text-blue-700"
-                            }`}>
+                            }`}
+                          >
                             {st.status === "pending"
                               ? "Pending"
                               : st.status === "released"
@@ -625,7 +980,8 @@ export default function BACView({
                               st.status === "pending"
                                 ? "bg-emerald-600"
                                 : "bg-blue-600"
-                            }`}>
+                            }`}
+                          >
                             <Text className="text-[11px] font-bold text-white">
                               {st.status === "pending"
                                 ? "📤 Release"
@@ -683,7 +1039,54 @@ export default function BACView({
               title="Collect & Encode Canvass"
               desc="Collect returned RFQ forms and encode each supplier's quoted prices."
             />
-            <ItemsTable items={liveItems} />
+
+            {/* ── Returned canvassers banner + Review button ── */}
+            {(() => {
+              const returnedCount = assignments.filter(
+                (a) => a.status === "returned",
+              ).length;
+              const totalCount = assignments.length;
+              return totalCount > 0 ? (
+                <View
+                  className="flex-row items-center justify-between bg-white rounded-2xl border border-gray-200 px-4 py-3 mb-3"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 3,
+                    elevation: 1,
+                  }}
+                >
+                  <View className="flex-1">
+                    <Text className="text-[12.5px] font-bold text-gray-800">
+                      {returnedCount}/{totalCount} RFQ
+                      {totalCount !== 1 ? "s" : ""} returned
+                    </Text>
+                    <Text className="text-[10.5px] text-gray-400 mt-0.5">
+                      {returnedCount === 0
+                        ? "Awaiting canvasser submissions"
+                        : returnedCount < totalCount
+                          ? `${totalCount - returnedCount} still outstanding`
+                          : "All forms returned — ready for encoding"}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setRfqReviewOpen(true)}
+                    activeOpacity={0.8}
+                    className="flex-row items-center gap-1.5 bg-[#064E3B] px-3 py-2 rounded-xl ml-3"
+                  >
+                    <MaterialIcons
+                      name="assignment-turned-in"
+                      size={14}
+                      color="#fff"
+                    />
+                    <Text className="text-[11.5px] font-bold text-white">
+                      Review RFQs
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null;
+            })()}
 
             {(() => {
               const prItemIds = liveItems.map((i) => i.id);
@@ -727,17 +1130,20 @@ export default function BACView({
                         <View
                           key={e.id}
                           className={`px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                          style={{ borderWidth: 1, borderColor: "#f3f4f6" }}>
+                          style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
+                        >
                           <View className="flex-row items-center">
                             <View className="flex-[3] pr-2">
                               <Text
                                 className="text-[11.5px] font-semibold text-gray-800"
-                                numberOfLines={1}>
+                                numberOfLines={1}
+                              >
                                 {e.description}
                               </Text>
                               <Text
                                 className="text-[10.5px] text-gray-400 mt-0.5"
-                                numberOfLines={1}>
+                                numberOfLines={1}
+                              >
                                 {e.supplier_name}
                               </Text>
                             </View>
@@ -760,7 +1166,8 @@ export default function BACView({
                         style={{
                           borderTopWidth: 1,
                           borderTopColor: "#d1fae5",
-                        }}>
+                        }}
+                      >
                         <Text className="text-[11px] font-bold text-gray-500 mr-3">
                           Grand Total
                         </Text>
@@ -785,7 +1192,8 @@ export default function BACView({
                 {supps.map((sp, sIdx) => (
                   <View
                     key={sp.id}
-                    className="border border-gray-200 rounded-2xl mb-3 overflow-hidden">
+                    className="border border-gray-200 rounded-2xl mb-3 overflow-hidden"
+                  >
                     <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
                       <Text className="text-[13.5px] font-semibold text-gray-800">
                         Supplier {sIdx + 1}
@@ -797,7 +1205,8 @@ export default function BACView({
                             setSupps((s) => s.filter((x) => x.id !== sp.id))
                           }
                           hitSlop={8}
-                          className="p-1.5 rounded-lg border border-gray-200">
+                          className="p-1.5 rounded-lg border border-gray-200"
+                        >
                           <Text className="text-[12px] text-red-500">✕</Text>
                         </TouchableOpacity>
                       )}
@@ -860,10 +1269,12 @@ export default function BACView({
                             style={{
                               borderBottomWidth: 1,
                               borderBottomColor: "#f3f4f6",
-                            }}>
+                            }}
+                          >
                             <Text
                               className="flex-[2] text-[12px] text-gray-700"
-                              numberOfLines={1}>
+                              numberOfLines={1}
+                            >
                               {item.desc}
                             </Text>
                             <Text className="text-[11.5px] text-gray-400 w-9 text-center">
@@ -897,7 +1308,8 @@ export default function BACView({
                             <Text
                               className={`w-20 text-[11.5px] font-semibold text-right ${
                                 price > 0 ? "text-[#064E3B]" : "text-gray-300"
-                              }`}>
+                              }`}
+                            >
                               {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
                             </Text>
                           </View>
@@ -916,7 +1328,8 @@ export default function BACView({
                     borderWidth: 2,
                     borderStyle: "dashed",
                     borderColor: "#d1d5db",
-                  }}>
+                  }}
+                >
                   <Text className="text-[13px] font-semibold text-[#064E3B]">
                     + Add Supplier Quote
                   </Text>
@@ -939,7 +1352,8 @@ export default function BACView({
               <TouchableOpacity
                 onPress={() => setPreviewOpen(true)}
                 activeOpacity={0.8}
-                className="flex-row items-center gap-2 px-5 py-2.5 rounded-xl border border-[#064E3B] bg-[#064E3B]">
+                className="flex-row items-center gap-2 px-5 py-2.5 rounded-xl border border-[#064E3B] bg-[#064E3B]"
+              >
                 <MaterialIcons name="description" size={16} color="#ffffff" />
                 <Text className="text-[13px] font-bold text-white">
                   Preview RFQ Form
@@ -1024,17 +1438,20 @@ export default function BACView({
                       m.signed
                         ? "bg-emerald-50 border-emerald-200"
                         : "bg-white border-gray-200"
-                    }`}>
+                    }`}
+                  >
                     <View className="flex-row items-center gap-2.5 flex-1">
                       <View
                         className={`w-8 h-8 rounded-lg items-center justify-center border ${
                           m.signed
                             ? "bg-emerald-500 border-emerald-500"
                             : "bg-gray-100 border-gray-200"
-                        }`}>
+                        }`}
+                      >
                         <Text
                           className="text-[12px] font-bold"
-                          style={{ color: m.signed ? "#fff" : "#6b7280" }}>
+                          style={{ color: m.signed ? "#fff" : "#6b7280" }}
+                        >
                           {m.signed ? "✓" : m.name[0]}
                         </Text>
                       </View>
@@ -1042,7 +1459,8 @@ export default function BACView({
                         <Text
                           className={`text-[13px] font-semibold ${
                             m.signed ? "text-emerald-800" : "text-gray-800"
-                          }`}>
+                          }`}
+                        >
                           {m.name}
                         </Text>
                         <Text className="text-[11px] text-gray-400">
@@ -1078,7 +1496,8 @@ export default function BACView({
                             ),
                           )
                         }
-                        className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white">
+                        className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white"
+                      >
                         <Text className="text-[12px] font-semibold text-gray-500">
                           ✍️ Sign
                         </Text>
@@ -1108,6 +1527,23 @@ export default function BACView({
                 />
               )
             )}
+
+            {/* Preview Resolution button — visible once resolution no. is filled */}
+            {!!resNo && (
+              <View className="flex-row justify-center mb-3">
+                <TouchableOpacity
+                  onPress={() => setResolutionPreviewOpen(true)}
+                  activeOpacity={0.8}
+                  className="flex-row items-center gap-2 px-5 py-2.5 rounded-xl border border-[#064E3B] bg-[#064E3B]"
+                >
+                  <MaterialIcons name="gavel" size={16} color="#ffffff" />
+                  <Text className="text-[13px] font-bold text-white">
+                    Preview / Print Resolution
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <StepNav
               stage={stage}
               done={done}
@@ -1125,6 +1561,27 @@ export default function BACView({
         visible={previewOpen}
         data={buildPreviewData()}
         onClose={() => setPreviewOpen(false)}
+      />
+
+      <BACResolutionPreviewModal
+        visible={resolutionPreviewOpen}
+        data={buildResolutionData()}
+        onClose={() => setResolutionPreviewOpen(false)}
+      />
+
+      <RFQReviewModal
+        visible={rfqReviewOpen}
+        onClose={() => setRfqReviewOpen(false)}
+        pr={{ ...pr, items: liveItems }}
+        liveItems={liveItems}
+        entries={canvassEntries}
+        assignments={assignments}
+        users={canvassUsers}
+        bacNo={bacNo}
+        chairperson={
+          members.find((m) => m.designation.includes("Chairperson"))?.name ??
+          "BAC Chairperson"
+        }
       />
     </KeyboardAvoidingView>
   );

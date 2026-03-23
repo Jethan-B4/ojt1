@@ -15,24 +15,41 @@
  * with no params (e.g. during development / demo).
  */
 
+import AAAView from "@/app/(canvassing)/AAAView";
 import BACView from "@/app/(canvassing)/BACView";
 import CanvasserView from "@/app/(canvassing)/CanvasserView";
 import EndUserView from "@/app/(canvassing)/EndUserView";
+import { ensureCanvassSession, fetchPRIdByNo } from "@/lib/supabase";
 import type { CanvassPayload, CanvassingPR } from "@/types/canvassing";
+import React from "react";
 import { useAuth } from "../AuthContext";
 
 // ─── Placeholder used when no prNo param is passed ────────────────────────────
 
 const PLACEHOLDER_PR: CanvassingPR = {
-  prNo:               "2026-PR-0001",
-  date:               new Date().toLocaleDateString("en-PH"),
-  officeSection:      "STOD",
+  prNo: "2026-PR-0001",
+  date: new Date().toLocaleDateString("en-PH"),
+  officeSection: "STOD",
   responsibilityCode: "10-001",
-  purpose:            "Procurement of office supplies for Q1 operations.",
-  isHighValue:        false,
+  purpose: "Procurement of office supplies for Q1 operations.",
+  isHighValue: false,
   items: [
-    { id: 1, desc: "Bond Paper, Short (70gsm)", stock: "SP-001", unit: "ream", qty: 10, unitCost: 220 },
-    { id: 2, desc: "Ballpen, Black (0.5mm)",    stock: "SP-002", unit: "box",  qty: 5,  unitCost: 85  },
+    {
+      id: 1,
+      desc: "Bond Paper, Short (70gsm)",
+      stock: "SP-001",
+      unit: "ream",
+      qty: 10,
+      unitCost: 220,
+    },
+    {
+      id: 2,
+      desc: "Ballpen, Black (0.5mm)",
+      stock: "SP-002",
+      unit: "box",
+      qty: 5,
+      unitCost: 85,
+    },
   ],
 };
 
@@ -40,23 +57,76 @@ const PLACEHOLDER_PR: CanvassingPR = {
 
 interface CanvassingModuleProps {
   /** PR number string — passed via navigation.navigate("Canvassing", { prNo }) */
-  prNo?:       string;
+  prNo?: string;
+  /** Optional explicit stage to show, e.g. "aaa_preparation" */
+  targetStage?: string;
   onComplete?: (payload: CanvassPayload) => void;
-  onBack?:     () => void;
+  onBack?: () => void;
 }
 
 // ─── Root export ──────────────────────────────────────────────────────────────
 
-export default function CanvassingModule({ prNo, onComplete, onBack }: CanvassingModuleProps) {
+export default function CanvassingModule({
+  prNo,
+  targetStage,
+  onComplete,
+  onBack,
+}: CanvassingModuleProps) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
   // Seed the PR shell with the prNo — each view hydrates items from Supabase.
-  const pr: CanvassingPR = prNo
-    ? { ...PLACEHOLDER_PR, prNo }
-    : PLACEHOLDER_PR;
+  const pr: CanvassingPR = prNo ? { ...PLACEHOLDER_PR, prNo } : PLACEHOLDER_PR;
 
-  if (roleId === 3) return <BACView       pr={pr} onComplete={onComplete} onBack={onBack} />;
+  // If explicitly opening AAA stage for BAC, hydrate session meta and render AAAView
+  const [aaaProps, setAAAProps] = React.useState<{
+    sessionId: string;
+    bacNo: string;
+    resolutionNo: string;
+    mode: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    (async () => {
+      if (roleId === 3 && targetStage === "aaa_preparation" && pr.prNo) {
+        try {
+          const prId = await fetchPRIdByNo(pr.prNo);
+          if (!prId) return;
+          const session = await ensureCanvassSession(prId);
+          // resolution_no is stored in bac_resolution table; for simplicity,
+          // leave resolutionNo blank here — AAAView can proceed with read-only refs.
+          setAAAProps({
+            sessionId: session.id,
+            bacNo: session.bac_no ?? "",
+            resolutionNo: "",
+            mode: session.status ?? "SVP/Canvass",
+          });
+        } catch {}
+      } else {
+        setAAAProps(null);
+      }
+    })();
+  }, [roleId, targetStage, pr.prNo]);
+
+  if (roleId === 3 && targetStage === "aaa_preparation") {
+    if (!aaaProps) {
+      return <EndUserView pr={pr} onBack={onBack} />;
+    }
+    return (
+      <AAAView
+        sessionId={aaaProps.sessionId}
+        pr={pr}
+        bacNo={aaaProps.bacNo}
+        resolutionNo={aaaProps.resolutionNo}
+        mode={aaaProps.mode}
+        onComplete={onComplete}
+        onBack={onBack}
+      />
+    );
+  }
+
+  if (roleId === 3)
+    return <BACView pr={pr} onComplete={onComplete} onBack={onBack} />;
   if (roleId === 7) return <CanvasserView pr={pr} onBack={onBack} />;
-  return                   <EndUserView   pr={pr} onBack={onBack} />;
+  return <EndUserView pr={pr} onBack={onBack} />;
 }

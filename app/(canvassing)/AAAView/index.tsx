@@ -12,8 +12,8 @@ import {
     updateCanvassSessionMeta,
     updatePRStatus,
 } from "@/lib/supabase";
-import type { CanvassingPR } from "@/types/canvassing";
-import React, { useCallback, useRef, useState } from "react";
+import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert,
     KeyboardAvoidingView,
@@ -26,6 +26,7 @@ import { useAuth } from "../../AuthContext";
 import { CompletedBanner, StepHeader, StepNav } from "../BACView/components";
 import { MONO } from "../BACView/constants";
 import { Banner, Card, Divider, Field, Input } from "../BACView/ui";
+import { fetchQuotesForSession } from "@/lib/supabase";
 
 interface AAAViewProps {
   sessionId: string;
@@ -96,6 +97,111 @@ export default function AAAView({
     setIsSubmitted(false);
     setAaaNo("");
   };
+
+  // ── Abstract table data (read-only from quotations) ─────────────────────────
+  const [entries, setEntries] = useState<
+    { item_no: number; supplier_name: string; unit_price: number }[]
+  >([]);
+
+  useEffect(() => {
+    (async () => {
+      if (!sessionId) return;
+      try {
+        const rows = await fetchQuotesForSession(sessionId);
+        setEntries(
+          rows.map((r) => ({
+            item_no: r.item_no,
+            supplier_name: r.supplier_name ?? "",
+            unit_price: r.unit_price ?? 0,
+          })),
+        );
+      } catch {}
+    })();
+  }, [sessionId]);
+
+  const suppliers = useMemo(() => {
+    const names = Array.from(
+      new Set(entries.map((e) => e.supplier_name).filter(Boolean)),
+    );
+    return names.slice(0, 3);
+  }, [entries]);
+
+  const priceFor = (itemId: number, supplier: string) =>
+    entries.find(
+      (e) => e.item_no === itemId && e.supplier_name === supplier,
+    )?.unit_price ?? 0;
+
+  const winningSupplierFor = (itemId: number) => {
+    const byItem = entries.filter((e) => e.item_no === itemId && e.unit_price > 0);
+    if (byItem.length === 0) return "";
+    return byItem.reduce((best, e) => (e.unit_price < best.unit_price ? e : best)).supplier_name;
+  };
+
+  const ItemsAbstract = ({
+    items,
+    suppliers,
+  }: {
+    items: CanvassingPRItem[];
+    suppliers: string[];
+  }) => (
+    <Card>
+      <View className="px-4 pt-3 pb-3">
+        <Divider label="Abstract of Awards" />
+        <View className="rounded-xl overflow-hidden border border-gray-100">
+          {/* Header */}
+          <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
+            {["Item", "Qty", "Unit", "Particulars", ...suppliers].map((h, i) => (
+              <Text
+                key={h}
+                className="text-[9.5px] font-bold uppercase tracking-wide text-white/70"
+                style={{ flex: i === 3 ? 2 : 1 }}>
+                {i >= 4 ? `Supplier: ${h}` : h}
+              </Text>
+            ))}
+          </View>
+          {/* Rows */}
+          {items.map((item, i) => {
+            const winner = winningSupplierFor(item.id);
+            return (
+              <View
+                key={item.id}
+                className={`flex-row px-2.5 py-2 ${i % 2 ? "bg-gray-50" : "bg-white"}`}
+                style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
+                <Text className="flex-1 text-[12px] text-gray-700" style={{ fontFamily: MONO }}>
+                  {i + 1}
+                </Text>
+                <Text className="flex-1 text-[12px] text-gray-700" style={{ fontFamily: MONO }}>
+                  {item.qty}
+                </Text>
+                <Text className="flex-1 text-[12px] text-gray-500">{item.unit}</Text>
+                <Text className="flex-[2] text-[12px] text-gray-700">{item.desc}</Text>
+                {suppliers.map((s) => {
+                  const price = priceFor(item.id, s);
+                  const isWin = winner === s && price > 0;
+                  return (
+                    <View key={s} style={{ flex: 1, alignItems: "flex-end" }}>
+                      <Text
+                        className={`text-[12px] ${isWin ? "font-extrabold text-emerald-700" : "text-gray-700"}`}
+                        style={{ fontFamily: MONO }}>
+                        ₱
+                        {price.toLocaleString("en-PH", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Text>
+                      {isWin && (
+                        <Text className="text-[10px] font-bold text-emerald-700">✓</Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </Card>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -187,6 +293,9 @@ export default function AAAView({
             </View>
           </View>
         </Card>
+
+        {/* Abstract of Awards table */}
+        <ItemsAbstract items={pr.items as any} suppliers={suppliers} />
 
         {isSubmitted && (
           <CompletedBanner

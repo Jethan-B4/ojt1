@@ -7,23 +7,23 @@
  */
 
 import {
-    fetchAllRoles,
-    fetchAllUsers,
-    type RoleRow,
-    type UserRow,
+  fetchAllRoles,
+  fetchAllUsers,
+  type RoleRow,
+  type UserRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
-    ActivityIndicator,
-    FlatList,
-    Platform,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import CreateUserModal from "../(modals)/CreateUserModal";
 import DeleteUserModal from "../(modals)/DeleteUserModal";
@@ -361,7 +361,7 @@ export default function UserManagementScreen({ navigation }: any) {
         u.fullname.toLowerCase().includes(q) ||
         u.username.toLowerCase().includes(q) ||
         u.division_name?.toLowerCase().includes(q) ||
-        u.role_name?.toLowerCase().includes(q),
+        u.role_name?.toLowerCase().includes(q)
     );
     setFilteredUsers(filtered);
   }, [searchQuery, users]);

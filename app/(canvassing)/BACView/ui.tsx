@@ -1,12 +1,12 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useState } from "react";
 import {
-    Modal,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Modal,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { MONO } from "./constants";
 
@@ -40,7 +40,8 @@ export const Card = ({
       shadowOpacity: 0.07,
       shadowRadius: 6,
       elevation: 3,
-    }}>
+    }}
+  >
     {children}
   </View>
 );
@@ -128,9 +129,11 @@ export const PickerField = ({
         onPress={() => setOpen(true)}
         activeOpacity={0.8}
         className="flex-row items-center justify-between bg-white rounded-xl px-3 py-2.5"
-        style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}>
+        style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}
+      >
         <Text
-          className={`text-[13px] flex-1 ${value ? "text-gray-900" : "text-gray-400"}`}>
+          className={`text-[13px] flex-1 ${value ? "text-gray-900" : "text-gray-400"}`}
+        >
           {value || "Select…"}
         </Text>
         <MaterialIcons name="keyboard-arrow-down" size={18} color="#6b7280" />
@@ -139,7 +142,8 @@ export const PickerField = ({
         visible={open}
         transparent
         animationType="slide"
-        onRequestClose={() => setOpen(false)}>
+        onRequestClose={() => setOpen(false)}
+      >
         <TouchableOpacity
           className="flex-1 bg-black/50"
           activeOpacity={1}
@@ -159,7 +163,8 @@ export const PickerField = ({
           </View>
           <ScrollView
             style={{ maxHeight: 300 }}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+          >
             {options.map((opt) => (
               <TouchableOpacity
                 key={opt}
@@ -170,11 +175,13 @@ export const PickerField = ({
                 activeOpacity={0.7}
                 className={`flex-row justify-between items-center px-5 py-3.5 border-b border-gray-50 ${
                   opt === value ? "bg-emerald-50" : ""
-                }`}>
+                }`}
+              >
                 <Text
                   className={`text-[16px] ${
                     opt === value ? "font-bold text-[#1a4d2e]" : "text-gray-700"
-                  }`}>
+                  }`}
+                >
                   {opt}
                 </Text>
                 {opt === value && (
@@ -207,7 +214,8 @@ export const Banner = ({
     style={{
       borderLeftWidth: 4,
       borderLeftColor: type === "info" ? "#10b981" : "#f59e0b",
-    }}>
+    }}
+  >
     <MaterialIcons
       name={type === "info" ? "info" : "warning"}
       size={18}
@@ -217,7 +225,8 @@ export const Banner = ({
     <Text
       className={`flex-1 text-[14px] leading-6 ${
         type === "info" ? "text-emerald-900" : "text-amber-900"
-      }`}>
+      }`}
+    >
       {text}
     </Text>
   </View>
@@ -247,9 +256,11 @@ export const Btn = ({
         : disabled
           ? "bg-gray-300"
           : "bg-[#064E3B]"
-    }`}>
+    }`}
+  >
     <Text
-      className={`text-[15px] font-bold ${ghost ? "text-gray-400" : "text-white"}`}>
+      className={`text-[15px] font-bold ${ghost ? "text-gray-400" : "text-white"}`}
+    >
       {label}
     </Text>
   </TouchableOpacity>
@@ -262,7 +273,8 @@ export const StepBadge = ({ step }: { step: number }) => (
   <View className="bg-[#064E3B] rounded-xl px-3 py-2 items-center">
     <Text
       className="text-[22px] font-bold text-white"
-      style={{ fontFamily: MONO, lineHeight: 26 }}>
+      style={{ fontFamily: MONO, lineHeight: 26 }}
+    >
       {String(step).padStart(2, "0")}
     </Text>
     <Text className="text-[8px] font-bold tracking-widest uppercase text-white/50 mt-0.5">

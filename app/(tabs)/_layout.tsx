@@ -104,14 +104,20 @@ export default function TabLayout() {
 
 function CanvassingScreen({ navigation, route }: any) {
   const prNo: string | undefined = route?.params?.prNo;
+  const targetStage: string | undefined = route?.params?.targetStage;
   return (
     <CanvassingModule
       prNo={prNo}
+      targetStage={targetStage}
       onBack={() =>
         navigation.navigate("Procurement", { activeSubTab: "canvass" })
       }
       onComplete={(payload) =>
-        navigation.navigate("Procurement", { canvassPayload: payload })
+        navigation.navigate("Procurement", {
+          activeSubTab: "abstract_of_awards",
+          canvassPayload: payload,
+          prNo,
+        })
       }
     />
   );
