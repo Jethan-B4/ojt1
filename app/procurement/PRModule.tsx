@@ -11,7 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import EditPRModal, {
@@ -36,6 +36,7 @@ import {
   fetchPurchaseRequestsByDivision,
   insertProposalForPR,
   insertPurchaseRequest,
+  updatePRStatus,
   type PRRow,
   type PRStatusRow,
   type RemarkRow,
@@ -646,7 +647,23 @@ const RecordCard: React.FC<{
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
         {roleId === 6 ? (
-          record.statusId >= 6 ? (
+          record.statusId === 1 ? (
+            <TouchableOpacity
+              onPress={() => onProcess(record)}
+              activeOpacity={0.8}
+              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+            >
+              <Text className="text-white text-[12px] font-bold">Process</Text>
+            </TouchableOpacity>
+          ) : record.statusId <= 2 ? (
+            <TouchableOpacity
+              onPress={() => onEdit(record)}
+              activeOpacity={0.8}
+              className="flex-1 bg-amber-500 rounded-xl py-2 items-center"
+            >
+              <Text className="text-white text-[12px] font-bold">Edit</Text>
+            </TouchableOpacity>
+          ) : record.statusId >= 6 ? (
             <TouchableOpacity
               onPress={() => onProcess(record)}
               activeOpacity={0.8}
@@ -656,11 +673,11 @@ const RecordCard: React.FC<{
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              onPress={() => onEdit(record)}
-              activeOpacity={0.8}
-              className="flex-1 bg-amber-500 rounded-xl py-2 items-center"
+              disabled
+              activeOpacity={1}
+              className="flex-1 bg-gray-300 rounded-xl py-2 items-center"
             >
-              <Text className="text-white text-[12px] font-bold">Edit</Text>
+              <Text className="text-white text-[12px] font-bold">Locked</Text>
             </TouchableOpacity>
           )
         ) : (
@@ -1014,7 +1031,28 @@ export default function PRModule({
                 setEditRecord({ id: r.id, prNo: r.prNo });
                 setEditVisible(true);
               }}
-              onProcess={(r) => {
+              onProcess={async (r) => {
+                // End User initial processing: Pending (1) → Div. Head (2)
+                if (roleId === 6 && r.statusId === 1) {
+                  try {
+                    setSaving(true);
+                    await updatePRStatus(r.id, 2);
+                    setRecords((prev) =>
+                      prev.map((x) =>
+                        x.id === r.id ? { ...x, statusId: 2 } : x,
+                      ),
+                    );
+                    Alert.alert("Processed", "PR forwarded to Division Head.");
+                  } catch (e: any) {
+                    Alert.alert(
+                      "Failed",
+                      e?.message ?? "Could not update PR status.",
+                    );
+                  } finally {
+                    setSaving(false);
+                  }
+                  return;
+                }
                 if (roleId === 1) {
                   if (r.statusId >= 6 && r.statusId < 11) {
                     (navigation as any).navigate(
@@ -1042,7 +1080,64 @@ export default function PRModule({
                   setProcessVisible(true);
                   return;
                 }
-                if (roleId === 3 || roleId === 7 || roleId === 6) {
+                // Division Head can process when status <= 2
+                if (roleId === 2) {
+                  if (r.statusId <= 2) {
+                    try {
+                      if (r.statusId !== 2) {
+                        setSaving(true);
+                        await updatePRStatus(r.id, 2);
+                        setRecords((prev) =>
+                          prev.map((x) =>
+                            x.id === r.id ? { ...x, statusId: 2 } : x,
+                          ),
+                        );
+                      }
+                    } catch (e: any) {
+                      Alert.alert(
+                        "Failed",
+                        e?.message ?? "Could not update PR status.",
+                      );
+                    } finally {
+                      setSaving(false);
+                    }
+                    setProcessRecord({ id: r.id, prNo: r.prNo });
+                    setProcessVisible(true);
+                    return;
+                  }
+                  Alert.alert(
+                    "Not Available",
+                    "This PR is already beyond the Division Head step.",
+                  );
+                  return;
+                }
+                if (roleId === 3) {
+                  if (r.statusId === 3) {
+                    setProcessRecord({ id: r.id, prNo: r.prNo });
+                    setProcessVisible(true);
+                    return;
+                  }
+                  if (r.statusId >= 6 && r.statusId < 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
+                    return;
+                  }
+                  if (r.statusId === 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                    );
+                    return;
+                  }
+                  Alert.alert(
+                    "Not Available",
+                    "This PR is not yet in the BAC step or canvassing phase.",
+                  );
+                  return;
+                }
+                if (roleId === 7 || roleId === 6) {
                   if (r.statusId >= 6 && r.statusId < 11) {
                     (navigation as any).navigate(
                       "Canvassing" as never,

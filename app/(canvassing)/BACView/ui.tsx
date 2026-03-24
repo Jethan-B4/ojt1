@@ -78,12 +78,14 @@ export const Input = ({
   placeholder,
   readonly,
   numeric,
+  multiline,
 }: {
   value: string;
   onChange?: (v: string) => void;
   placeholder?: string;
   readonly?: boolean;
   numeric?: boolean;
+  multiline?: boolean;
 }) => {
   const [focused, setFocused] = useState(false);
   return (
@@ -94,6 +96,7 @@ export const Input = ({
       placeholderTextColor="#9ca3af"
       editable={!readonly}
       keyboardType={numeric ? "decimal-pad" : "default"}
+      multiline={multiline}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       className={`rounded-xl px-3 py-2.5 text-[15px] ${
@@ -103,6 +106,8 @@ export const Input = ({
         borderWidth: 1.5,
         borderColor: readonly ? "#e5e7eb" : focused ? "#10b981" : "#e5e7eb",
         fontFamily: readonly ? MONO : undefined,
+        minHeight: multiline ? 80 : undefined,
+        textAlignVertical: multiline ? "top" : undefined,
       }}
     />
   );

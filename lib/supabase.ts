@@ -542,6 +542,7 @@ export interface AAADocumentRow {
   prepared_by: number;
   prepared_at?: string | null;
   file_url?: string | null;
+  particulars?: string | null;
 }
 
 export async function fetchPRIdByNo(prNo: string): Promise<string | null> {
@@ -826,6 +827,37 @@ export async function fetchAssignmentsForSession(
   return data as CanvasserAssignmentRow[];
 }
 
+/**
+ * Fetch canvasser assignments for a session with resolved names.
+ * Joins `divisions(division_name)` and `users(fullname)` so callers
+ * never have to display raw numeric IDs.
+ */
+export interface EnrichedAssignmentRow extends CanvasserAssignmentRow {
+  division_name: string | null;
+  canvasser_name: string | null;
+}
+
+export async function fetchAssignmentsWithDetails(
+  sessionId: string,
+): Promise<EnrichedAssignmentRow[]> {
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .select("*, divisions(division_name), users(fullname)")
+    .eq("session_id", sessionId);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    session_id: r.session_id,
+    division_id: r.division_id,
+    canvasser_id: r.canvasser_id ?? null,
+    released_at: r.released_at ?? null,
+    returned_at: r.returned_at ?? null,
+    status: r.status,
+    division_name: r.divisions?.division_name ?? null,
+    canvasser_name: r.users?.fullname ?? null,
+  })) as EnrichedAssignmentRow[];
+}
+
 export async function fetchQuotesForSession(
   sessionId: string,
 ): Promise<CanvassEntryRow[]> {
@@ -835,6 +867,26 @@ export async function fetchQuotesForSession(
     .eq("session_id", sessionId);
   if (error) throw error;
   return data as CanvassEntryRow[];
+}
+
+export async function setItemWinningSupplier(
+  sessionId: string,
+  itemNo: number,
+  supplierName: string,
+): Promise<void> {
+  const { error: clearError } = await supabase
+    .from("canvass_entries")
+    .update({ is_winning: false })
+    .eq("session_id", sessionId)
+    .eq("item_no", itemNo);
+  if (clearError) throw clearError;
+  const { error: setError } = await supabase
+    .from("canvass_entries")
+    .update({ is_winning: true })
+    .eq("session_id", sessionId)
+    .eq("item_no", itemNo)
+    .eq("supplier_name", supplierName);
+  if (setError) throw setError;
 }
 
 export async function insertBACResolution(
@@ -850,6 +902,20 @@ export async function insertBACResolution(
   return data as BACResolutionRow;
 }
 
+export async function fetchBACResolutionForSession(
+  sessionId: string,
+): Promise<BACResolutionRow | null> {
+  const { data, error } = await supabase
+    .from("bac_resolution")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data as any) ?? null;
+}
+
 export async function insertAAAForSession(
   sessionId: string,
   payload: Omit<AAADocumentRow, "id" | "session_id">,
@@ -861,6 +927,32 @@ export async function insertAAAForSession(
     .single();
   if (error) throw error;
   return data as AAADocumentRow;
+}
+
+export async function fetchAAAForSession(
+  sessionId: string,
+): Promise<AAADocumentRow | null> {
+  const { data, error } = await supabase
+    .from("aaa_documents")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("prepared_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data as any) ?? null;
+}
+
+export async function fetchCanvassSessionById(
+  sessionId: string,
+): Promise<CanvassSessionRow | null> {
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .single();
+  if (error) return null;
+  return data as CanvassSessionRow;
 }
 
 // ─── Budget Module · Types & Helpers ─────────────────────────────────────────
