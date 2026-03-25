@@ -933,14 +933,14 @@ export async function insertAAAForSession(
  * Upsert an AAA document for a session — delete-then-insert so that
  * re-saving never creates duplicate rows in aaa_documents.
  */
-export async function upsertAAAForSession(
+export async function updateAAAForSession(
   sessionId: string,
-  payload: Omit<AAADocumentRow, "id" | "session_id">,
+  payload: Partial<Omit<AAADocumentRow, "id" | "session_id">>,
 ): Promise<AAADocumentRow> {
-  await supabase.from("aaa_documents").delete().eq("session_id", sessionId);
   const { data, error } = await supabase
     .from("aaa_documents")
-    .insert({ ...payload, session_id: sessionId })
+    .update(payload)
+    .eq("session_id", sessionId)
     .select()
     .single();
   if (error) throw error;

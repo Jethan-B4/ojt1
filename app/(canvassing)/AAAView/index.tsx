@@ -17,27 +17,21 @@
  */
 
 import {
-  CANVASS_PR_STATUS,
   fetchAAAForSession,
   fetchBACResolutionForSession,
   fetchCanvassSessionById,
   fetchPRIdByNo,
   fetchPRWithItemsById,
   fetchQuotesForSession,
+  insertAAAForSession,
   setItemWinningSupplier,
+  updateAAAForSession,
   updateCanvassSessionMeta,
   updatePRStatus,
-  upsertAAAForSession,
 } from "@/lib/supabase";
 import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -54,26 +48,25 @@ import { buildAAAPreviewHTML } from "../../(components)/AAAPreview";
 import AAAPreviewModal from "../../(modals)/AAAPreviewModal";
 import { useAuth } from "../../AuthContext";
 import { CompletedBanner, StepHeader, StepNav } from "../BACView/components";
-import { MONO } from "../BACView/constants";
-import { Banner, Card, Divider, Field, Input } from "../BACView/ui";
+import { Card, Divider, Field, Input } from "../BACView/ui";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AAAViewProps {
-  sessionId:    string;
-  pr:           CanvassingPR;
-  bacNo:        string;
+  sessionId: string;
+  pr: CanvassingPR;
+  bacNo: string;
   resolutionNo: string;
-  mode:         string;
-  onComplete?:  (payload: any) => void;
-  onBack?:      () => void;
+  mode: string;
+  onComplete?: (payload: any) => void;
+  onBack?: () => void;
 }
 
 interface EntryRow {
-  item_no:       number;
+  item_no: number;
   supplier_name: string;
-  unit_price:    number;
-  is_winning?:   boolean | null;
+  unit_price: number;
+  is_winning?: boolean | null;
 }
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
@@ -81,7 +74,10 @@ interface EntryRow {
 const MONO_FONT = Platform.OS === "ios" ? "Courier New" : "monospace";
 
 const fmt = (n: number) =>
-  n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 // ─── Abstract table (native, read-only + winner toggle) ───────────────────────
 
@@ -92,10 +88,10 @@ function AbstractTable({
   sessionId,
   onWinnerChanged,
 }: {
-  items:          CanvassingPRItem[];
-  suppliers:      string[];
-  entries:        EntryRow[];
-  sessionId:      string;
+  items: CanvassingPRItem[];
+  suppliers: string[];
+  entries: EntryRow[];
+  sessionId: string;
   onWinnerChanged: () => void;
 }) {
   if (suppliers.length === 0 || items.length === 0) {
@@ -103,22 +99,29 @@ function AbstractTable({
       <View className="items-center py-8 bg-white rounded-2xl border border-dashed border-gray-300 mb-3">
         <MaterialIcons name="pending" size={28} color="#d1d5db" />
         <Text className="text-[12.5px] text-gray-400 mt-2 text-center px-6">
-          No quotations have been submitted yet.{"\n"}The abstract will appear once canvassers return their forms.
+          No quotations have been submitted yet.{"\n"}The abstract will appear
+          once canvassers return their forms.
         </Text>
       </View>
     );
   }
 
   const priceFor = (itemId: number, supplier: string) =>
-    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)?.unit_price ?? 0;
+    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)
+      ?.unit_price ?? 0;
 
   const winnerFor = (itemId: number): string => {
     // Prefer DB-flagged winner; fall back to lowest price
-    const dbWinner = entries.find((e) => e.item_no === itemId && e.is_winning === true);
+    const dbWinner = entries.find(
+      (e) => e.item_no === itemId && e.is_winning === true,
+    );
     if (dbWinner) return dbWinner.supplier_name;
-    const byItem = entries.filter((e) => e.item_no === itemId && e.unit_price > 0);
+    const byItem = entries.filter(
+      (e) => e.item_no === itemId && e.unit_price > 0,
+    );
     if (byItem.length === 0) return "";
-    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b)).supplier_name;
+    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b))
+      .supplier_name;
   };
 
   const handleToggleWinner = async (itemId: number, supplier: string) => {
@@ -158,24 +161,31 @@ function AbstractTable({
             {/* Column headers */}
             <View className="flex-row bg-[#064E3B]">
               {[
-                { label: "No.",   w: 32 },
-                { label: "Qty",   w: 36 },
-                { label: "Unit",  w: 52 },
+                { label: "No.", w: 32 },
+                { label: "Qty", w: 36 },
+                { label: "Unit", w: 52 },
                 { label: "Particulars", w: 180 },
               ].map((col) => (
-                <View key={col.label}
+                <View
+                  key={col.label}
                   className="items-center justify-center py-1.5 border-r border-white/20"
-                  style={{ width: col.w }}>
+                  style={{ width: col.w }}
+                >
                   <Text className="text-[8px] font-bold uppercase text-white/80 text-center">
                     {col.label}
                   </Text>
                 </View>
               ))}
               {suppliers.map((s, i) => (
-                <View key={s}
+                <View
+                  key={s}
                   className={`items-center justify-center py-1.5 ${i < suppliers.length - 1 ? "border-r border-white/20" : ""}`}
-                  style={{ width: 100 }}>
-                  <Text className="text-[7.5px] font-bold text-white/80 text-center px-1" numberOfLines={2}>
+                  style={{ width: 100 }}
+                >
+                  <Text
+                    className="text-[7.5px] font-bold text-white/80 text-center px-1"
+                    numberOfLines={2}
+                  >
                     {s}
                   </Text>
                 </View>
@@ -191,21 +201,44 @@ function AbstractTable({
                   className={`flex-row ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
                   style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}
                 >
-                  <View className="items-center justify-center border-r border-gray-200" style={{ width: 32 }}>
-                    <Text className="text-[10px] text-gray-500" style={{ fontFamily: MONO_FONT }}>
+                  <View
+                    className="items-center justify-center border-r border-gray-200"
+                    style={{ width: 32 }}
+                  >
+                    <Text
+                      className="text-[10px] text-gray-500"
+                      style={{ fontFamily: MONO_FONT }}
+                    >
                       {rowIdx + 1}
                     </Text>
                   </View>
-                  <View className="items-center justify-center border-r border-gray-200 px-1" style={{ width: 36 }}>
-                    <Text className="text-[10px] text-gray-700" style={{ fontFamily: MONO_FONT }}>
+                  <View
+                    className="items-center justify-center border-r border-gray-200 px-1"
+                    style={{ width: 36 }}
+                  >
+                    <Text
+                      className="text-[10px] text-gray-700"
+                      style={{ fontFamily: MONO_FONT }}
+                    >
                       {item.qty}
                     </Text>
                   </View>
-                  <View className="items-center justify-center border-r border-gray-200 px-1" style={{ width: 52 }}>
-                    <Text className="text-[10px] text-gray-500 text-center">{item.unit}</Text>
+                  <View
+                    className="items-center justify-center border-r border-gray-200 px-1"
+                    style={{ width: 52 }}
+                  >
+                    <Text className="text-[10px] text-gray-500 text-center">
+                      {item.unit}
+                    </Text>
                   </View>
-                  <View className="justify-center border-r border-gray-200 px-2 py-1.5" style={{ width: 180 }}>
-                    <Text className="text-[10.5px] text-gray-700 leading-[14px]" numberOfLines={3}>
+                  <View
+                    className="justify-center border-r border-gray-200 px-2 py-1.5"
+                    style={{ width: 180 }}
+                  >
+                    <Text
+                      className="text-[10.5px] text-gray-700 leading-[14px]"
+                      numberOfLines={3}
+                    >
                       {item.desc}
                     </Text>
                   </View>
@@ -215,7 +248,9 @@ function AbstractTable({
                     return (
                       <TouchableOpacity
                         key={s}
-                        onPress={() => price > 0 ? handleToggleWinner(item.id, s) : undefined}
+                        onPress={() =>
+                          price > 0 ? handleToggleWinner(item.id, s) : undefined
+                        }
                         activeOpacity={price > 0 ? 0.7 : 1}
                         className={`items-end justify-center px-2 py-1.5 ${
                           isWin ? "bg-emerald-50" : ""
@@ -229,7 +264,9 @@ function AbstractTable({
                           {price > 0 ? fmt(price) : "—"}
                         </Text>
                         {isWin && (
-                          <Text className="text-[9px] font-bold text-emerald-600 mt-0.5">✓</Text>
+                          <Text className="text-[9px] font-bold text-emerald-600 mt-0.5">
+                            ✓
+                          </Text>
                         )}
                       </TouchableOpacity>
                     );
@@ -239,22 +276,34 @@ function AbstractTable({
             })}
 
             {/* Totals row */}
-            <View className="flex-row bg-emerald-50" style={{ borderTopWidth: 2, borderTopColor: "#bbf7d0" }}>
+            <View
+              className="flex-row bg-emerald-50"
+              style={{ borderTopWidth: 2, borderTopColor: "#bbf7d0" }}
+            >
               <View style={{ width: 32 + 36 + 52 }} />
-              <View className="justify-center px-2 py-2 border-r border-gray-200" style={{ width: 180 }}>
+              <View
+                className="justify-center px-2 py-2 border-r border-gray-200"
+                style={{ width: 180 }}
+              >
                 <Text className="text-[9px] font-bold uppercase text-emerald-800 text-right">
                   Total
                 </Text>
               </View>
               {suppliers.map((s, i) => {
-                const total = items.reduce((sum, item) => sum + priceFor(item.id, s) * item.qty, 0);
+                const total = items.reduce(
+                  (sum, item) => sum + priceFor(item.id, s) * item.qty,
+                  0,
+                );
                 return (
                   <View
                     key={s}
                     className={`items-end justify-center px-2 py-2 ${i < suppliers.length - 1 ? "border-r border-gray-200" : ""}`}
                     style={{ width: 100 }}
                   >
-                    <Text className="text-[10.5px] font-bold text-emerald-800" style={{ fontFamily: MONO_FONT }}>
+                    <Text
+                      className="text-[10.5px] font-bold text-emerald-800"
+                      style={{ fontFamily: MONO_FONT }}
+                    >
                       {total > 0 ? fmt(total) : "—"}
                     </Text>
                   </View>
@@ -292,31 +341,41 @@ export default function AAAView({
   const { currentUser } = useAuth();
 
   // ── Editable fields ─────────────────────────────────────────────────────────
-  const [aaaNo,       setAaaNo]       = useState("");
+  const [aaaNo, setAaaNo] = useState("");
   const [particulars, setParticulars] = useState("");
 
   // ── Read-only reference fields (hydrated from DB) ───────────────────────────
-  const [bacNo,       setBacNo]       = useState(bacNoProp);
+  const [bacNo, setBacNo] = useState(bacNoProp);
   const [resolutionNo, setResolutionNo] = useState(resolutionNoProp);
-  const [date,        setDate]        = useState(new Date().toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" }));
-  const [office,      setOffice]      = useState(pr.officeSection);
+  const [date, setDate] = useState(
+    new Date().toLocaleDateString("en-PH", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }),
+  );
+  const [office, setOffice] = useState(pr.officeSection);
 
   // ── Data state ──────────────────────────────────────────────────────────────
-  const [liveItems,  setLiveItems]  = useState<CanvassingPRItem[]>((pr.items as any) ?? []);
-  const [entries,    setEntries]    = useState<EntryRow[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(
+    (pr.items as any) ?? [],
+  );
+  const [entries, setEntries] = useState<EntryRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // ── Load all data ────────────────────────────────────────────────────────────
   const loadEntries = useCallback(async () => {
     const rows = await fetchQuotesForSession(sessionId);
-    setEntries(rows.map((r) => ({
-      item_no:       r.item_no,
-      supplier_name: r.supplier_name ?? "",
-      unit_price:    r.unit_price ?? 0,
-      is_winning:    r.is_winning ?? null,
-    })));
+    setEntries(
+      rows.map((r) => ({
+        item_no: r.item_no,
+        supplier_name: r.supplier_name ?? "",
+        unit_price: r.unit_price ?? 0,
+        is_winning: r.is_winning ?? null,
+      })),
+    );
   }, [sessionId]);
 
   useEffect(() => {
@@ -330,17 +389,23 @@ export default function AAAView({
           setOffice(h.office_section ?? pr.officeSection);
           setDate(
             h.created_at
-              ? new Date(h.created_at).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })
+              ? new Date(h.created_at).toLocaleDateString("en-PH", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })
               : date,
           );
-          setLiveItems(items.map((i: any) => ({
-            id:       parseInt(String(i.id)),
-            desc:     i.description,
-            stock:    i.stock_no,
-            unit:     i.unit,
-            qty:      i.quantity,
-            unitCost: i.unit_price,
-          })));
+          setLiveItems(
+            items.map((i: any) => ({
+              id: parseInt(String(i.id)),
+              desc: i.description,
+              stock: i.stock_no,
+              unit: i.unit,
+              qty: i.quantity,
+              unitCost: i.unit_price,
+            })),
+          );
         }
 
         // Session meta
@@ -371,20 +436,30 @@ export default function AAAView({
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const suppliers = useMemo(
-    () => [...new Set(entries.map((e) => e.supplier_name).filter(Boolean))].slice(0, 3),
+    () =>
+      [...new Set(entries.map((e) => e.supplier_name).filter(Boolean))].slice(
+        0,
+        3,
+      ),
     [entries],
   );
 
   const winnerFor = (itemId: number): string => {
-    const dbWinner = entries.find((e) => e.item_no === itemId && e.is_winning === true);
+    const dbWinner = entries.find(
+      (e) => e.item_no === itemId && e.is_winning === true,
+    );
     if (dbWinner) return dbWinner.supplier_name;
-    const byItem = entries.filter((e) => e.item_no === itemId && e.unit_price > 0);
+    const byItem = entries.filter(
+      (e) => e.item_no === itemId && e.unit_price > 0,
+    );
     if (byItem.length === 0) return "";
-    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b)).supplier_name;
+    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b))
+      .supplier_name;
   };
 
   const priceFor = (itemId: number, supplier: string) =>
-    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)?.unit_price ?? 0;
+    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)
+      ?.unit_price ?? 0;
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -393,49 +468,74 @@ export default function AAAView({
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
 
-      await upsertAAAForSession(sessionId, {
-        aaa_no:      aaaNo.trim(),
-        particulars: particulars.trim() || null,
-        prepared_by: currentUser?.id ?? 0,
-        prepared_at: new Date().toISOString(),
-        file_url:    null,
-      });
+      const existingAAA = await fetchAAAForSession(sessionId);
+      if (existingAAA) {
+        await updateAAAForSession(sessionId, {
+          aaa_no: aaaNo.trim(),
+          particulars: particulars.trim() || null,
+          prepared_by: currentUser?.id ?? 0,
+          prepared_at: new Date().toISOString(),
+          file_url: null,
+        });
+      } else {
+        await insertAAAForSession(sessionId, {
+          aaa_no: aaaNo.trim(),
+          particulars: particulars.trim() || null,
+          prepared_by: currentUser?.id ?? 0,
+          prepared_at: new Date().toISOString(),
+          file_url: null,
+        });
+      }
 
       await updateCanvassSessionMeta(sessionId, { status: "closed" });
-      await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);
+      await updatePRStatus(prId, 12);
 
       setIsSubmitted(true);
 
       onComplete?.({
-        pr_no:          pr.prNo,
-        bac_no:         bacNo,
-        resolution_no:  resolutionNo,
-        aaa_no:         aaaNo,
+        pr_no: pr.prNo,
+        bac_no: bacNo,
+        resolution_no: resolutionNo,
+        aaa_no: aaaNo,
       });
 
-      Alert.alert("✅ Canvassing Complete", "Abstract of Awards recorded. Forward to Supply Section.");
+      Alert.alert(
+        "✅ Canvassing Complete",
+        "Abstract of Awards recorded. Forward to Supply Section.",
+      );
     } catch (e: any) {
       Alert.alert("Save failed", e?.message ?? "Could not record AAA");
     }
-  }, [sessionId, pr.prNo, aaaNo, particulars, currentUser?.id, bacNo, resolutionNo, onComplete]);
+  }, [
+    sessionId,
+    pr.prNo,
+    aaaNo,
+    particulars,
+    currentUser?.id,
+    bacNo,
+    resolutionNo,
+    onComplete,
+  ]);
 
   // ── Preview data ──────────────────────────────────────────────────────────────
   const buildPreviewData = (): AAAPreviewData => ({
     bacNo,
-    prNo:         pr.prNo,
+    prNo: pr.prNo,
     resolutionNo,
     date,
     office,
-    particulars:  particulars.trim(),
+    particulars: particulars.trim(),
     suppliers,
     rows: liveItems.map((item, idx) => {
       const prices: Record<string, number> = {};
-      suppliers.forEach((s) => { prices[s] = priceFor(item.id, s); });
+      suppliers.forEach((s) => {
+        prices[s] = priceFor(item.id, s);
+      });
       return {
         itemNo: idx + 1,
-        qty:    item.qty,
-        unit:   item.unit,
-        desc:   item.desc,
+        qty: item.qty,
+        unit: item.unit,
+        desc: item.desc,
         prices,
         winner: winnerFor(item.id) || null,
       };
@@ -460,7 +560,11 @@ export default function AAAView({
     >
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingVertical: 16,
+          paddingBottom: 40,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -539,7 +643,8 @@ export default function AAAView({
                 />
               </View>
               <Text className="text-[10px] text-gray-400 mt-1 px-1">
-                This text appears as the Job Order row at the top of the abstract table.
+                This text appears as the Job Order row at the top of the
+                abstract table.
               </Text>
             </Field>
           </View>
