@@ -1,8 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import "react-native-url-polyfill/auto";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// Make sure to set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file
+// Remove the default values if you set them in your .env file
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ??
+  "https://yqfoykznqmdvgxsoassm.supabase.co";
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxZm95a3pucW1kdmd4c29hc3NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMTA5NjEsImV4cCI6MjA4Njg4Njk2MX0.NOtDkXus6fb2l-gXAruCCgNV4JjtYzieFmyv_qtb_4I";
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
