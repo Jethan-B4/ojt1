@@ -21,21 +21,22 @@
  *   └─────────────────────────────────────────┘
  */
 
+import type {
+  CanvassEntryRow,
+  CanvasserAssignmentRow,
+  CanvassUserRow,
+} from "@/lib/supabase";
 import {
   ensureCanvassSession,
   fetchAssignmentsForSession,
-  fetchPRIdByNo,
-  fetchPRWithItemsById,
   fetchQuotesForSession,
   fetchUsersByRole,
   markAssignmentReturned,
   replaceSupplierQuotesForSession,
-  supabase,
   updateCanvassStage,
-  type CanvassEntryRow,
-  type CanvasserAssignmentRow,
-  type CanvassUserRow,
-} from "@/lib/supabase";
+} from "@/lib/supabase/canvassing";
+import { supabase } from "@/lib/supabase/client";
+import { fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
 import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";

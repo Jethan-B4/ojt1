@@ -18,17 +18,21 @@
 
 import {
   fetchAAAForSession,
-  fetchBACResolutionForSession,
+  insertAAAForSession,
+  updateAAAForSession,
+} from "@/lib/supabase/aaa";
+import { fetchBACResolutionForSession } from "@/lib/supabase/bac";
+import {
   fetchCanvassSessionById,
+  fetchQuotesForSession,
+  setItemWinningSupplier,
+  updateCanvassSessionMeta,
+} from "@/lib/supabase/canvassing";
+import {
   fetchPRIdByNo,
   fetchPRWithItemsById,
-  fetchQuotesForSession,
-  insertAAAForSession,
-  setItemWinningSupplier,
-  updateAAAForSession,
-  updateCanvassSessionMeta,
   updatePRStatus,
-} from "@/lib/supabase";
+} from "@/lib/supabase/pr";
 import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";

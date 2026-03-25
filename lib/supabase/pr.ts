@@ -1,0 +1,172 @@
+import { supabase } from "./client";
+
+export async function fetchPRStatuses() {
+  const { data, error } = await supabase
+    .from("pr_status")
+    .select("id, status_name")
+    .order("id");
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchPurchaseRequests() {
+  const { data, error } = await supabase.from("purchase_requests").select("*");
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchPurchaseRequestsByDivision(divisionId: number) {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("division_id", divisionId);
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchCanvassablePRs() {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .gt("status_id", 5);
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchCanvassablePRsByDivision(divisionId: number) {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .gt("status_id", 5)
+    .eq("division_id", divisionId);
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchLatestRemarkByPR(prId: string | number) {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select(
+      "id, pr_id, remark, status_flag_id, created_at, users(fullname), status_flag(*)",
+    )
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function insertRemark(
+  prId: string | number,
+  userId: string | number | null,
+  remark: string,
+  statusFlagId?: number | null,
+) {
+  const payload: Record<string, any> = {
+    pr_id: prId,
+    remark,
+    user_id: userId,
+    status_flag_id: statusFlagId ?? null,
+  };
+  const { error } = await supabase.from("remarks").insert(payload);
+  if (error) throw error;
+}
+
+export async function updatePRStatus(prId: string | number, statusId: number) {
+  const { error } = await supabase
+    .from("purchase_requests")
+    .update({ status_id: statusId })
+    .eq("id", prId);
+  if (error) throw error;
+}
+
+export async function fetchPRIdByNo(prNo: string) {
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("id")
+    .eq("pr_no", prNo)
+    .single();
+  if (error) return null;
+  return (data as any)?.id ?? null;
+}
+
+export async function fetchPRWithItemsById(prId: string) {
+  let headerResp = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .eq("id", prId)
+    .single();
+  if (headerResp.error) {
+    headerResp = await supabase
+      .from("purchase_requests")
+      .select("*")
+      .eq("pr_id", prId)
+      .single();
+  }
+  if (headerResp.error || !headerResp.data)
+    throw headerResp.error ?? new Error("PR not found");
+  const header = headerResp.data as any;
+  const { data: items, error: iErr } = await supabase
+    .from("purchase_request_items")
+    .select(
+      "id, stock_no, unit, description, quantity, unit_price, subtotal, pr_id",
+    )
+    .eq("pr_id", (header as any).id ?? (header as any).pr_id);
+  if (iErr) throw iErr;
+  return { header, items };
+}
+
+export async function insertPurchaseRequest(
+  pr: Record<string, any>,
+  items: Record<string, any>[],
+) {
+  const base: Record<string, any> = {
+    pr_no: pr.pr_no,
+    office_section: pr.office_section,
+    purpose: pr.purpose,
+    total_cost: pr.total_cost,
+    is_high_value: pr.is_high_value,
+    status_id: pr.status_id,
+    proposal_no: pr.proposal_no,
+    division_id: pr.division_id,
+  };
+  if (pr.entity_name) base.entity_name = pr.entity_name;
+  if (pr.fund_cluster) base.fund_cluster = pr.fund_cluster;
+  if (pr.resp_code) base.resp_code = pr.resp_code;
+  if (pr.budget_number) base.budget_number = pr.budget_number;
+  if (pr.pap_code) base.pap_code = pr.pap_code;
+  if (pr.proposal_file) base.proposal_file = pr.proposal_file;
+  if (pr.req_name) base.req_name = pr.req_name;
+  if (pr.req_desig) base.req_desig = pr.req_desig;
+  if (pr.app_name) base.app_name = pr.app_name;
+  if (pr.app_desig) base.app_desig = pr.app_desig;
+
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .insert(base)
+    .select()
+    .single();
+  if (error) throw error;
+  const parentId = (data as any).id ?? (data as any).pr_id;
+  if (items.length > 0) {
+    const { error: itemsError } = await supabase
+      .from("purchase_request_items")
+      .insert(items.map((item) => ({ ...item, pr_id: parentId })));
+    if (itemsError) throw itemsError;
+  }
+  return data;
+}
+
+export async function insertProposalForPR(
+  prId: string,
+  proposalNo: string,
+  divisionId?: number,
+) {
+  if (!proposalNo) return;
+  const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
+  if (typeof divisionId === "number") payload.division_id = divisionId;
+  const { error } = await supabase.from("proposals").insert(payload);
+  if (error) throw error;
+}
+

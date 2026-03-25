@@ -17,14 +17,8 @@
  */
 
 import type { CanvassEntryRow, EnrichedAssignmentRow } from "@/lib/supabase";
-import {
-  ensureCanvassSession,
-  fetchAssignmentsWithDetails,
-  fetchPRIdByNo,
-  fetchPRWithItemsById,
-  fetchQuotesForSession,
-  supabase,
-} from "@/lib/supabase";
+import { supabase, fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
+import { ensureCanvassSession, fetchAssignmentsWithDetails, fetchQuotesForSession } from "@/lib/supabase/canvassing";
 import type {
   CanvassStage,
   CanvassingPR,

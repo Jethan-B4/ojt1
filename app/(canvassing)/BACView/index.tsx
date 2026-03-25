@@ -11,28 +11,31 @@
  *   /index.tsx — main BAC orchestrator component (this file)
  */
 
+import type {
+  CanvassEntryRow,
+  CanvassUserRow,
+  CanvasserAssignmentRow,
+} from "@/lib/supabase";
+import { insertBACResolution } from "@/lib/supabase/bac";
 import {
-  CANVASS_PR_STATUS,
   ensureCanvassSession,
   fetchAssignmentsForSession,
-  fetchPRIdByNo,
-  fetchPRWithItemsById,
   fetchQuotesForSession,
   fetchUsersByRole,
   insertAssignmentReleased,
   insertAssignmentsForDivisions,
-  insertBACResolution,
   markAssignmentReturned,
   replaceSupplierQuotesForSession,
-  supabase,
   updateAssignmentReleased,
   updateCanvassSessionMeta,
   updateCanvassStage,
+} from "@/lib/supabase/canvassing";
+import { supabase } from "@/lib/supabase/client";
+import {
+  fetchPRIdByNo,
+  fetchPRWithItemsById,
   updatePRStatus,
-  type CanvassEntryRow,
-  type CanvassUserRow,
-  type CanvasserAssignmentRow,
-} from "@/lib/supabase";
+} from "@/lib/supabase/pr";
 import type {
   BACMember,
   CanvassStage,
@@ -314,7 +317,7 @@ export default function BACView({
       setSessionId(session.id);
       await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
       await updateCanvassStage(session.id, "release_canvass");
-      await updatePRStatus(prId, CANVASS_PR_STATUS.pr_received);
+      await updatePRStatus(prId, 6);
       sessionRef.current.bac_no = bacNo;
       advance("pr_received");
     } catch (e: any) {
@@ -341,7 +344,7 @@ export default function BACView({
           canvassStatuses[u.id]?.releaseDate || new Date().toISOString(),
       }));
       if (rows.length) await insertAssignmentsForDivisions(sessionId, rows);
-      await updatePRStatus(prId, CANVASS_PR_STATUS.release_canvass);
+      await updatePRStatus(prId, 8);
       await updateCanvassStage(sessionId, "collect_canvass");
       fetchAssignmentsForSession(sessionId)
         .then(setAssignments)
@@ -380,7 +383,7 @@ export default function BACView({
       // Always use replace (delete-then-insert) so that re-encoding or editing
       // never accumulates duplicate rows in canvass_entries.
       await replaceSupplierQuotesForSession(sessionId, quotes);
-      await updatePRStatus(prId, CANVASS_PR_STATUS.collect_canvass);
+      await updatePRStatus(prId, 9);
       await updateCanvassStage(sessionId, "bac_resolution");
       fetchQuotesForSession(sessionId)
         .then(setCanvassEntries)
@@ -409,7 +412,7 @@ export default function BACView({
         notes: null,
       });
       // Move PR to AAA Issuance immediately after resolution
-      await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);
+      await updatePRStatus(prId, 11);
       await updateCanvassStage(sessionId, "aaa_preparation");
       advance("aaa_preparation");
       // Notify parent so the shell route can jump back to Procurement → AAA tab

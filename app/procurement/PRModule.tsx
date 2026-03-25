@@ -27,6 +27,7 @@ import PurchaseRequestModal, {
   PRSubmitPayload,
 } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
+import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import {
   fetchCanvassablePRs,
   fetchCanvassablePRsByDivision,
@@ -37,10 +38,7 @@ import {
   insertProposalForPR,
   insertPurchaseRequest,
   updatePRStatus,
-  type PRRow,
-  type PRStatusRow,
-  type RemarkRow,
-} from "../../lib/supabase";
+} from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
