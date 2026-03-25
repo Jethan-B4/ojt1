@@ -1,225 +1,338 @@
+/**
+ * AAAPreview.tsx
+ *
+ * Generates an HTML string matching the official DAR Abstract of Price Quotations
+ * document (as shown in the sample image), consumed by AAAPreviewModal via WebView.
+ *
+ * Document structure (top → bottom, from sample):
+ *   1. Top-right reference block  — BAC No. / PR No. / Resolution No. / Date
+ *   2. Title block                — "ABSTRACT OF PRICE QUOTATIONS…"
+ *   3. Column header row          — ITEM NO. | QTY | UNIT | PARTICULARS | [Dealer columns]
+ *   4. Job-order description row  — spans Particulars column, no prices
+ *   5. Item rows                  — one per PR line item, with checkmarks on winners
+ *   6. Summary rows               — TOTAL MATERIAL COST / TOTAL LABOR COST / X-X-X / TOTAL
+ */
+
 import React from "react";
 import { View } from "react-native";
 import { WebView } from "react-native-webview";
 
+// ─── Data types ───────────────────────────────────────────────────────────────
+
 export interface AAAPreviewData {
-  prNo: string;
-  date: string;
-  office: string;
-  suppliers: string[];
-  particulars?: string;
+  /** Reference block (top-right) */
+  bacNo:         string;
+  prNo:          string;
+  resolutionNo:  string;
+  date:          string;
+
+  /** Document title sub-line — office/requestor name */
+  office:        string;
+
+  /** Job-order description that appears as the first row in the table */
+  particulars:   string;
+
+  /** Up to 3 dealer/supplier names */
+  suppliers:     string[];
+
+  /** One entry per PR line item */
   rows: Array<{
-    itemNo: number;
-    unit: string;
-    qty: number;
-    desc: string;
-    prices: Record<string, number>;
-    winner?: string | null;
+    itemNo:   number;
+    qty:      number;
+    unit:     string;
+    desc:     string;
+    /** keyed by supplier name → unit price (0 if not quoted) */
+    prices:   Record<string, number>;
+    /** name of the winning supplier for this item, or null */
+    winner:   string | null;
   }>;
+
+  /** Optional separate totals (material vs labour+rental) */
+  totalMaterial?: number;
+  totalLabour?:   number;
 }
 
-function buildCurrency(n: number) {
-  return `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function cur(n: number) {
+  return n > 0
+    ? n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "";
 }
 
-export function buildAAAPreviewHTML(data: AAAPreviewData) {
-  const supplierHeaders = data.suppliers
-    .map((s) => `<td class="header-td"><div class="supplier-header">Supplier:</div><div class="supplier-name">${s}</div></td>`)
+// ─── HTML generator ───────────────────────────────────────────────────────────
+
+export function buildAAAPreviewHTML(d: AAAPreviewData): string {
+  const supplierCount = d.suppliers.length || 1;
+  // Each supplier column gets roughly equal width; fixed layout manages the rest
+  const supplierColPct = Math.floor(50 / supplierCount);
+
+  // ── Top-right reference block ────────────────────────────────────────────
+  const refBlock = `
+    <table class="ref-table">
+      <tr><td class="ref-td">${d.bacNo}</td></tr>
+      <tr><td class="ref-td">${d.prNo}</td></tr>
+      <tr><td class="ref-td">${d.resolutionNo}</td></tr>
+      <tr><td class="ref-td">${d.date}</td></tr>
+    </table>`;
+
+  // ── Supplier column headers ──────────────────────────────────────────────
+  const supplierHeaders = d.suppliers
+    .map((s) => `<th style="width:${supplierColPct}%;">${s}</th>`)
     .join("");
 
-  const bodyRows = data.rows
+  // ── Job-order description row ────────────────────────────────────────────
+  const jobOrderRow = `
+    <tr>
+      <td colspan="4" class="job-order-cell">
+        <strong>JOB ORDER</strong><br/>
+        ${(d.particulars || "").replace(/\n/g, "<br/>")}
+      </td>
+      ${d.suppliers.map(() => "<td></td>").join("")}
+    </tr>`;
+
+  // ── Item rows ────────────────────────────────────────────────────────────
+  const itemRows = d.rows
     .map((r) => {
-      const priceTds = data.suppliers
+      const priceCells = d.suppliers
         .map((s) => {
-          const p = r.prices[s] ?? 0;
-          const isWin = r.winner && r.winner === s && p > 0;
-          return `<td class="td ${isWin ? "winner" : ""}">${
-            p ? buildCurrency(p) : ""
-          }</td>`;
+          const p     = r.prices[s] ?? 0;
+          const isWin = r.winner === s && p > 0;
+          return `<td class="price-td${isWin ? " winner" : ""}">
+            ${cur(p)}${isWin ? '<span class="check">✓</span>' : ""}
+          </td>`;
         })
         .join("");
-      return `<tr>
-        <td class="td item-no">${r.itemNo}</td>
-        <td class="td qty">${r.qty}</td>
-        <td class="td unit">${r.unit}</td>
-        <td class="td description">${r.desc}</td>
-        ${priceTds}
-      </tr>`;
+      return `
+        <tr>
+          <td class="center-td">${r.itemNo}</td>
+          <td class="center-td">${r.qty}</td>
+          <td class="center-td">${r.unit}</td>
+          <td class="desc-td">${r.desc}</td>
+          ${priceCells}
+        </tr>`;
     })
     .join("");
 
-  const totals = data.suppliers.map((s) => {
-    const t = data.rows.reduce((sum, r) => sum + (r.prices[s] ?? 0) * r.qty, 0);
-    return `<td class="td total-cell">${t ? buildCurrency(t) : ""}</td>`;
-  }).join("");
+  // ── Summary rows ─────────────────────────────────────────────────────────
+  // Grand totals per supplier (all item prices × qty)
+  const supplierGrandTotals = d.suppliers.map((s) =>
+    d.rows.reduce((sum, r) => sum + (r.prices[s] ?? 0) * r.qty, 0),
+  );
 
-  const html = `<!doctype html>
-  <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { 
-        font-family: Arial, sans-serif; 
-        color: #000; 
-        padding: 20px;
-        font-size: 11px;
-        line-height: 1.2;
-      }
-      .document { width: 100%; }
-      .header-section {
-        text-align: center;
-        margin-bottom: 15px;
-        border-bottom: 2px solid #000;
-        padding-bottom: 10px;
-      }
-      .department { font-size: 10px; font-weight: bold; }
-      .doc-title { font-size: 14px; font-weight: bold; margin: 8px 0; }
-      .doc-subtitle { font-size: 10px; margin: 4px 0; }
-      .info-row { display: flex; justify-content: space-between; margin: 5px 0; font-size: 10px; }
-      .info-label { font-weight: bold; }
-      
-      table { 
-        width: 100%; 
-        border-collapse: collapse; 
-        margin: 15px 0;
-        table-layout: fixed;
-      }
-      
-      th, td { 
-        border: 1px solid #000; 
-        padding: 4px 3px;
-        text-align: center;
-        vertical-align: middle;
-        word-wrap: break-word;
-      }
-      
-      .header-row { background-color: #f0f0f0; }
-      .header-td { padding: 3px; }
-      .supplier-header { font-weight: bold; font-size: 9px; }
-      .supplier-name { font-weight: bold; font-size: 10px; }
-      
-      .item-no { width: 4%; }
-      .qty { width: 5%; }
-      .unit { width: 6%; }
-      .description { width: 20%; text-align: left; padding-left: 5px; }
-      
-      td.winner { font-weight: bold; background-color: #fff3cd; }
-      .total-cell { font-weight: bold; }
-      
-      .remarks { margin-top: 15px; font-size: 10px; }
-      .remarks-label { font-weight: bold; }
-      
-      .signature-section { 
-        margin-top: 20px; 
-        padding-top: 15px; 
-        border-top: 1px solid #000;
-        display: flex;
-        justify-content: space-around;
-      }
-      
-      .signature-line { 
-        width: 30%;
-        text-align: center;
-        font-size: 9px;
-      }
-      
-      .signature-blank { 
-        border-top: 1px solid #000; 
-        height: 30px; 
-        margin: 5px 0;
-      }
-      
-      .signature-name { margin-top: 3px; font-weight: bold; }
-      .signature-title { font-size: 8px; margin-top: 2px; }
-      
-      .approval-section {
-        margin-top: 15px;
-        padding: 10px;
-        border: 1px solid #000;
-        font-size: 9px;
-      }
-      
-      .approval-title { font-weight: bold; margin-bottom: 5px; }
-    </style>
-  </head>
-  <body>
-    <div class="document">
-      <div class="header-section">
-        <div class="department">DEPARTMENT OF BUDGET AND MANAGEMENT</div>
-        <div class="doc-title">ABSTRACT OF AWARDS</div>
-        <div class="doc-subtitle">For Competitive Bidding</div>
-      </div>
-      
-      <div class="info-row">
-        <div><span class="info-label">PR No.:</span> ${data.prNo}</div>
-        <div><span class="info-label">Office:</span> ${data.office}</div>
-        <div><span class="info-label">Date:</span> ${data.date}</div>
-      </div>
-      
-      <table>
-        <thead>
-          <tr class="header-row">
-            <th style="width:4%;">Item</th>
-            <th style="width:5%;">Qty</th>
-            <th style="width:6%;">Unit</th>
-            <th style="width:20%;text-align:left;padding-left:5px;">Particulars/Description</th>
-            ${supplierHeaders}
-          </tr>
-        </thead>
-        <tbody>
-          ${bodyRows}
-          <tr style="font-weight:bold;">
-            <td colspan="4" style="text-align:right;padding-right:5px;">TOTAL</td>
-            ${totals}
-          </tr>
-        </tbody>
-      </table>
-      
-      <div class="remarks">
-        <span class="remarks-label">Remarks/Particulars:</span> ${data.particulars || "Items marked with selection criteria met."}
-      </div>
-      
-      <div class="signature-section">
-        <div class="signature-line">
-          <div class="signature-blank"></div>
-          <div class="signature-name">Chair, BAC</div>
-          <div class="signature-title">Procurement Office</div>
-        </div>
-        <div class="signature-line">
-          <div class="signature-blank"></div>
-          <div class="signature-name">Vice-Chair, BAC</div>
-          <div class="signature-title">Finance Unit</div>
-        </div>
-        <div class="signature-line">
-          <div class="signature-blank"></div>
-          <div class="signature-name">Secretary, BAC</div>
-          <div class="signature-title">Admin Department</div>
-        </div>
-      </div>
-      
-      <div class="approval-section">
-        <div class="approval-title">APPROVED BY:</div>
-        <div style="margin-top:8px;">
-          <div class="signature-blank" style="width:40%;margin-left:0;"></div>
-          <div style="font-weight:bold;margin-top:3px;">Department Head</div>
-        </div>
-      </div>
-    </div>
-  </body>
-  </html>`;
-  return html;
+  const matCells = d.suppliers
+    .map((_, i) =>
+      d.totalMaterial !== undefined
+        ? `<td class="price-td">${i === 0 ? cur(d.totalMaterial) : ""}</td>`
+        : `<td></td>`,
+    )
+    .join("");
+
+  const labCells = d.suppliers
+    .map(() => `<td></td>`)
+    .join("");
+
+  const xCells = d.suppliers
+    .map(() => `<td class="x-row"></td>`)
+    .join("");
+
+  const totalCells = supplierGrandTotals
+    .map((t) => `<td class="price-td total-td">${cur(t)}</td>`)
+    .join("");
+
+  const summaryRows = `
+    <tr class="summary-row">
+      <td colspan="4" class="summary-label">TOTAL MATERIAL COST</td>
+      ${matCells}
+    </tr>
+    <tr class="summary-row">
+      <td colspan="4" class="summary-label">TOTAL LABOR COST AND MACHINE RENTAL</td>
+      ${labCells}
+    </tr>
+    <tr class="summary-row">
+      <td colspan="4" class="x-row">X-X-X-X-X-X-X-X-X-X-X-X-X-X-X</td>
+      ${xCells}
+    </tr>
+    <tr class="summary-row total-row">
+      <td colspan="3" class="summary-label"></td>
+      <td class="summary-label">TOTAL</td>
+      ${totalCells}
+    </tr>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Abstract of Price Quotations</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+      color: #000;
+      background: #fff;
+      padding: 10mm 10mm 8mm 10mm;
+    }
+
+    /* Reference block (top-right) */
+    .page-header {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 6px;
+    }
+    .ref-table { border-collapse: collapse; }
+    .ref-td {
+      font-size: 8.5pt;
+      text-align: right;
+      padding: 0 2px;
+      border-bottom: 1px solid #000;
+    }
+
+    /* Title */
+    .title-block {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .title-main {
+      font-size: 10.5pt;
+      font-weight: bold;
+      line-height: 1.4;
+    }
+    .title-sub { font-size: 9pt; line-height: 1.3; }
+
+    /* Main table */
+    table.main {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin-bottom: 0;
+    }
+    table.main th,
+    table.main td {
+      border: 1px solid #000;
+      font-size: 8.5pt;
+      vertical-align: middle;
+      padding: 2px 3px;
+      word-wrap: break-word;
+    }
+    /* Column widths */
+    .col-item   { width: 5%;  }
+    .col-qty    { width: 5%;  }
+    .col-unit   { width: 8%;  }
+    .col-desc   { width: 32%; }
+    /* Supplier columns fill remaining ~50% */
+
+    /* Header rows */
+    .dealers-header th {
+      background: #f0f0f0;
+      font-weight: bold;
+      font-size: 9pt;
+      text-align: center;
+    }
+    .col-header th {
+      background: #f8f8f8;
+      font-weight: bold;
+      font-size: 8pt;
+      text-align: center;
+    }
+
+    /* Job order description row */
+    .job-order-cell {
+      font-size: 8.5pt;
+      text-align: left;
+      padding: 4px 6px;
+      line-height: 1.4;
+    }
+
+    /* Item price cells */
+    .center-td { text-align: center; }
+    .desc-td   { text-align: left; padding-left: 4px; }
+    .price-td  { text-align: right; padding-right: 4px; }
+    .price-td.winner {
+      font-weight: bold;
+      background-color: #fff9c4;
+    }
+    .check {
+      display: inline-block;
+      margin-left: 3px;
+      font-weight: bold;
+      color: #1a6b3c;
+    }
+
+    /* Summary rows */
+    .summary-row td { font-size: 8.5pt; }
+    .summary-label {
+      text-align: right;
+      font-weight: bold;
+      padding-right: 6px;
+    }
+    .total-row .summary-label { font-size: 9.5pt; }
+    .total-td { font-weight: bold; font-size: 9.5pt; }
+    .x-row { text-align: center; letter-spacing: 1px; }
+  </style>
+</head>
+<body>
+
+  <!-- Reference block -->
+  <div class="page-header">
+    ${refBlock}
+  </div>
+
+  <!-- Title -->
+  <div class="title-block">
+    <div class="title-main">ABSTRACT OF PRICE QUOTATIONS OFFERED FOR VARIOUS OFFICE SUPPLIES</div>
+    <div class="title-main">AND MATERIALS CALLED FOR ON REQUEST FROM ${d.office.toUpperCase()}</div>
+    <div class="title-sub">PROVINCIAL OFFICE OFFERED BY DIFFERENT LEADING DEALERS</div>
+  </div>
+
+  <!-- Main table -->
+  <table class="main">
+    <colgroup>
+      <col class="col-item"/>
+      <col class="col-qty"/>
+      <col class="col-unit"/>
+      <col class="col-desc"/>
+      ${d.suppliers.map(() => `<col style="width:${supplierColPct}%;"/>`).join("")}
+    </colgroup>
+    <thead>
+      <!-- "NAME OF DEALERS" spanning supplier columns -->
+      <tr class="dealers-header">
+        <th colspan="4" style="border:1px solid #000;"></th>
+        <th colspan="${supplierCount}" style="text-align:center;">NAME OF DEALERS</th>
+      </tr>
+      <!-- Column labels -->
+      <tr class="col-header">
+        <th>ITEM NO.</th>
+        <th>QTY</th>
+        <th>UNIT</th>
+        <th style="text-align:left;padding-left:4px;">PARTICULARS</th>
+        ${supplierHeaders}
+      </tr>
+    </thead>
+    <tbody>
+      ${jobOrderRow}
+      ${itemRows}
+      ${summaryRows}
+    </tbody>
+  </table>
+
+</body>
+</html>`;
 }
+
+// ─── WebView wrapper (used by AAAPreviewModal) ────────────────────────────────
 
 export default function AAAPreview({ html }: { html: string }) {
   return (
     <View style={{ flex: 1 }}>
-      <WebView 
-        originWhitelist={["*"]} 
-        source={{ html }} 
-        style={{ flex: 1 }} 
+      <WebView
+        originWhitelist={["*"]}
+        source={{ html }}
+        style={{ flex: 1 }}
+        scrollEnabled
+        showsVerticalScrollIndicator
       />
     </View>
   );
 }
-

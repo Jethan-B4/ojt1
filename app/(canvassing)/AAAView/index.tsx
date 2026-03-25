@@ -1,8 +1,19 @@
 /**
- * AAAView — AAA (Abstract of Awards) preparation module, Step 10.
+ * AAAView — Step 10: Abstract of Price Quotations preparation.
  *
- * Handles the final step of the canvassing process where the BAC prepares
- * and records the Abstract of Awards before forwarding to the Supply Section.
+ * Input fields mirror the sample DAR document:
+ *   • Top-right reference block  → BAC No. (read-only), PR No. (read-only),
+ *                                   Resolution No. (read-only), Date (today, read-only)
+ *   • AAA No.                    → editable, required
+ *   • Particulars / Job Order    → editable — the description text shown as the
+ *                                   first row in the abstract table
+ *
+ * Abstract table (read-only, built from canvass_entries):
+ *   ITEM NO. | QTY | UNIT | PARTICULARS | [Supplier 1] | [Supplier 2] | [Supplier 3]
+ *   Lowest price per item is auto-marked as winner.
+ *   BAC can tap any price cell to manually override the winner.
+ *
+ * On submit: upserts the aaa_documents row and advances PR status to 11.
  */
 
 import {
@@ -13,12 +24,13 @@ import {
   fetchPRIdByNo,
   fetchPRWithItemsById,
   fetchQuotesForSession,
-  insertAAAForSession,
   setItemWinningSupplier,
   updateCanvassSessionMeta,
   updatePRStatus,
+  upsertAAAForSession,
 } from "@/lib/supabase";
 import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, {
   useCallback,
   useEffect,
@@ -27,473 +39,563 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import type { AAAPreviewData } from "../../(components)/AAAPreview";
 import { buildAAAPreviewHTML } from "../../(components)/AAAPreview";
 import AAAPreviewModal from "../../(modals)/AAAPreviewModal";
 import { useAuth } from "../../AuthContext";
 import { CompletedBanner, StepHeader, StepNav } from "../BACView/components";
 import { MONO } from "../BACView/constants";
-import { Card, Divider, Field, Input } from "../BACView/ui";
+import { Banner, Card, Divider, Field, Input } from "../BACView/ui";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AAAViewProps {
-  sessionId: string;
-  pr: CanvassingPR;
-  bacNo: string;
+  sessionId:    string;
+  pr:           CanvassingPR;
+  bacNo:        string;
   resolutionNo: string;
-  mode: string;
-  onComplete?: (payload: any) => void;
-  onBack?: () => void;
+  mode:         string;
+  onComplete?:  (payload: any) => void;
+  onBack?:      () => void;
 }
+
+interface EntryRow {
+  item_no:       number;
+  supplier_name: string;
+  unit_price:    number;
+  is_winning?:   boolean | null;
+}
+
+// ─── Atoms ────────────────────────────────────────────────────────────────────
+
+const MONO_FONT = Platform.OS === "ios" ? "Courier New" : "monospace";
+
+const fmt = (n: number) =>
+  n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ─── Abstract table (native, read-only + winner toggle) ───────────────────────
+
+function AbstractTable({
+  items,
+  suppliers,
+  entries,
+  sessionId,
+  onWinnerChanged,
+}: {
+  items:          CanvassingPRItem[];
+  suppliers:      string[];
+  entries:        EntryRow[];
+  sessionId:      string;
+  onWinnerChanged: () => void;
+}) {
+  if (suppliers.length === 0 || items.length === 0) {
+    return (
+      <View className="items-center py-8 bg-white rounded-2xl border border-dashed border-gray-300 mb-3">
+        <MaterialIcons name="pending" size={28} color="#d1d5db" />
+        <Text className="text-[12.5px] text-gray-400 mt-2 text-center px-6">
+          No quotations have been submitted yet.{"\n"}The abstract will appear once canvassers return their forms.
+        </Text>
+      </View>
+    );
+  }
+
+  const priceFor = (itemId: number, supplier: string) =>
+    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)?.unit_price ?? 0;
+
+  const winnerFor = (itemId: number): string => {
+    // Prefer DB-flagged winner; fall back to lowest price
+    const dbWinner = entries.find((e) => e.item_no === itemId && e.is_winning === true);
+    if (dbWinner) return dbWinner.supplier_name;
+    const byItem = entries.filter((e) => e.item_no === itemId && e.unit_price > 0);
+    if (byItem.length === 0) return "";
+    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b)).supplier_name;
+  };
+
+  const handleToggleWinner = async (itemId: number, supplier: string) => {
+    try {
+      await setItemWinningSupplier(sessionId, itemId, supplier);
+      onWinnerChanged();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not update winner");
+    }
+  };
+
+  // Column widths (flex values)
+  const FLEX = { item: 0.4, qty: 0.4, unit: 0.7, desc: 2 };
+  const supplierFlex = 1;
+
+  return (
+    <Card>
+      <View className="px-3 pt-3 pb-3">
+        <Divider label="Abstract of Price Quotations" />
+
+        {/* Scrollable horizontal table */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View>
+            {/* "NAME OF DEALERS" spanning header */}
+            <View className="flex-row">
+              <View style={{ width: 200 }} />
+              <View
+                className="border border-gray-300 bg-gray-100 items-center py-1"
+                style={{ width: suppliers.length * 100 }}
+              >
+                <Text className="text-[9px] font-bold uppercase tracking-widest text-gray-600">
+                  Name of Dealers
+                </Text>
+              </View>
+            </View>
+
+            {/* Column headers */}
+            <View className="flex-row bg-[#064E3B]">
+              {[
+                { label: "No.",   w: 32 },
+                { label: "Qty",   w: 36 },
+                { label: "Unit",  w: 52 },
+                { label: "Particulars", w: 180 },
+              ].map((col) => (
+                <View key={col.label}
+                  className="items-center justify-center py-1.5 border-r border-white/20"
+                  style={{ width: col.w }}>
+                  <Text className="text-[8px] font-bold uppercase text-white/80 text-center">
+                    {col.label}
+                  </Text>
+                </View>
+              ))}
+              {suppliers.map((s, i) => (
+                <View key={s}
+                  className={`items-center justify-center py-1.5 ${i < suppliers.length - 1 ? "border-r border-white/20" : ""}`}
+                  style={{ width: 100 }}>
+                  <Text className="text-[7.5px] font-bold text-white/80 text-center px-1" numberOfLines={2}>
+                    {s}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Item rows */}
+            {items.map((item, rowIdx) => {
+              const winner = winnerFor(item.id);
+              return (
+                <View
+                  key={item.id}
+                  className={`flex-row ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                  style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}
+                >
+                  <View className="items-center justify-center border-r border-gray-200" style={{ width: 32 }}>
+                    <Text className="text-[10px] text-gray-500" style={{ fontFamily: MONO_FONT }}>
+                      {rowIdx + 1}
+                    </Text>
+                  </View>
+                  <View className="items-center justify-center border-r border-gray-200 px-1" style={{ width: 36 }}>
+                    <Text className="text-[10px] text-gray-700" style={{ fontFamily: MONO_FONT }}>
+                      {item.qty}
+                    </Text>
+                  </View>
+                  <View className="items-center justify-center border-r border-gray-200 px-1" style={{ width: 52 }}>
+                    <Text className="text-[10px] text-gray-500 text-center">{item.unit}</Text>
+                  </View>
+                  <View className="justify-center border-r border-gray-200 px-2 py-1.5" style={{ width: 180 }}>
+                    <Text className="text-[10.5px] text-gray-700 leading-[14px]" numberOfLines={3}>
+                      {item.desc}
+                    </Text>
+                  </View>
+                  {suppliers.map((s, i) => {
+                    const price = priceFor(item.id, s);
+                    const isWin = winner === s && price > 0;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        onPress={() => price > 0 ? handleToggleWinner(item.id, s) : undefined}
+                        activeOpacity={price > 0 ? 0.7 : 1}
+                        className={`items-end justify-center px-2 py-1.5 ${
+                          isWin ? "bg-emerald-50" : ""
+                        } ${i < suppliers.length - 1 ? "border-r border-gray-200" : ""}`}
+                        style={{ width: 100 }}
+                      >
+                        <Text
+                          className={`text-[10px] ${isWin ? "font-bold text-emerald-700" : "text-gray-700"}`}
+                          style={{ fontFamily: MONO_FONT }}
+                        >
+                          {price > 0 ? fmt(price) : "—"}
+                        </Text>
+                        {isWin && (
+                          <Text className="text-[9px] font-bold text-emerald-600 mt-0.5">✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              );
+            })}
+
+            {/* Totals row */}
+            <View className="flex-row bg-emerald-50" style={{ borderTopWidth: 2, borderTopColor: "#bbf7d0" }}>
+              <View style={{ width: 32 + 36 + 52 }} />
+              <View className="justify-center px-2 py-2 border-r border-gray-200" style={{ width: 180 }}>
+                <Text className="text-[9px] font-bold uppercase text-emerald-800 text-right">
+                  Total
+                </Text>
+              </View>
+              {suppliers.map((s, i) => {
+                const total = items.reduce((sum, item) => sum + priceFor(item.id, s) * item.qty, 0);
+                return (
+                  <View
+                    key={s}
+                    className={`items-end justify-center px-2 py-2 ${i < suppliers.length - 1 ? "border-r border-gray-200" : ""}`}
+                    style={{ width: 100 }}
+                  >
+                    <Text className="text-[10.5px] font-bold text-emerald-800" style={{ fontFamily: MONO_FONT }}>
+                      {total > 0 ? fmt(total) : "—"}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Tap-to-mark hint */}
+        {suppliers.length > 1 && (
+          <View className="flex-row items-center gap-1.5 mt-2.5 px-1">
+            <MaterialIcons name="touch-app" size={12} color="#9ca3af" />
+            <Text className="text-[10px] text-gray-400">
+              Tap a price cell to manually mark it as the winner for that item.
+            </Text>
+          </View>
+        )}
+      </View>
+    </Card>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AAAView({
   sessionId,
   pr,
-  bacNo,
+  bacNo: bacNoProp,
   resolutionNo: resolutionNoProp,
   mode: modeProp,
   onComplete,
   onBack,
 }: AAAViewProps) {
   const { currentUser } = useAuth();
-  const [aaaNo, setAaaNo] = useState("");
-  const [particulars, setParticulars] = useState("");
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [resolutionNo, setResolutionNo] = useState(resolutionNoProp);
-  const [mode, setMode] = useState(modeProp);
-  const sessionRef = useRef({
-    bac_no: bacNo,
-    resolution_no: resolutionNoProp,
-    mode: modeProp,
-    aaa_no: "",
-    particulars: "",
-  });
 
-  // ── Hydrate PR header/items and session metadata from DB ─────────────────────
-  const [header, setHeader] = useState({
-    prNo: pr.prNo,
-    date: pr.date,
-    office: pr.officeSection,
-  });
-  const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(
-    (pr.items as any) ?? [],
-  );
+  // ── Editable fields ─────────────────────────────────────────────────────────
+  const [aaaNo,       setAaaNo]       = useState("");
+  const [particulars, setParticulars] = useState("");
+
+  // ── Read-only reference fields (hydrated from DB) ───────────────────────────
+  const [bacNo,       setBacNo]       = useState(bacNoProp);
+  const [resolutionNo, setResolutionNo] = useState(resolutionNoProp);
+  const [date,        setDate]        = useState(new Date().toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" }));
+  const [office,      setOffice]      = useState(pr.officeSection);
+
+  // ── Data state ──────────────────────────────────────────────────────────────
+  const [liveItems,  setLiveItems]  = useState<CanvassingPRItem[]>((pr.items as any) ?? []);
+  const [entries,    setEntries]    = useState<EntryRow[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // ── Load all data ────────────────────────────────────────────────────────────
+  const loadEntries = useCallback(async () => {
+    const rows = await fetchQuotesForSession(sessionId);
+    setEntries(rows.map((r) => ({
+      item_no:       r.item_no,
+      supplier_name: r.supplier_name ?? "",
+      unit_price:    r.unit_price ?? 0,
+      is_winning:    r.is_winning ?? null,
+    })));
+  }, [sessionId]);
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
-        // PR header + items
+        // PR items
         const prId = await fetchPRIdByNo(pr.prNo);
         if (prId) {
           const { header: h, items } = await fetchPRWithItemsById(prId);
-          setHeader({
-            prNo: pr.prNo,
-            date: new Date(h.created_at as any).toLocaleDateString("en-PH"),
-            office: h.office_section ?? pr.officeSection,
-          });
-          setLiveItems(
-            items.map((i: any) => ({
-              id: parseInt(String(i.id)),
-              desc: i.description,
-              stock: i.stock_no,
-              unit: i.unit,
-              qty: i.quantity,
-              unitCost: i.unit_price,
-            })),
+          setOffice(h.office_section ?? pr.officeSection);
+          setDate(
+            h.created_at
+              ? new Date(h.created_at).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })
+              : date,
           );
+          setLiveItems(items.map((i: any) => ({
+            id:       parseInt(String(i.id)),
+            desc:     i.description,
+            stock:    i.stock_no,
+            unit:     i.unit,
+            qty:      i.quantity,
+            unitCost: i.unit_price,
+          })));
         }
 
-        // Session meta (bac_no, etc.)
+        // Session meta
         const sess = await fetchCanvassSessionById(sessionId);
-        if (sess?.bac_no) sessionRef.current.bac_no = sess.bac_no;
+        if (sess?.bac_no) setBacNo(sess.bac_no);
 
         // Resolution
         const res = await fetchBACResolutionForSession(sessionId);
-        if (res?.resolution_no) {
-          setResolutionNo(res.resolution_no);
-          sessionRef.current.resolution_no = res.resolution_no;
-        }
-        if (res?.mode) {
-          setMode(res.mode);
-          sessionRef.current.mode = res.mode;
-        }
+        if (res?.resolution_no) setResolutionNo(res.resolution_no);
 
-        // AAA doc (prefill)
+        // Existing AAA doc
         const aaa = await fetchAAAForSession(sessionId);
         if (aaa?.aaa_no) {
           setAaaNo(aaa.aaa_no);
           setIsSubmitted(true);
-          sessionRef.current.aaa_no = aaa.aaa_no;
         }
-        if (aaa?.particulars) {
-          setParticulars(aaa.particulars);
-          sessionRef.current.particulars = aaa.particulars;
-        }
+        if (aaa?.particulars) setParticulars(aaa.particulars);
+
+        // Quotes
+        await loadEntries();
       } catch {
-        // ignore hydration errors; UI will fallback to provided props
+        // silently fall back to props
+      } finally {
+        setLoading(false);
       }
     })();
   }, [sessionId, pr.prNo]);
 
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const suppliers = useMemo(
+    () => [...new Set(entries.map((e) => e.supplier_name).filter(Boolean))].slice(0, 3),
+    [entries],
+  );
+
+  const winnerFor = (itemId: number): string => {
+    const dbWinner = entries.find((e) => e.item_no === itemId && e.is_winning === true);
+    if (dbWinner) return dbWinner.supplier_name;
+    const byItem = entries.filter((e) => e.item_no === itemId && e.unit_price > 0);
+    if (byItem.length === 0) return "";
+    return byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b)).supplier_name;
+  };
+
+  const priceFor = (itemId: number, supplier: string) =>
+    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)?.unit_price ?? 0;
+
+  // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    if (!sessionId || !aaaNo) return;
+    if (!sessionId || !aaaNo.trim()) return;
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
 
-      sessionRef.current.aaa_no = aaaNo;
-      sessionRef.current.particulars = particulars;
-
-      // Record AAA in database
-      await insertAAAForSession(sessionId, {
-        aaa_no: aaaNo,
-        particulars: particulars || null,
+      await upsertAAAForSession(sessionId, {
+        aaa_no:      aaaNo.trim(),
+        particulars: particulars.trim() || null,
         prepared_by: currentUser?.id ?? 0,
         prepared_at: new Date().toISOString(),
-        file_url: null,
+        file_url:    null,
       });
 
-      // Close session and update PR status
       await updateCanvassSessionMeta(sessionId, { status: "closed" });
       await updatePRStatus(prId, CANVASS_PR_STATUS.aaa_preparation);
 
       setIsSubmitted(true);
 
-      // Notify parent component
       onComplete?.({
-        pr_no: pr.prNo,
-        bac_no: sessionRef.current.bac_no,
-        resolution_no: sessionRef.current.resolution_no,
-        mode,
-        aaa_no: aaaNo,
+        pr_no:          pr.prNo,
+        bac_no:         bacNo,
+        resolution_no:  resolutionNo,
+        aaa_no:         aaaNo,
       });
 
-      Alert.alert("✅ Canvassing Complete", "Forward to Supply Section");
+      Alert.alert("✅ Canvassing Complete", "Abstract of Awards recorded. Forward to Supply Section.");
     } catch (e: any) {
-      Alert.alert("AAA failed", e?.message ?? "Could not record AAA");
+      Alert.alert("Save failed", e?.message ?? "Could not record AAA");
     }
-  }, [
-    sessionId,
-    pr.prNo,
-    aaaNo,
-    particulars,
-    currentUser?.id,
-    mode,
-    onComplete,
-  ]);
+  }, [sessionId, pr.prNo, aaaNo, particulars, currentUser?.id, bacNo, resolutionNo, onComplete]);
 
-  const handleResubmit = () => {
-    setIsSubmitted(false);
-    setAaaNo("");
-    setParticulars("");
-  };
-
-  // ── Abstract table data (read-only from quotations) ─────────────────────────
-  const [entries, setEntries] = useState<
-    { item_no: number; supplier_name: string; unit_price: number }[]
-  >([]);
-
-  useEffect(() => {
-    (async () => {
-      if (!sessionId) return;
-      try {
-        const rows = await fetchQuotesForSession(sessionId);
-        setEntries(
-          rows.map((r) => ({
-            item_no: r.item_no,
-            supplier_name: r.supplier_name ?? "",
-            unit_price: r.unit_price ?? 0,
-          })),
-        );
-      } catch {}
-    })();
-  }, [sessionId]);
-
-  const suppliers = useMemo(() => {
-    const names = Array.from(
-      new Set(entries.map((e) => e.supplier_name).filter(Boolean)),
-    );
-    return names.slice(0, 3);
-  }, [entries]);
-
-  const priceFor = (itemId: number, supplier: string) =>
-    entries.find((e) => e.item_no === itemId && e.supplier_name === supplier)
-      ?.unit_price ?? 0;
-
-  const winningSupplierFor = (itemId: number) => {
-    const byItem = entries.filter(
-      (e) => e.item_no === itemId && e.unit_price > 0,
-    );
-    if (byItem.length === 0) return "";
-    return byItem.reduce((best, e) =>
-      e.unit_price < best.unit_price ? e : best,
-    ).supplier_name;
-  };
-
-  const ItemsAbstract = ({
-    items,
+  // ── Preview data ──────────────────────────────────────────────────────────────
+  const buildPreviewData = (): AAAPreviewData => ({
+    bacNo,
+    prNo:         pr.prNo,
+    resolutionNo,
+    date,
+    office,
+    particulars:  particulars.trim(),
     suppliers,
-  }: {
-    items: CanvassingPRItem[];
-    suppliers: string[];
-  }) => (
-    <Card>
-      <View className="px-4 pt-3 pb-3">
-        <Divider label="Abstract of Awards" />
-        <View className="rounded-xl overflow-hidden border border-gray-100">
-          {/* Header */}
-          <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
-            {["Item", "Qty", "Unit", "Particulars", ...suppliers].map(
-              (h, i) => (
-                <Text
-                  key={h}
-                  className="text-[9.5px] font-bold uppercase tracking-wide text-white/70"
-                  style={{ flex: i === 3 ? 2 : 1 }}>
-                  {i >= 4 ? `Supplier: ${h}` : h}
-                </Text>
-              ),
-            )}
-          </View>
-          {/* Rows */}
-          {items.map((item, i) => {
-            const winner = winningSupplierFor(item.id);
-            return (
-              <View
-                key={item.id}
-                className={`flex-row px-2.5 py-2 ${i % 2 ? "bg-gray-50" : "bg-white"}`}
-                style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}>
-                <Text
-                  className="flex-1 text-[12px] text-gray-700"
-                  style={{ fontFamily: MONO }}>
-                  {i + 1}
-                </Text>
-                <Text
-                  className="flex-1 text-[12px] text-gray-700"
-                  style={{ fontFamily: MONO }}>
-                  {item.qty}
-                </Text>
-                <Text className="flex-1 text-[12px] text-gray-500">
-                  {item.unit}
-                </Text>
-                <Text className="flex-[2] text-[12px] text-gray-700">
-                  {item.desc}
-                </Text>
-                {suppliers.map((s) => {
-                  const price = priceFor(item.id, s);
-                  const isWin = winner === s && price > 0;
-                  return (
-                    <View key={s} style={{ flex: 1, alignItems: "flex-end" }}>
-                      <Text
-                        className={`text-[12px] ${isWin ? "font-extrabold text-emerald-700" : "text-gray-700"}`}
-                        style={{ fontFamily: MONO }}>
-                        ₱
-                        {price.toLocaleString("en-PH", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={async () => {
-                          if (!sessionId || price <= 0) return;
-                          try {
-                            await setItemWinningSupplier(sessionId, item.id, s);
-                            // Refresh entries
-                            const rows = await fetchQuotesForSession(sessionId);
-                            setEntries(
-                              rows.map((r) => ({
-                                item_no: r.item_no,
-                                supplier_name: r.supplier_name ?? "",
-                                unit_price: r.unit_price ?? 0,
-                              })),
-                            );
-                          } catch {}
-                        }}
-                        activeOpacity={0.7}
-                        style={{ marginTop: 2 }}>
-                        <Text
-                          className={`text-[10px] font-bold ${isWin ? "text-emerald-700" : "text-gray-400"}`}>
-                          {isWin ? "✓ Winner" : "Mark"}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    </Card>
-  );
-
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const buildPreviewHTML = () => {
-    const rows = (pr.items as any as CanvassingPRItem[]).map((item, idx) => {
+    rows: liveItems.map((item, idx) => {
       const prices: Record<string, number> = {};
-      suppliers.forEach((s) => {
-        prices[s] = priceFor(item.id, s);
-      });
+      suppliers.forEach((s) => { prices[s] = priceFor(item.id, s); });
       return {
         itemNo: idx + 1,
-        unit: item.unit,
-        qty: item.qty,
-        desc: item.desc,
+        qty:    item.qty,
+        unit:   item.unit,
+        desc:   item.desc,
         prices,
-        winner: winningSupplierFor(item.id) || null,
+        winner: winnerFor(item.id) || null,
       };
-    });
-    return buildAAAPreviewHTML({
-      prNo: pr.prNo,
-      date: pr.date,
-      office: pr.officeSection,
-      suppliers,
-      particulars,
-      rows,
-    });
-  };
+    }),
+  });
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-gray-50">
+        <ActivityIndicator size="large" color="#064E3B" />
+        <Text className="text-[12px] text-gray-400">Loading AAA data…</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      className="flex-1 bg-white">
+      className="flex-1 bg-gray-50"
+    >
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16 }}>
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 40 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <StepHeader
           stage="aaa_preparation"
-          title="Abstract of Awards"
+          title="Abstract of Price Quotations"
           desc="Prepare the AAA and finalize the canvassing process."
         />
 
-        {/* PR Summary */}
+        {/* ── Reference block (top-right on printed form) ── */}
         <Card>
-          <View className="bg-[#064E3B] px-4 pt-3.5 pb-3">
-            <View className="flex-row items-start justify-between">
-              <View className="flex-1 pr-2">
-                <Text className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-                  Purchase Request
-                </Text>
-                <Text
-                  className="text-[16px] font-extrabold text-white"
-                  style={{ fontFamily: MONO }}>
-                  {pr.prNo}
-                </Text>
-              </View>
-              <View className="items-end">
-                <Text className="text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-                  BAC No.
-                </Text>
-                <Text
-                  className="text-[15px] font-extrabold text-white"
-                  style={{ fontFamily: MONO }}>
-                  {bacNo}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </Card>
-
-        {/* AAA Details Form */}
-        <Card>
-          <View className="px-4 pt-3 pb-2">
-            <Divider label="AAA Details" />
+          <View className="px-4 pt-3 pb-3">
+            <Divider label="Document References" />
+            {/* Row 1: BAC No + Resolution No */}
             <View className="flex-row gap-2.5">
               <View className="flex-1">
-                <Field label="AAA No." required>
-                  <Input
-                    value={aaaNo}
-                    onChange={setAaaNo}
-                    placeholder="e.g. AAA-2026-0001"
-                  />
+                <Field label="BAC No.">
+                  <Input value={bacNo} readonly />
                 </Field>
               </View>
-              <View className="flex-1">
-                <Field label="PR Reference">
-                  <Input value={pr.prNo} readonly />
-                </Field>
-              </View>
-              <View className="flex-1">
-                <Field label="Date Prepared">
-                  <Input
-                    value={new Date().toLocaleDateString("en-PH")}
-                    readonly
-                  />
-                </Field>
-              </View>
-            </View>
-            <View className="mt-3">
-              <Field label="Particulars">
-                <Input
-                  value={particulars}
-                  onChange={setParticulars}
-                  placeholder="e.g. Items awarded based on competitive bidding"
-                  multiline
-                />
-              </Field>
-            </View>
-          </View>
-        </Card>
-
-        {/* Resolution Reference */}
-        <Card>
-          <View className="px-4 py-3">
-            <Divider label="Resolution Reference" />
-            <View className="flex-row gap-2.5 mt-2">
               <View className="flex-1">
                 <Field label="Resolution No.">
                   <Input value={resolutionNo} readonly />
                 </Field>
               </View>
+            </View>
+            {/* Row 2: PR No + Date */}
+            <View className="flex-row gap-2.5">
               <View className="flex-1">
-                <Field label="Procurement Mode">
-                  <Input value={mode} readonly />
+                <Field label="PR No.">
+                  <Input value={pr.prNo} readonly />
+                </Field>
+              </View>
+              <View className="flex-1">
+                <Field label="Date">
+                  <Input value={date} readonly />
                 </Field>
               </View>
             </View>
           </View>
         </Card>
 
-        {/* Abstract of Awards table */}
-        <ItemsAbstract items={liveItems as any} suppliers={suppliers} />
-        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+        {/* ── AAA Number (the only required editable field) ── */}
+        <Card>
+          <View className="px-4 pt-3 pb-3">
+            <Divider label="AAA Details" />
+            <Field label="AAA No." required>
+              <Input
+                value={aaaNo}
+                onChange={setAaaNo}
+                placeholder="e.g. 2025-08-390"
+              />
+            </Field>
+            {/* Particulars = job order description shown in the abstract table */}
+            <Field label="Particulars / Job Order Description">
+              <View
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: "#e5e7eb",
+                  borderRadius: 12,
+                  minHeight: 80,
+                  backgroundColor: "#fff",
+                  padding: 10,
+                }}
+              >
+                <TextInput
+                  value={particulars}
+                  onChangeText={setParticulars}
+                  placeholder={
+                    "e.g. REQUEST FOR SUPPLY, LABOR AND MATERIALS OF THE NETHOUSE INSTALLATION FOR SPFARBA'S PILI NURSERY ESTABLISHMENT..."
+                  }
+                  placeholderTextColor="#9ca3af"
+                  multiline
+                  textAlignVertical="top"
+                  style={{ fontSize: 13, color: "#111827", lineHeight: 20 }}
+                />
+              </View>
+              <Text className="text-[10px] text-gray-400 mt-1 px-1">
+                This text appears as the Job Order row at the top of the abstract table.
+              </Text>
+            </Field>
+          </View>
+        </Card>
+
+        {/* ── Abstract table ── */}
+        <AbstractTable
+          items={liveItems}
+          suppliers={suppliers}
+          entries={entries}
+          sessionId={sessionId}
+          onWinnerChanged={loadEntries}
+        />
+
+        {/* ── Preview / Print button ── */}
+        {suppliers.length > 0 && (
           <TouchableOpacity
             onPress={() => setPreviewOpen(true)}
-            activeOpacity={0.85}
-            className="items-center justify-center bg-emerald-600 rounded-xl py-3">
-            <Text className="text-white text-[13px] font-extrabold">
+            activeOpacity={0.8}
+            className="flex-row items-center justify-center gap-2 bg-[#064E3B] rounded-2xl py-3 mb-3"
+          >
+            <MaterialIcons name="description" size={16} color="#fff" />
+            <Text className="text-[13px] font-bold text-white">
               Preview / Print Abstract
             </Text>
           </TouchableOpacity>
-        </View>
+        )}
 
+        {/* ── Completed state ── */}
         {isSubmitted && (
           <CompletedBanner
             label={`AAA No. ${aaaNo} prepared. Forwarded to Supply.`}
-            onResubmit={handleResubmit}
+            onResubmit={() => setIsSubmitted(false)}
           />
         )}
 
-        {/* Minimal footer only */}
-
+        {/* ── Submit nav ── */}
         <StepNav
           stage="aaa_preparation"
-          done={new Set(isSubmitted ? ["aaa_preparation"] : [])}
+          done={new Set(isSubmitted ? (["aaa_preparation"] as any) : [])}
           onPrev={() => onBack?.()}
           onNext={() => {}}
-          canSubmit={!isSubmitted && !!aaaNo}
+          canSubmit={!isSubmitted && !!aaaNo.trim()}
           submitLabel="Finalize & Forward to Supply →"
           onSubmit={handleSubmit}
         />
       </ScrollView>
+
+      {/* ── Preview modal ── */}
       <AAAPreviewModal
         visible={previewOpen}
-        html={buildPreviewHTML()}
+        html={buildAAAPreviewHTML(buildPreviewData())}
+        aaaNo={aaaNo || "—"}
+        prNo={pr.prNo}
+        date={date}
+        office={office}
         onClose={() => setPreviewOpen(false)}
       />
     </KeyboardAvoidingView>
