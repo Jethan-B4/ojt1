@@ -17,8 +17,13 @@
  */
 
 import type { CanvassEntryRow, EnrichedAssignmentRow } from "@/lib/supabase";
-import { supabase, fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
-import { ensureCanvassSession, fetchAssignmentsWithDetails, fetchQuotesForSession } from "@/lib/supabase/canvassing";
+import {
+  ensureCanvassSession,
+  fetchAssignmentsWithDetails,
+  fetchQuotesForSession,
+} from "@/lib/supabase/canvassing";
+import { supabase } from "@/lib/supabase/client";
+import { fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
 import type {
   CanvassStage,
   CanvassingPR,
@@ -29,6 +34,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -239,6 +245,7 @@ export default function EndUserView({
   const [assignments, setAssignments] = useState<EnrichedAssignmentRow[]>([]);
   const [entries, setEntries] = useState<CanvassEntryRow[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ── Initial load — all FK IDs resolved in one pass ─────────────────────────
   useEffect(() => {
@@ -461,6 +468,44 @@ export default function EndUserView({
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ padding: 14, paddingBottom: 32 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                try {
+                  setRefreshing(true);
+                  const prId = await fetchPRIdByNo(pr.prNo);
+                  if (!prId) return;
+                  const session = await ensureCanvassSession(prId);
+                  setSessionId(session.id);
+                  if (session.stage)
+                    setCurrentStage(session.stage as CanvassStage);
+                  setBacNo(session.bac_no ?? null);
+                  setDeadline(session.deadline ?? null);
+                  const [{ items }, asgns, quotes] = await Promise.all([
+                    fetchPRWithItemsById(prId),
+                    fetchAssignmentsWithDetails(session.id),
+                    fetchQuotesForSession(session.id),
+                  ]);
+                  setLiveItems(
+                    items.map((i) => ({
+                      id: parseInt(String(i.id)),
+                      desc: i.description,
+                      stock: i.stock_no,
+                      unit: i.unit,
+                      qty: i.quantity,
+                      unitCost: i.unit_price,
+                    })),
+                  );
+                  setAssignments(asgns);
+                  setEntries(quotes);
+                } catch {
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+            />
+          }
           showsVerticalScrollIndicator={false}
         >
           {/* ── Progress + Stage Timeline ── */}

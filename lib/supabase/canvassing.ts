@@ -1,38 +1,44 @@
 import { supabase } from "./client";
 
-export async function fetchCanvassSessionById(sessionId: string) {
+export async function fetchCanvassSessionById(sessionId: string | number) {
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("canvass_sessions")
     .select("*")
-    .eq("id", sessionId.trim())
+    .eq("id", sid)
     .single();
   if (error) return null;
   return data;
 }
 
 export async function updateCanvassSessionMeta(
-  sessionId: string,
+  sessionId: string | number,
   patch: Partial<{
     deadline: string | null;
     bac_no: string | null;
     status: string;
   }>,
 ) {
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("canvass_sessions")
     .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", sessionId.trim())
+    .eq("id", sid)
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function updateCanvassStage(sessionId: string, stage: string) {
+export async function updateCanvassStage(
+  sessionId: string | number,
+  stage: string,
+) {
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("canvass_sessions")
     .update({ stage, updated_at: new Date().toISOString() })
-    .eq("id", sessionId.trim())
+    .eq("id", sid)
     .select()
     .single();
   if (error) throw error;
@@ -40,19 +46,24 @@ export async function updateCanvassStage(sessionId: string, stage: string) {
 }
 
 export async function ensureCanvassSession(
-  prId: string,
+  prId: string | number,
   initial?: Partial<Record<string, any>>,
 ) {
-  const { data, error } = await supabase
+  // maybeSingle() returns null (not an error) when no row matches
+  const pid = String(prId);
+  const { data: existing, error: selErr } = await supabase
     .from("canvass_sessions")
     .select("*")
-    .eq("pr_id", prId.trim())
+    .eq("pr_id", pid)
     .limit(1)
-    .single();
-  if (error) throw error;
-  if (Array.isArray(data) && data.length > 0) return data[0];
+    .maybeSingle();
+
+  if (selErr) throw selErr;
+  if (existing) return existing;
+
+  // No session yet — create one
   const payload: Record<string, any> = {
-    pr_id: prId,
+    pr_id: pid,
     stage: initial?.stage ?? "pr_received",
     status: initial?.status ?? "open",
   };
@@ -60,6 +71,7 @@ export async function ensureCanvassSession(
     payload.released_by = initial.released_by;
   if (initial?.deadline !== undefined) payload.deadline = initial.deadline;
   if (initial?.bac_no !== undefined) payload.bac_no = initial.bac_no;
+
   const { data: created, error: insErr } = await supabase
     .from("canvass_sessions")
     .insert(payload)
@@ -204,8 +216,7 @@ export async function updateAssignmentReleased(
     })
     .eq("session_id", sessionId)
     .eq("division_id", division_id)
-    .select()
-    .single();
+    .select();
   if (error) throw error;
   return data;
 }
@@ -223,8 +234,7 @@ export async function markAssignmentReturned(
     })
     .eq("session_id", sessionId)
     .eq("division_id", division_id)
-    .select()
-    .single();
+    .select();
   if (error) throw error;
   return data;
 }

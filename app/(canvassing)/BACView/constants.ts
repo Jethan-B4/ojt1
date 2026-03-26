@@ -14,6 +14,7 @@ export const STAGE_ORDER: CanvassStage[] = [
   "release_canvass",
   "collect_canvass",
   "bac_resolution",
+  "aaa_preparation",
 ];
 
 export const STAGE_META: Record<CanvassStage, StageMeta> = {

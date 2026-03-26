@@ -82,13 +82,24 @@ function computeWinners(
       (e) => e.item_no === item.id && e.unit_price > 0,
     );
 
-    // Annotate each entry with its canvasser's division name
+    // For each entry, find the division via the canvasser who submitted it.
+    // We match by supplier_name: the canvasser submitted under that supplier name,
+    // and we look for an assignment whose canvasser's username matches, or fall
+    // back to the first returned assignment when no exact match is found.
     const allQuotes = itemEntries.map((e) => {
-      // Find assignment linked to this entry (match by supplier_name heuristic or all returned)
-      const assignment = assignments.find((a) => a.status === "returned");
-      const user = assignment?.canvasser_id
-        ? userById[assignment.canvasser_id]
+      const matchedAssignment =
+        assignments.find((a) => {
+          if (a.status !== "returned") return false;
+          if (!a.canvasser_id) return false;
+          const u = userById[a.canvasser_id];
+          // Canvasser's fullname often used as supplier_name default
+          return u?.username === e.supplier_name;
+        }) ?? assignments.find((a) => a.status === "returned");
+
+      const user = matchedAssignment?.canvasser_id
+        ? userById[matchedAssignment.canvasser_id]
         : undefined;
+
       return {
         supplierName: e.supplier_name,
         unitPrice: e.unit_price,

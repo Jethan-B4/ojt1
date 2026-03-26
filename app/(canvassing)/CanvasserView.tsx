@@ -43,6 +43,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  RefreshControl,
   Platform,
   ScrollView,
   Text,
@@ -477,6 +478,7 @@ export default function CanvasserView({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataOverride, setPreviewDataOverride] =
     useState<CanvassPreviewData | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -538,6 +540,62 @@ export default function CanvasserView({
     })();
   }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
 
+  const onRefresh = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) return;
+      const session = await ensureCanvassSession(prId);
+      setSessionId(session.id);
+      const { data: asgns } = await supabase
+        .from("canvasser_assignments")
+        .select("*")
+        .eq("session_id", session.id);
+      const mine = (asgns ?? []).find(
+        (a: any) =>
+          a.canvasser_id === (currentUser?.id ?? -1) ||
+          a.division_id === (currentUser?.division_id ?? -1),
+      );
+      setAssigned(Boolean(mine));
+      const { items } = await fetchPRWithItemsById(prId);
+      setLiveItems(
+        items.map((i) => ({
+          id: parseInt(String(i.id)),
+          desc: i.description,
+          stock: i.stock_no,
+          unit: i.unit,
+          qty: i.quantity,
+          unitCost: i.unit_price,
+        })),
+      );
+      const existing = await fetchQuotesForSession(session.id);
+      if (existing.length > 0) {
+        const byItem: Record<number, { supplier: string; price: string }> = {};
+        existing.forEach((e) => {
+          byItem[parseInt(String(e.item_no))] = {
+            supplier: e.supplier_name ?? "",
+            price: String(e.unit_price ?? ""),
+          };
+        });
+        setQuotes(byItem);
+        setSubmitted(true);
+      } else {
+        setSubmitted(false);
+        setQuotes({});
+      }
+      const [asgnsAll, entries, users] = await Promise.all([
+        fetchAssignmentsForSession(session.id),
+        fetchQuotesForSession(session.id),
+        fetchUsersByRole(CANVASS_ROLE_IDS),
+      ]);
+      setAssignments(asgnsAll);
+      setAllEntries(entries);
+      setAllUsers(users);
+    } catch {}
+    finally {
+      setRefreshing(false);
+    }
+  }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
   // ── Realtime subscriptions ───────────────────────────────────────────────────
   useEffect(() => {
     if (!sessionId) return;
@@ -843,6 +901,9 @@ export default function CanvasserView({
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ padding: 14, paddingBottom: 36 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
           showsVerticalScrollIndicator={false}
         >
           {/* Return progress bar */}
@@ -1062,6 +1123,9 @@ export default function CanvasserView({
           className="flex-1"
           contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
           showsVerticalScrollIndicator={false}
         >
           {/* Submitted banner */}

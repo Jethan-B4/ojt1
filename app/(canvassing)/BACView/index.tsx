@@ -49,6 +49,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -147,6 +148,7 @@ export default function BACView({
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
   const [prExpanded, setPrExpanded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
 
   // ── Navigation & State Management ──────────────────────────────────────────
@@ -188,7 +190,25 @@ export default function BACView({
 
     setAssignmentsLoading(true);
     fetchAssignmentsForSession(sessionId)
-      .then(setAssignments)
+      .then((asgns) => {
+        setAssignments(asgns);
+        // Rehydrate canvassStatuses from DB so the Release step shows the
+        // correct Released/Returned state when the BAC reopens the screen.
+        if (asgns.length > 0) {
+          setCanvassStatuses((prev) => {
+            const next = { ...prev };
+            asgns.forEach((a: any) => {
+              if (!a.canvasser_id) return;
+              next[a.canvasser_id] = {
+                status: a.status === "returned" ? "returned" : "released",
+                releaseDate: a.released_at ?? "",
+                returnDate: a.returned_at ?? "",
+              };
+            });
+            return next;
+          });
+        }
+      })
       .catch(() => {})
       .finally(() => setAssignmentsLoading(false));
 
@@ -313,11 +333,14 @@ export default function BACView({
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
+      // ensureCanvassSession creates the session with bac_no in one shot.
+      // If the session already exists, update bac_no and stage separately.
       const session = await ensureCanvassSession(prId, { bac_no: bacNo });
       setSessionId(session.id);
+      // Ensure bac_no and stage are persisted even if the session already existed
       await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
       await updateCanvassStage(session.id, "release_canvass");
-      await updatePRStatus(prId, 6);
+      await updatePRStatus(prId, 6); // status_id 6 = Canvassing (Reception)
       sessionRef.current.bac_no = bacNo;
       advance("pr_received");
     } catch (e: any) {
@@ -411,11 +434,13 @@ export default function BACView({
         resolved_at: new Date().toISOString(),
         notes: null,
       });
-      // Move PR to AAA Issuance immediately after resolution
-      await updatePRStatus(prId, 11);
+      // status_id 10 = BAC Resolution (canvassing step just completed)
+      await updatePRStatus(prId, 10);
       await updateCanvassStage(sessionId, "aaa_preparation");
-      advance("aaa_preparation");
-      // Notify parent so the shell route can jump back to Procurement → AAA tab
+      // advance() marks bac_resolution done and moves stage → aaa_preparation
+      // (aaa_preparation is now included in STAGE_ORDER in constants.ts)
+      advance("bac_resolution");
+      // Notify parent so the shell route can open the AAA tab
       onComplete?.({
         pr_no: pr.prNo,
         resolution_no: resNo,
@@ -428,7 +453,7 @@ export default function BACView({
         e?.message ?? "Could not record BAC resolution",
       );
     }
-  }, [sessionId, pr.prNo, resNo, mode, currentUser?.id, advance]);
+  }, [sessionId, pr.prNo, resNo, mode, currentUser?.id, advance, onComplete]);
 
   const toggleUserStatus = useCallback(
     async (userId: number) => {
@@ -596,6 +621,36 @@ export default function BACView({
     };
   };
 
+  const onRefresh = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) return;
+      const session = await ensureCanvassSession(prId);
+      setSessionId(session.id);
+      const [{ items }, quotes, asgns] = await Promise.all([
+        fetchPRWithItemsById(prId),
+        fetchQuotesForSession(session.id),
+        fetchAssignmentsForSession(session.id),
+      ]);
+      setLiveItems(
+        items.map((i) => ({
+          id: parseInt(String(i.id)),
+          desc: i.description,
+          stock: i.stock_no,
+          unit: i.unit,
+          qty: i.quantity,
+          unitCost: i.unit_price,
+        })),
+      );
+      setEntries(quotes);
+      setAssignments(asgns as any);
+    } catch {
+    } finally {
+      setRefreshing(false);
+    }
+  }, [pr.prNo]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -639,6 +694,9 @@ export default function BACView({
         className="flex-1"
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         showsVerticalScrollIndicator={false}
       >
         {/* ── Expandable PR pill ── */}
@@ -1588,4 +1646,7 @@ export default function BACView({
       />
     </KeyboardAvoidingView>
   );
+}
+function setEntries(quotes: any[]) {
+  throw new Error("Function not implemented.");
 }

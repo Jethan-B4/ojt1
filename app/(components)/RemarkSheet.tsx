@@ -29,20 +29,20 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import {
   FlagButton,
@@ -447,7 +447,6 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [fileType, setFileType] = useState<string>("application/octet-stream");
-  const scrollRef = useRef<ScrollView>(null);
 
   // ── Load history whenever the sheet opens for a PR ────────────────────────
   useEffect(() => {
@@ -633,166 +632,177 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
               </View>
             </View>
 
-            <ScrollView
-              ref={scrollRef}
+            <FlatList
+              data={history}
+              keyExtractor={(item) => String(item.id)}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 24 }}
-            >
-              {/* ── Add Remark form ── */}
-              <View
-                className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
-                style={{
-                  shadowColor: "#000",
-                  shadowOpacity: 0.05,
-                  shadowRadius: 6,
-                  elevation: 2,
-                }}
-              >
-                <View className="px-4 pt-3.5 pb-1 border-b border-gray-100">
-                  <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
-                    Add Remark
-                  </Text>
-                </View>
-                <View className="px-4 pt-3 pb-4 gap-3">
-                  {/* Status flag picker */}
-                  <View>
-                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
-                      Status Flag
-                    </Text>
-                    <FlagButton
-                      selected={statusFlag}
-                      onPress={() => setFlagOpen(true)}
-                    />
-                  </View>
-
-                  {/* Remark text */}
-                  <View>
-                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
-                      Remark <Text className="text-red-400">*</Text>
-                    </Text>
-                    <TextInput
-                      value={remarksText}
-                      onChangeText={setRemarksText}
-                      placeholder="Add a note about this PR…"
-                      placeholderTextColor="#9ca3af"
-                      multiline
-                      className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
-                      style={{ minHeight: 80, textAlignVertical: "top" }}
-                    />
-                  </View>
-
-                  {/* Attachment picker */}
-                  <View>
-                    <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
-                      Attachment{" "}
-                      <Text className="text-gray-400 font-normal">
-                        (optional)
-                      </Text>
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handlePickFile}
-                      activeOpacity={0.8}
-                      className={`rounded-xl border-2 border-dashed px-4 py-3 items-center ${
-                        fileName
-                          ? "border-emerald-400 bg-emerald-50"
-                          : "border-gray-300 bg-gray-50"
-                      }`}
-                    >
-                      {fileName ? (
-                        <View className="flex-row items-center gap-2">
-                          <MaterialIcons
-                            name="attach-file"
-                            size={14}
-                            color="#10b981"
-                          />
-                          <Text
-                            className="text-[12.5px] font-semibold text-emerald-700 flex-1"
-                            numberOfLines={1}
-                            ellipsizeMode="middle"
-                          >
-                            {fileName}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View className="flex-row items-center gap-2">
-                          <MaterialIcons
-                            name="upload-file"
-                            size={14}
-                            color="#9ca3af"
-                          />
-                          <Text className="text-[12.5px] font-semibold text-gray-400">
-                            Tap to attach a file
-                          </Text>
-                        </View>
-                      )}
-                      {fileName && (
-                        <TouchableOpacity
-                          onPress={clearFile}
-                          hitSlop={8}
-                          className="mt-1.5"
-                        >
-                          <Text className="text-[10.5px] text-red-500 font-semibold">
-                            Remove
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Submit button */}
-                  <TouchableOpacity
-                    onPress={handleSubmit}
-                    disabled={!canSubmit}
-                    activeOpacity={0.8}
-                    className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${
-                      canSubmit ? "bg-[#064E3B]" : "bg-gray-200"
-                    }`}
+              ListHeaderComponent={
+                <>
+                  {/* ── Add Remark form ── */}
+                  <View
+                    className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
+                    style={{
+                      shadowColor: "#000",
+                      shadowOpacity: 0.05,
+                      shadowRadius: 6,
+                      elevation: 2,
+                    }}
                   >
-                    {saving ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <MaterialIcons
-                        name="send"
-                        size={14}
-                        color={canSubmit ? "#fff" : "#9ca3af"}
-                      />
-                    )}
-                    <Text
-                      className={`text-[13px] font-bold ${
-                        canSubmit ? "text-white" : "text-gray-400"
-                      }`}
-                    >
-                      {saving ? "Saving…" : "Save Remark"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* ── History timeline ── */}
-              <View className="mx-4 mt-4">
-                <View className="flex-row items-center justify-between mb-3">
-                  <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
-                    History
-                  </Text>
-                  {history.length > 0 && (
-                    <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
-                      <Text className="text-[10px] font-bold text-emerald-700">
-                        {history.length}
+                    <View className="px-4 pt-3.5 pb-1 border-b border-gray-100">
+                      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                        Add Remark
                       </Text>
                     </View>
-                  )}
-                </View>
+                    <View className="px-4 pt-3 pb-4 gap-3">
+                      {/* Status flag picker */}
+                      <View>
+                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                          Status Flag
+                        </Text>
+                        <FlagButton
+                          selected={statusFlag}
+                          onPress={() => setFlagOpen(true)}
+                        />
+                      </View>
 
-                {loadingHist ? (
+                      {/* Remark text */}
+                      <View>
+                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                          Remark <Text className="text-red-400">*</Text>
+                        </Text>
+                        <TextInput
+                          value={remarksText}
+                          onChangeText={setRemarksText}
+                          placeholder="Add a note about this PR…"
+                          placeholderTextColor="#9ca3af"
+                          multiline
+                          className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
+                          style={{ minHeight: 80, textAlignVertical: "top" }}
+                        />
+                      </View>
+
+                      {/* Attachment picker */}
+                      <View>
+                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                          Attachment{" "}
+                          <Text className="text-gray-400 font-normal">
+                            (optional)
+                          </Text>
+                        </Text>
+                        <TouchableOpacity
+                          onPress={handlePickFile}
+                          activeOpacity={0.8}
+                          className={`rounded-xl border-2 border-dashed px-4 py-3 items-center ${
+                            fileName
+                              ? "border-emerald-400 bg-emerald-50"
+                              : "border-gray-300 bg-gray-50"
+                          }`}
+                        >
+                          {fileName ? (
+                            <View className="flex-row items-center gap-2">
+                              <MaterialIcons
+                                name="attach-file"
+                                size={14}
+                                color="#10b981"
+                              />
+                              <Text
+                                className="text-[12.5px] font-semibold text-emerald-700 flex-1"
+                                numberOfLines={1}
+                                ellipsizeMode="middle"
+                              >
+                                {fileName}
+                              </Text>
+                            </View>
+                          ) : (
+                            <View className="flex-row items-center gap-2">
+                              <MaterialIcons
+                                name="upload-file"
+                                size={14}
+                                color="#9ca3af"
+                              />
+                              <Text className="text-[12.5px] font-semibold text-gray-400">
+                                Tap to attach a file
+                              </Text>
+                            </View>
+                          )}
+                          {fileName && (
+                            <TouchableOpacity
+                              onPress={clearFile}
+                              hitSlop={8}
+                              className="mt-1.5"
+                            >
+                              <Text className="text-[10.5px] text-red-500 font-semibold">
+                                Remove
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Submit button */}
+                      <TouchableOpacity
+                        onPress={handleSubmit}
+                        disabled={!canSubmit}
+                        activeOpacity={0.8}
+                        className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${
+                          canSubmit ? "bg-[#064E3B]" : "bg-gray-200"
+                        }`}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <MaterialIcons
+                            name="send"
+                            size={14}
+                            color={canSubmit ? "#fff" : "#9ca3af"}
+                          />
+                        )}
+                        <Text
+                          className={`text-[13px] font-bold ${
+                            canSubmit ? "text-white" : "text-gray-400"
+                          }`}
+                        >
+                          {saving ? "Saving…" : "Save Remark"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ── History header ── */}
+                  <View className="mx-4 mt-4 flex-row items-center justify-between mb-3">
+                    <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                      History
+                    </Text>
+                    {history.length > 0 && (
+                      <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
+                        <Text className="text-[10px] font-bold text-emerald-700">
+                          {history.length}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </>
+              }
+              renderItem={({ item, index }) => (
+                <View className="mx-4">
+                  <RemarkTimelineItem
+                    entry={item}
+                    isLast={index === history.length - 1}
+                  />
+                </View>
+              )}
+              ListEmptyComponent={
+                loadingHist ? (
                   <View className="items-center py-8">
                     <ActivityIndicator size="small" color="#064E3B" />
                     <Text className="text-[12px] text-gray-400 mt-2">
                       Loading history…
                     </Text>
                   </View>
-                ) : history.length === 0 ? (
-                  <View className="items-center py-8 bg-white rounded-2xl border border-gray-100">
+                ) : (
+                  <View className="items-center py-8 bg-white mx-4 rounded-2xl border border-gray-100">
                     <Text className="text-2xl mb-2">💬</Text>
                     <Text className="text-[13px] font-semibold text-gray-500">
                       No remarks yet
@@ -801,19 +811,9 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                       Be the first to add a note.
                     </Text>
                   </View>
-                ) : (
-                  <View className="pt-1">
-                    {history.map((entry, i) => (
-                      <RemarkTimelineItem
-                        key={entry.id}
-                        entry={entry}
-                        isLast={i === history.length - 1}
-                      />
-                    ))}
-                  </View>
-                )}
-              </View>
-            </ScrollView>
+                )
+              }
+            />
           </View>
         </KeyboardAvoidingView>
       </Modal>
