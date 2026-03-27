@@ -42,7 +42,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import {
   FlagButton,
@@ -50,7 +50,13 @@ import {
   StatusFlagPicker,
   type StatusFlag,
 } from "../(modals)/ProcessPRModal";
-import { insertRemark, supabase, uploadPRFile } from "../../lib/supabase";
+import {
+  buildRemotePath,
+  guessContentType,
+  insertRemark,
+  supabase,
+  uploadPRFile,
+} from "../../lib/supabase";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -523,12 +529,9 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
       let finalRemark = remarksText.trim();
 
       if (fileUri && fileName) {
-        // Build a sanitized, unique storage path
-        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const prNoSafe = (record.prNo ?? "PR").replace(/[^a-zA-Z0-9._-]/g, "_");
-        const remote = `${prNoSafe}/${Date.now()}-${safeName}`;
-
-        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        const remote = buildRemotePath(record.prNo ?? "PR", fileName);
+        const ct = fileType ?? guessContentType(fileName); // now correctly falls back
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
 
         // Encode as [filename](url) — URL is stored but never shown raw
         finalRemark += `\n${encodeAttachment(fileName, uploaded.publicUrl)}`;

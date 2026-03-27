@@ -7,4 +7,4 @@ export { supabase } from "./client";
 export * from "./pr";
 export * from "./storage";
 export * from "./users";
-
+export { buildRemotePath, guessContentType } from "./storage";

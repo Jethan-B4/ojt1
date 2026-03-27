@@ -1,3 +1,4 @@
+import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
@@ -14,6 +15,7 @@ import {
   View,
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
+import CancelPRModal from "../(modals)/CancelPRModal";
 import EditPRModal, {
   type PREditPayload,
   type PREditRecord,
@@ -27,7 +29,6 @@ import PurchaseRequestModal, {
   PRSubmitPayload,
 } from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
-import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import {
   fetchCanvassablePRs,
   fetchCanvassablePRsByDivision,
@@ -522,6 +523,7 @@ const RecordCard: React.FC<{
   onEdit: (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
   onMore: (r: PRRecord) => void;
+  onCancel: (r: PRRecord) => void;
 }> = ({
   record,
   isEven,
@@ -532,6 +534,7 @@ const RecordCard: React.FC<{
   onEdit,
   onProcess,
   onMore,
+  onCancel,
 }) => {
   const statusLabel =
     statuses.find((s) => s.id === record.statusId)?.status_name ??
@@ -540,6 +543,7 @@ const RecordCard: React.FC<{
     ? getFlagFromId(latestFlag.status_flag_id)
     : null;
   const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
+
   return (
     <View
       className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
@@ -687,6 +691,15 @@ const RecordCard: React.FC<{
             <Text className="text-white text-[12px] font-bold">Process</Text>
           </TouchableOpacity>
         )}
+        {roleId === 1 && (
+          <TouchableOpacity
+            onPress={() => onCancel(record)}
+            activeOpacity={0.8}
+            className="w-10 h-10 bg-red-600 rounded-xl items-center justify-center"
+          >
+            <Text className="text-white text-[11px] font-bold">X</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
@@ -754,6 +767,11 @@ export default function PRModule({
   const [processRoleOverride, setProcessRoleOverride] = useState<number | null>(
     null,
   );
+  const [cancelVisible, setCancelVisible] = useState(false);
+  const [cancelRecord, setCancelRecord] = useState<{
+    id: string;
+    prNo: string;
+  } | null>(null);
 
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
@@ -1177,6 +1195,10 @@ export default function PRModule({
                 setMoreRecord(r);
                 setMoreVisible(true);
               }}
+              onCancel={(r) => {
+                setCancelRecord({ id: r.id, prNo: r.prNo });
+                setCancelVisible(true);
+              }}
             />
           ))
         )}
@@ -1285,6 +1307,18 @@ export default function PRModule({
               r.id === id ? { ...r, statusId: Number(newStatusId) } : r,
             ),
           );
+        }}
+      />
+      <CancelPRModal
+        visible={cancelVisible}
+        prId={cancelRecord?.id ?? null}
+        prNo={cancelRecord?.prNo ?? null}
+        onClose={() => {
+          setCancelVisible(false);
+          setCancelRecord(null);
+        }}
+        onCancelled={(id) => {
+          setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
 

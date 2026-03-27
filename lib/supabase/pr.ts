@@ -170,3 +170,69 @@ export async function insertProposalForPR(
   if (error) throw error;
 }
 
+export async function cancelPurchaseRequest(
+  prId: string,
+  reason?: string | null,
+) {
+  // Gather related canvass session IDs
+  const { data: sessions, error: sessErr } = await supabase
+    .from("canvass_sessions")
+    .select("id")
+    .eq("pr_id", prId);
+  if (sessErr) throw sessErr;
+  const sessionIds = (sessions ?? []).map((s: any) => s.id);
+
+  // Delete dependent records first
+  if (sessionIds.length > 0) {
+    const { error: delEntriesErr } = await supabase
+      .from("canvass_entries")
+      .delete()
+      .in("session_id", sessionIds);
+    if (delEntriesErr) throw delEntriesErr;
+
+    const { error: delBACErr } = await supabase
+      .from("bac_resolution")
+      .delete()
+      .in("session_id", sessionIds);
+    if (delBACErr) throw delBACErr;
+
+    const { error: delAAAErr } = await supabase
+      .from("aaa_documents")
+      .delete()
+      .in("session_id", sessionIds);
+    if (delAAAErr) throw delAAAErr;
+
+    // Assignments (optional but recommended)
+    const { error: delAssignErr } = await supabase
+      .from("canvasser_assignments")
+      .delete()
+      .in("session_id", sessionIds);
+    if (delAssignErr) throw delAssignErr;
+  }
+
+  const { error: delSessErr } = await supabase
+    .from("canvass_sessions")
+    .delete()
+    .eq("pr_id", prId);
+  if (delSessErr) throw delSessErr;
+
+  const { error: delRemarksErr } = await supabase
+    .from("remarks")
+    .delete()
+    .eq("pr_id", prId);
+  if (delRemarksErr) throw delRemarksErr;
+
+  const { error: delItemsErr } = await supabase
+    .from("purchase_request_items")
+    .delete()
+    .eq("pr_id", prId);
+  if (delItemsErr) throw delItemsErr;
+
+  const { error: delPRErr } = await supabase
+    .from("purchase_requests")
+    .delete()
+    .eq("id", prId);
+  if (delPRErr) throw delPRErr;
+
+  return { id: prId, deleted: true };
+}

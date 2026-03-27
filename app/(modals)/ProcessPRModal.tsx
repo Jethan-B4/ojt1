@@ -19,28 +19,30 @@
 
 import type { PRStatusRow } from "@/lib/supabase";
 import {
-    fetchPRStatuses,
-    fetchPRWithItemsById,
-    insertRemark,
-    supabase,
+  buildRemotePath,
+  fetchPRStatuses,
+  fetchPRWithItemsById,
+  guessContentType,
+  insertRemark,
+  supabase,
+  uploadPRFile,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as DocumentPicker from "expo-document-picker";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useAuth } from "../AuthContext";
-import * as DocumentPicker from "expo-document-picker";
-import { uploadPRFile } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -238,11 +240,13 @@ export function StatusFlagPicker({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <TouchableOpacity
         className="flex-1 justify-center items-center bg-black/50"
         activeOpacity={1}
-        onPress={onClose}>
+        onPress={onClose}
+      >
         {/* Stop tap-through to backdrop */}
         <TouchableOpacity activeOpacity={1}>
           <View
@@ -254,7 +258,8 @@ export function StatusFlagPicker({
               shadowOpacity: 0.18,
               shadowRadius: 16,
               elevation: 12,
-            }}>
+            }}
+          >
             {/* Header */}
             <View className="bg-gray-900 px-4 py-3">
               <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
@@ -273,7 +278,8 @@ export function StatusFlagPicker({
               }}
               activeOpacity={0.7}
               className={`flex-row items-center gap-3 px-4 py-3 ${selected === null ? "bg-gray-50" : ""}`}
-              style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}>
+              style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}
+            >
               <View className="w-7 h-7 rounded-full bg-gray-100 items-center justify-center">
                 <MaterialIcons name="remove" size={14} color="#6b7280" />
               </View>
@@ -306,13 +312,15 @@ export function StatusFlagPicker({
                   style={{
                     borderBottomWidth: 1,
                     borderBottomColor: "#f3f4f6",
-                  }}>
+                  }}
+                >
                   {/* Colored icon */}
                   <View
                     className={`w-7 h-7 rounded-full items-center justify-center ${isSelected ? "" : "bg-gray-100"}`}
                     style={
                       isSelected ? { backgroundColor: m.dot + "22" } : undefined
-                    }>
+                    }
+                  >
                     <MaterialIcons
                       name={m.icon}
                       size={15}
@@ -321,12 +329,14 @@ export function StatusFlagPicker({
                   </View>
                   <View className="flex-1">
                     <Text
-                      className={`text-[13px] font-bold ${isSelected ? m.text : "text-gray-700"}`}>
+                      className={`text-[13px] font-bold ${isSelected ? m.text : "text-gray-700"}`}
+                    >
                       {m.label}
                     </Text>
                     <Text
                       className="text-[10.5px] text-gray-400 leading-4"
-                      numberOfLines={1}>
+                      numberOfLines={1}
+                    >
                       {m.desc}
                     </Text>
                   </View>
@@ -359,12 +369,14 @@ export function FlagButton({
       activeOpacity={0.8}
       className={`flex-row items-center justify-between rounded-xl px-3.5 py-2.5 border ${
         m ? `${m.bg} ${m.border}` : "bg-white border-gray-200"
-      }`}>
+      }`}
+    >
       <View className="flex-row items-center gap-2.5">
         {m ? (
           <View
             className="w-6 h-6 rounded-full items-center justify-center"
-            style={{ backgroundColor: m.dot + "22" }}>
+            style={{ backgroundColor: m.dot + "22" }}
+          >
             <MaterialIcons name={m.icon} size={13} color={m.dot} />
           </View>
         ) : (
@@ -373,7 +385,8 @@ export function FlagButton({
           </View>
         )}
         <Text
-          className={`text-[13px] font-semibold ${m ? m.text : "text-gray-400"}`}>
+          className={`text-[13px] font-semibold ${m ? m.text : "text-gray-400"}`}
+        >
           {m ? m.label : "No flag set"}
         </Text>
       </View>
@@ -442,7 +455,8 @@ function ModalHeader({
         paddingHorizontal: 20,
         paddingTop: 20,
         paddingBottom: 16,
-      }}>
+      }}
+    >
       <View className="flex-row items-start justify-between mb-3">
         <View className="flex-row items-center gap-3">
           <View className="w-10 h-10 rounded-xl items-center justify-center bg-white/10">
@@ -460,7 +474,8 @@ function ModalHeader({
         <TouchableOpacity
           onPress={onClose}
           hitSlop={10}
-          className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
+          className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
+        >
           <Text className="text-white text-[20px] leading-none font-light">
             ×
           </Text>
@@ -469,7 +484,8 @@ function ModalHeader({
       <View className="self-start px-2.5 py-1 rounded-md bg-white/10 border border-white/20">
         <Text
           className="text-[10.5px] text-white/60"
-          style={{ fontFamily: MONO }}>
+          style={{ fontFamily: MONO }}
+        >
           {prNo}
         </Text>
       </View>
@@ -488,7 +504,8 @@ function InfoBanner({
 }) {
   return (
     <View
-      className={`flex-row items-start gap-3 ${bg} border-l-4 ${border} rounded-2xl p-3.5 mb-4`}>
+      className={`flex-row items-start gap-3 ${bg} border-l-4 ${border} rounded-2xl p-3.5 mb-4`}
+    >
       <Text className="text-base mt-0.5">ℹ️</Text>
       <Text className="flex-1 text-[12.5px] text-gray-700 leading-[19px]">
         {children}
@@ -525,21 +542,24 @@ function PRSummaryCard({
         shadowOpacity: 0.05,
         shadowRadius: 6,
         elevation: 2,
-      }}>
+      }}
+    >
       <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
         PR Summary
       </Text>
       {rows.map(({ label, value, mono }, i) => (
         <View
           key={label}
-          className={`flex-row items-start justify-between py-2 ${i < rows.length - 1 ? "border-b border-gray-100" : ""}`}>
+          className={`flex-row items-start justify-between py-2 ${i < rows.length - 1 ? "border-b border-gray-100" : ""}`}
+        >
           <Text className="text-[11.5px] font-semibold text-gray-400 w-20">
             {label}
           </Text>
           <Text
             className="text-[12px] font-semibold text-gray-800 flex-1 text-right"
             style={mono ? { fontFamily: MONO } : undefined}
-            numberOfLines={2}>
+            numberOfLines={2}
+          >
             {value}
           </Text>
         </View>
@@ -638,7 +658,8 @@ function ModalFooter({
       <TouchableOpacity
         onPress={onCancel}
         activeOpacity={0.7}
-        className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white">
+        className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+      >
         <Text className="text-[13.5px] font-semibold text-gray-500">
           Cancel
         </Text>
@@ -648,7 +669,8 @@ function ModalFooter({
         disabled={disabled || saving}
         activeOpacity={0.8}
         className={`flex-row items-center gap-2 px-5 py-2.5 rounded-xl ${disabled || saving ? "opacity-40" : ""}`}
-        style={{ backgroundColor: color }}>
+        style={{ backgroundColor: color }}
+      >
         {saving && <ActivityIndicator size="small" color="#fff" />}
         <Text className="text-[13.5px] font-bold text-white">
           {saving ? confirmingLabel : confirmLabel}
@@ -710,9 +732,9 @@ function DivisionHeadModal({
     try {
       let finalRemark = remarks.trim();
       if (fileUri && fileName) {
-        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const remote = `${record.prNo}/${Date.now()}-${safe}`;
-        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        const remote = buildRemotePath(record.prNo, fileName);
+        const ct = fileType ?? guessContentType(fileName);
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
         finalRemark += `\nAttachment: ${uploaded.publicUrl}`;
       }
       await insertRemark(
@@ -742,10 +764,12 @@ function DivisionHeadModal({
         visible={visible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={onClose}>
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
           className="flex-1 bg-white"
-          behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
@@ -754,7 +778,8 @@ function DivisionHeadModal({
               className="flex-1 bg-gray-50"
               contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
                 As <Text className="font-bold">Division Head</Text>, review and
                 sign this PR to forward it to BAC for numbering and APP
@@ -781,8 +806,11 @@ function DivisionHeadModal({
                   onPress={pickFile}
                   activeOpacity={0.8}
                   className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
-                  }`}>
+                    fileName
+                      ? "border-emerald-400 bg-emerald-50"
+                      : "border-gray-300 bg-gray-50"
+                  }`}
+                >
                   <Text className="text-[13px] font-semibold text-gray-700">
                     {fileName ?? "Tap to attach a file"}
                   </Text>
@@ -794,7 +822,8 @@ function DivisionHeadModal({
                         setFileType(undefined);
                       }}
                       hitSlop={8}
-                      className="mt-1">
+                      className="mt-1"
+                    >
                       <Text className="text-[11px] text-red-500">Remove</Text>
                     </TouchableOpacity>
                   )}
@@ -879,9 +908,9 @@ function BACModal({
     try {
       let finalNotes = certNotes.trim();
       if (fileUri && fileName) {
-        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const remote = `${record.prNo}/${Date.now()}-${safe}`;
-        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        const remote = buildRemotePath(record.prNo, fileName);
+        const ct = fileType ?? guessContentType(fileName);
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
         finalNotes = `${finalNotes ? finalNotes + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
       if (finalNotes) {
@@ -917,10 +946,12 @@ function BACModal({
         visible={visible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={onClose}>
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
           className="flex-1 bg-white"
-          behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
@@ -929,7 +960,8 @@ function BACModal({
               className="flex-1 bg-gray-50"
               contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
                 As <Text className="font-bold">BAC</Text>, assign the PR number
                 and certify inclusion in the Annual Procurement Plan before
@@ -970,8 +1002,11 @@ function BACModal({
                   onPress={pickFile}
                   activeOpacity={0.8}
                   className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
-                  }`}>
+                    fileName
+                      ? "border-emerald-400 bg-emerald-50"
+                      : "border-gray-300 bg-gray-50"
+                  }`}
+                >
                   <Text className="text-[13px] font-semibold text-gray-700">
                     {fileName ?? "Tap to attach a file"}
                   </Text>
@@ -983,7 +1018,8 @@ function BACModal({
                         setFileType(undefined);
                       }}
                       hitSlop={8}
-                      className="mt-1">
+                      className="mt-1"
+                    >
                       <Text className="text-[11px] text-red-500">Remove</Text>
                     </TouchableOpacity>
                   )}
@@ -1057,9 +1093,9 @@ function BudgetModal({
     try {
       let finalNote = earmarkNote.trim();
       if (fileUri && fileName) {
-        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const remote = `${record.prNo}/${Date.now()}-${safe}`;
-        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        const remote = buildRemotePath(record.prNo, fileName);
+        const ct = fileType ?? guessContentType(fileName);
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
         finalNote = `${finalNote ? finalNote + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
       if (finalNote) {
@@ -1095,10 +1131,12 @@ function BudgetModal({
         visible={visible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={onClose}>
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
           className="flex-1 bg-white"
-          behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
@@ -1107,7 +1145,8 @@ function BudgetModal({
               className="flex-1 bg-gray-50"
               contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
                 As <Text className="font-bold">Budget Office</Text>, record the
                 PPMP budget number and PAP/Activity code to earmark funds, then
@@ -1158,13 +1197,19 @@ function BudgetModal({
                       setFileUri(f.uri);
                       setFileType(f.mimeType);
                     } catch (e: any) {
-                      Alert.alert("File error", e?.message ?? "Could not pick file.");
+                      Alert.alert(
+                        "File error",
+                        e?.message ?? "Could not pick file.",
+                      );
                     }
                   }}
                   activeOpacity={0.8}
                   className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-300 bg-gray-50"
-                  }`}>
+                    fileName
+                      ? "border-emerald-400 bg-emerald-50"
+                      : "border-gray-300 bg-gray-50"
+                  }`}
+                >
                   <Text className="text-[13px] font-semibold text-gray-700">
                     {fileName ?? "Tap to attach a file"}
                   </Text>
@@ -1176,7 +1221,8 @@ function BudgetModal({
                         setFileType(undefined);
                       }}
                       hitSlop={8}
-                      className="mt-1">
+                      className="mt-1"
+                    >
                       <Text className="text-[11px] text-red-500">Remove</Text>
                     </TouchableOpacity>
                   )}
@@ -1240,9 +1286,9 @@ function PARPOModal({
     try {
       let final = notes.trim();
       if (fileUri && fileName) {
-        const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const remote = `${record.prNo}/${Date.now()}-${safe}`;
-        const uploaded = await uploadPRFile(fileUri, remote, fileType);
+        const remote = buildRemotePath(record.prNo, fileName);
+        const ct = fileType ?? guessContentType(fileName);
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
         final = `${final ? final + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
       if (final) {
@@ -1274,10 +1320,12 @@ function PARPOModal({
         visible={visible}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={onClose}>
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
           className="flex-1 bg-white"
-          behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} prNo={record.prNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
@@ -1286,7 +1334,8 @@ function PARPOModal({
               className="flex-1 bg-gray-50"
               contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
                 As <Text className="font-bold">PARPO</Text>, review and approve
                 this PR to complete Phase 1 and advance to Canvassing (Steps
@@ -1323,13 +1372,19 @@ function PARPOModal({
                       setFileUri(f.uri);
                       setFileType(f.mimeType);
                     } catch (e: any) {
-                      Alert.alert("File error", e?.message ?? "Could not pick file.");
+                      Alert.alert(
+                        "File error",
+                        e?.message ?? "Could not pick file.",
+                      );
                     }
                   }}
                   activeOpacity={0.8}
                   className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-50 border-gray-300"
-                  }`}>
+                    fileName
+                      ? "border-emerald-400 bg-emerald-50"
+                      : "border-gray-50 border-gray-300"
+                  }`}
+                >
                   <Text className="text-[13px] font-semibold text-gray-700">
                     {fileName ?? "Tap to attach a file"}
                   </Text>
@@ -1341,7 +1396,8 @@ function PARPOModal({
                         setFileType(undefined);
                       }}
                       hitSlop={8}
-                      className="mt-1">
+                      className="mt-1"
+                    >
                       <Text className="text-[11px] text-red-500">Remove</Text>
                     </TouchableOpacity>
                   )}
