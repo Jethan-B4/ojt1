@@ -2,6 +2,17 @@ export type PRStatusRow = { id: number; status_name: string };
 export type PRRow = Record<string, any>;
 export type RemarkRow = Record<string, any>;
 
+export interface PRItemRow {
+  id?: string;
+  pr_id?: string;
+  stock_no: string | null;
+  unit: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
 export interface CanvasserAssignmentRow {
   id: string;
   session_id: string;
@@ -48,4 +59,3 @@ export interface EnrichedAssignmentRow extends CanvasserAssignmentRow {
   division_name: string | null;
   canvasser_name: string | null;
 }
-

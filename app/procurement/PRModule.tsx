@@ -38,7 +38,7 @@ import {
   fetchPurchaseRequestsByDivision,
   insertProposalForPR,
   insertPurchaseRequest,
-  updatePRStatus,
+  updatePRStatus
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
@@ -243,16 +243,11 @@ const SearchBar: React.FC<{
     <TouchableOpacity
       onPress={onFilterToggle}
       activeOpacity={0.8}
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: filterActive ? "#064E3B" : "#ffffff",
-        borderWidth: 1.5,
-        borderColor: filterActive ? "#064E3B" : "#e5e7eb",
-      }}
+      className={`w-10 h-10 rounded-xl items-center justify-center border-2 ${
+        filterActive
+          ? "bg-[#064E3B] border-[#064E3B]"
+          : "bg-white border-gray-200"
+      }`}
     >
       <MaterialIcons
         name="filter-list"
@@ -281,29 +276,25 @@ const FilterChip: React.FC<{
   active: boolean;
   color?: string;
   onPress: () => void;
-}> = ({ label, active, color, onPress }) => {
-  const bg = active ? (color ?? "#064E3B") : "#ffffff";
-  const txt = active ? "#ffffff" : "#6b7280";
-  const border = active ? (color ?? "#064E3B") : "#e5e7eb";
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.75}
-      className="rounded-full"
-      style={{
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        backgroundColor: bg,
-        borderWidth: 1.5,
-        borderColor: border,
-      }}
+}> = ({ label, active, color, onPress }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    activeOpacity={0.75}
+    className="rounded-full px-3 py-1.5"
+    style={{
+      backgroundColor: active ? (color ?? "#064E3B") : "#ffffff",
+      borderWidth: 1.5,
+      borderColor: active ? (color ?? "#064E3B") : "#e5e7eb",
+    }}
+  >
+    <Text
+      className="text-[11.5px] font-bold"
+      style={{ color: active ? "#ffffff" : "#6b7280" }}
     >
-      <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-};
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
 
 /**
  * Collapsible filter + sort panel — mirrors ProcurementLog.
@@ -343,16 +334,7 @@ const FilterPanel: React.FC<{
   const hasActive = statusFilter !== null || sectionFilter !== "All";
 
   return (
-    <View
-      className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3"
-      style={{
-        gap: 10,
-        shadowColor: "#000",
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-        elevation: 2,
-      }}
-    >
+    <View className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3 gap-2.5 shadow-sm elevation-2">
       {/* ── Status ── */}
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         Status
@@ -441,11 +423,7 @@ const FilterPanel: React.FC<{
                 color={active ? "#fff" : "#6b7280"}
               />
               <Text
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: "700",
-                  color: active ? "#ffffff" : "#6b7280",
-                }}
+                className={`text-[11.5px] font-bold ${active ? "text-white" : "text-gray-500"}`}
               >
                 {opt.label}
               </Text>
@@ -457,7 +435,7 @@ const FilterPanel: React.FC<{
       {/* ── Clear ── */}
       {hasActive && (
         <TouchableOpacity onPress={onClear} className="self-end">
-          <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}>
+          <Text className="text-[11.5px] font-bold text-red-500">
             Clear filters
           </Text>
         </TouchableOpacity>
@@ -474,38 +452,23 @@ const StatusPill: React.FC<{
   const cfg = statusCfgFor(statusId);
   return (
     <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 5,
-        alignSelf: "flex-start",
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 999,
-        backgroundColor: cfg.bg,
-      }}
+      className="flex-row items-center self-start rounded-full px-2.5 py-1 gap-1.5"
+      style={{ backgroundColor: cfg.bg }}
     >
       <View
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 3,
-          backgroundColor: cfg.dot,
-        }}
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ backgroundColor: cfg.dot }}
       />
-      <Text style={{ fontSize: 10.5, fontWeight: "700", color: cfg.text }}>
+      <Text className="text-[10.5px] font-bold" style={{ color: cfg.text }}>
         {label}
       </Text>
       <View
-        style={{ width: 1, height: 10, backgroundColor: cfg.dot, opacity: 0.3 }}
+        className="w-px h-2.5 opacity-30"
+        style={{ backgroundColor: cfg.dot }}
       />
       <Text
-        style={{
-          fontSize: 10,
-          fontWeight: "600",
-          color: cfg.text,
-          opacity: 0.7,
-        }}
+        className="text-[10px] font-semibold opacity-70"
+        style={{ color: cfg.text }}
       >
         {elapsed}
       </Text>
@@ -546,14 +509,8 @@ const RecordCard: React.FC<{
 
   return (
     <View
-      className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden ${isEven ? "bg-white" : "bg-gray-50"}`}
-      style={{
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.07,
-        shadowRadius: 6,
-        elevation: 3,
-      }}
+      className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden shadow-sm ${isEven ? "bg-white" : "bg-gray-50"}`}
+      style={{ elevation: 3 }}
     >
       <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
         <View className="flex-1 pr-3">
@@ -604,21 +561,16 @@ const RecordCard: React.FC<{
           <View className="h-px bg-gray-100 mx-4" />
           <View className="flex-row items-center gap-2 px-4 py-2">
             <View
+              className="flex-row items-center gap-1.5 rounded-full px-2 py-0.5 border"
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 5,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 999,
                 backgroundColor: flag.bg,
-                borderWidth: 1,
                 borderColor: flag.dot + "40",
               }}
             >
               <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
               <Text
-                style={{ fontSize: 10.5, fontWeight: "700", color: flag.text }}
+                className="text-[10.5px] font-bold"
+                style={{ color: flag.text }}
               >
                 {flag.label}
               </Text>
@@ -905,6 +857,10 @@ export default function PRModule({
     // setSaving(false);
   }, []);
 
+  // Fix 3: actually persists to Supabase (updatePurchaseRequest was never called before).
+  // Fix 5: uses payload.purpose for itemDescription instead of a hardcoded placeholder.
+  // Note: persistence is now handled inside EditPRModal itself before onSave is called,
+  // so this callback only needs to sync the in-memory list and handle the saving overlay.
   const handlePRSave = useCallback((payload: PREditPayload) => {
     setRecords((prev) =>
       prev.map((r) =>
@@ -913,13 +869,13 @@ export default function PRModule({
           : {
               ...r,
               officeSection: payload.officeSection,
+              purpose: payload.purpose, // Fix 5: keep purpose in sync
               totalCost: payload.totalCost,
               quantity: payload.items.length,
-              itemDescription: `${payload.officeSection} procurement request`,
+              itemDescription: payload.purpose, // Fix 5: was hardcoded placeholder
             },
       ),
     );
-    // TODO: persist via supabase updatePurchaseRequest(payload)
   }, []);
 
   const filtered = records

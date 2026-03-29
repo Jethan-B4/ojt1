@@ -2,19 +2,10 @@
  * ProcessPRModal.tsx
  *
  * Role-gated processing modals for the DAR procurement workflow (Phase 1).
- * Swimlane reference:
  *   role_id 2 → Division Head  — Step 2: Sign & forward to BAC
  *   role_id 3 → BAC            — Step 3: Number, certify inclusion in APP
  *   role_id 4 → Budget         — Step 4: Earmark & record against PPMP
- *
- * Usage:
- *   <ProcessPRModal
- *     visible={processVisible}
- *     record={processRecord}          // { id, prNo }
- *     roleId={currentUser.role_id}
- *     onClose={close}
- *     onProcessed={(id, newStatus) => updateList(id, newStatus)}
- *   />
+ *   role_id 5 → PARPO          — Step 5: Final approval
  */
 
 import type { PRStatusRow } from "@/lib/supabase";
@@ -64,7 +55,7 @@ interface PRHeader {
   office_section: string;
   purpose: string;
   total_cost: number;
-  status_id: number; // FK → pr_status.id
+  status_id: number;
   budget_number: string | null;
   pap_code: string | null;
   proposal_no: string | null;
@@ -78,9 +69,6 @@ const ROLE_META: Record<
     step: string;
     title: string;
     accentColor: string;
-    bannerBg: string;
-    bannerBorder: string;
-    /** FK value written to purchase_requests.status_id on process */
     nextStatusId: number;
   }
 > = {
@@ -88,33 +76,25 @@ const ROLE_META: Record<
     step: "Step 2",
     title: "Division Head Review",
     accentColor: "#1d4ed8",
-    bannerBg: "bg-blue-50",
-    bannerBorder: "border-blue-400",
-    nextStatusId: 3, // → Processing (BAC)
+    nextStatusId: 3,
   },
   3: {
     step: "Step 3",
     title: "BAC Certification",
     accentColor: "#7c3aed",
-    bannerBg: "bg-violet-50",
-    bannerBorder: "border-violet-400",
-    nextStatusId: 4, // → Processing (Budget)
+    nextStatusId: 4,
   },
   4: {
     step: "Step 4",
     title: "Budget Earmarking",
     accentColor: "#b45309",
-    bannerBg: "bg-amber-50",
-    bannerBorder: "border-amber-400",
-    nextStatusId: 5, // → Processing (PARPO)
+    nextStatusId: 5,
   },
   5: {
     step: "Step 5",
     title: "PARPO Approval",
     accentColor: "#065f46",
-    bannerBg: "bg-emerald-50",
-    bannerBorder: "border-emerald-400",
-    nextStatusId: 6, // → Approved (add id 6 if needed, or reuse 5 for final)
+    nextStatusId: 6,
   },
 };
 
@@ -132,10 +112,10 @@ interface FlagMeta {
   label: string;
   desc: string;
   icon: keyof typeof MaterialIcons.glyphMap;
-  bg: string; // NativeWind bg class
-  text: string; // NativeWind text class
-  border: string; // NativeWind border class
-  dot: string; // hex for the indicator dot
+  bg: string;
+  text: string;
+  border: string;
+  dot: string;
 }
 
 export const STATUS_FLAGS: Record<StatusFlag, FlagMeta> = {
@@ -204,13 +184,8 @@ const FLAG_ORDER: StatusFlag[] = [
   "urgent",
 ];
 
-// ─── Flag ID mapping ──────────────────────────────────────────────────────────
-/**
- * Maps StatusFlag strings to their corresponding status_flag table IDs.
- * IDs should match the status_flag table in Supabase (1-indexed).
- */
 const FLAG_TO_ID: Record<StatusFlag, number> = {
-  complete: 2, // ID 2 in status_flag table
+  complete: 2,
   incomplete_info: 3,
   wrong_information: 4,
   needs_revision: 5,
@@ -247,15 +222,14 @@ export function StatusFlagPicker({
         activeOpacity={1}
         onPress={onClose}
       >
-        {/* Stop tap-through to backdrop */}
         <TouchableOpacity activeOpacity={1}>
           <View
-            className="bg-white rounded-3xl overflow-hidden"
+            className="bg-white rounded-2xl overflow-hidden"
             style={{
               width: 300,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.18,
+              shadowOpacity: 0.15,
               shadowRadius: 16,
               elevation: 12,
             }}
@@ -265,12 +239,12 @@ export function StatusFlagPicker({
               <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
                 Processing Flag
               </Text>
-              <Text className="text-[16px] font-extrabold text-white">
+              <Text className="text-[15px] font-extrabold text-white">
                 Select Status Flag
               </Text>
             </View>
 
-            {/* None option */}
+            {/* None */}
             <TouchableOpacity
               onPress={() => {
                 onSelect(null);
@@ -283,20 +257,15 @@ export function StatusFlagPicker({
               <View className="w-7 h-7 rounded-full bg-gray-100 items-center justify-center">
                 <MaterialIcons name="remove" size={14} color="#6b7280" />
               </View>
-              <View className="flex-1">
-                <Text className="text-[13px] font-semibold text-gray-500">
-                  No flag
-                </Text>
-                <Text className="text-[10.5px] text-gray-400">
-                  Leave flag unset
-                </Text>
-              </View>
+              <Text className="flex-1 text-[13px] font-semibold text-gray-500">
+                No flag
+              </Text>
               {selected === null && (
                 <MaterialIcons name="check" size={15} color="#10b981" />
               )}
             </TouchableOpacity>
 
-            {/* Flag options */}
+            {/* Options */}
             {FLAG_ORDER.map((key) => {
               const m = STATUS_FLAGS[key];
               const isSelected = selected === key;
@@ -309,12 +278,8 @@ export function StatusFlagPicker({
                   }}
                   activeOpacity={0.7}
                   className={`flex-row items-center gap-3 px-4 py-3 ${isSelected ? m.bg : ""}`}
-                  style={{
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#f3f4f6",
-                  }}
+                  style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}
                 >
-                  {/* Colored icon */}
                   <View
                     className={`w-7 h-7 rounded-full items-center justify-center ${isSelected ? "" : "bg-gray-100"}`}
                     style={
@@ -353,7 +318,7 @@ export function StatusFlagPicker({
   );
 }
 
-// ─── FlagButton — the trigger shown inside each modal form ────────────────────
+// ─── FlagButton ───────────────────────────────────────────────────────────────
 
 export function FlagButton({
   selected,
@@ -367,9 +332,7 @@ export function FlagButton({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      className={`flex-row items-center justify-between rounded-xl px-3.5 py-2.5 border ${
-        m ? `${m.bg} ${m.border}` : "bg-white border-gray-200"
-      }`}
+      className={`flex-row items-center justify-between rounded-xl px-3.5 py-2.5 border ${m ? `${m.bg} ${m.border}` : "bg-white border-gray-200"}`}
     >
       <View className="flex-row items-center gap-2.5">
         {m ? (
@@ -408,7 +371,6 @@ const fmt = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-/** Fetch PR header + status lookup table whenever the modal opens */
 function usePRFetch(
   visible: boolean,
   record: ProcessRecord | null,
@@ -453,23 +415,22 @@ function ModalHeader({
       style={{
         backgroundColor: meta.accentColor,
         paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 16,
+        paddingTop: 18,
+        paddingBottom: 14,
       }}
     >
-      <View className="flex-row items-start justify-between mb-3">
-        <View className="flex-row items-center gap-3">
-          <View className="w-10 h-10 rounded-xl items-center justify-center bg-white/10">
-            <Text className="text-xl">📋</Text>
-          </View>
-          <View>
-            <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50">
-              DAR · Procurement · {meta.step}
-            </Text>
-            <Text className="text-[16px] font-bold text-white">
-              {meta.title}
-            </Text>
-          </View>
+      <View className="flex-row items-center justify-between">
+        <View className="flex-1 pr-3">
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
+            {meta.step}
+          </Text>
+          <Text className="text-[16px] font-bold text-white">{meta.title}</Text>
+          <Text
+            className="text-[11px] text-white/50 mt-0.5"
+            style={{ fontFamily: MONO }}
+          >
+            {prNo}
+          </Text>
         </View>
         <TouchableOpacity
           onPress={onClose}
@@ -481,35 +442,6 @@ function ModalHeader({
           </Text>
         </TouchableOpacity>
       </View>
-      <View className="self-start px-2.5 py-1 rounded-md bg-white/10 border border-white/20">
-        <Text
-          className="text-[10.5px] text-white/60"
-          style={{ fontFamily: MONO }}
-        >
-          {prNo}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function InfoBanner({
-  bg,
-  border,
-  children,
-}: {
-  bg: string;
-  border: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View
-      className={`flex-row items-start gap-3 ${bg} border-l-4 ${border} rounded-2xl p-3.5 mb-4`}
-    >
-      <Text className="text-base mt-0.5">ℹ️</Text>
-      <Text className="flex-1 text-[12.5px] text-gray-700 leading-[19px]">
-        {children}
-      </Text>
     </View>
   );
 }
@@ -619,9 +551,7 @@ function StyledInput({
       multiline={multiline}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      className={`rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border bg-white
-        ${focused ? "border-emerald-500" : "border-gray-200"}
-        ${multiline ? "min-h-[80px]" : ""}`}
+      className={`rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border bg-white ${focused ? "border-emerald-500" : "border-gray-200"} ${multiline ? "min-h-[80px]" : ""}`}
       style={multiline ? { textAlignVertical: "top" } : undefined}
     />
   );
@@ -680,6 +610,69 @@ function ModalFooter({
   );
 }
 
+// ─── Shared attachment picker row ─────────────────────────────────────────────
+
+function AttachmentField({
+  fileName,
+  onPick,
+  onClear,
+}: {
+  fileName: string | null;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <Field label="Attachment (optional)">
+      <TouchableOpacity
+        onPress={onPick}
+        activeOpacity={0.8}
+        className={`flex-row items-center gap-2.5 rounded-xl border px-3.5 py-3 ${fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}
+      >
+        <MaterialIcons
+          name={fileName ? "attach-file" : "upload-file"}
+          size={15}
+          color={fileName ? "#10b981" : "#9ca3af"}
+        />
+        <Text
+          className={`flex-1 text-[13px] font-semibold ${fileName ? "text-emerald-700" : "text-gray-400"}`}
+          numberOfLines={1}
+          ellipsizeMode="middle"
+        >
+          {fileName ?? "Tap to attach a file"}
+        </Text>
+        {fileName && (
+          <TouchableOpacity onPress={onClear} hitSlop={8}>
+            <Text className="text-[11px] text-red-500 font-semibold">
+              Remove
+            </Text>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    </Field>
+  );
+}
+
+async function pickFile(
+  setFileName: (n: string) => void,
+  setFileUri: (u: string) => void,
+  setFileType: (t: string | undefined) => void,
+) {
+  try {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: "*/*",
+      multiple: false,
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled || !res.assets?.length) return;
+    const f = res.assets[0];
+    setFileName(f.name ?? "attachment");
+    setFileUri(f.uri);
+    setFileType(f.mimeType);
+  } catch (e: any) {
+    Alert.alert("File error", e?.message ?? "Could not pick file.");
+  }
+}
+
 // ─── Division Head Modal (role_id = 2 · Step 2) ───────────────────────────────
 
 function DivisionHeadModal({
@@ -709,23 +702,6 @@ function DivisionHeadModal({
     }
   }, [visible]);
 
-  const pickFile = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        multiple: false,
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled || !res.assets?.length) return;
-      const f = res.assets[0];
-      setFileName(f.name ?? "attachment");
-      setFileUri(f.uri);
-      setFileType(f.mimeType);
-    } catch (e: any) {
-      Alert.alert("File error", e?.message ?? "Could not pick file.");
-    }
-  };
-
   const handleSign = async () => {
     if (!record || !remarks.trim()) return;
     setSaving(true);
@@ -733,8 +709,11 @@ function DivisionHeadModal({
       let finalRemark = remarks.trim();
       if (fileUri && fileName) {
         const remote = buildRemotePath(record.prNo, fileName);
-        const ct = fileType ?? guessContentType(fileName);
-        const uploaded = await uploadPRFile(fileUri, remote, ct);
+        const uploaded = await uploadPRFile(
+          fileUri,
+          remote,
+          fileType ?? guessContentType(fileName),
+        );
         finalRemark += `\nAttachment: ${uploaded.publicUrl}`;
       }
       await insertRemark(
@@ -780,11 +759,6 @@ function DivisionHeadModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-                As <Text className="font-bold">Division Head</Text>, review and
-                sign this PR to forward it to BAC for numbering and APP
-                certification (Step 3).
-              </InfoBanner>
               {header && <PRSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>Your Action</SectionLabel>
               <Field label="Status Flag">
@@ -801,34 +775,15 @@ function DivisionHeadModal({
                   multiline
                 />
               </Field>
-              <Field label="Attachment (optional)">
-                <TouchableOpacity
-                  onPress={pickFile}
-                  activeOpacity={0.8}
-                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-gray-300 bg-gray-50"
-                  }`}
-                >
-                  <Text className="text-[13px] font-semibold text-gray-700">
-                    {fileName ?? "Tap to attach a file"}
-                  </Text>
-                  {fileName && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setFileName(null);
-                        setFileUri(null);
-                        setFileType(undefined);
-                      }}
-                      hitSlop={8}
-                      className="mt-1"
-                    >
-                      <Text className="text-[11px] text-red-500">Remove</Text>
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              </Field>
+              <AttachmentField
+                fileName={fileName}
+                onPick={() => pickFile(setFileName, setFileUri, setFileType)}
+                onClear={() => {
+                  setFileName(null);
+                  setFileUri(null);
+                  setFileType(undefined);
+                }}
+              />
             </ScrollView>
           )}
           <ModalFooter
@@ -885,23 +840,6 @@ function BACModal({
     }
   }, [visible]);
 
-  const pickFile = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        multiple: false,
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled || !res.assets?.length) return;
-      const f = res.assets[0];
-      setFileName(f.name ?? "attachment");
-      setFileUri(f.uri);
-      setFileType(f.mimeType);
-    } catch (e: any) {
-      Alert.alert("File error", e?.message ?? "Could not pick file.");
-    }
-  };
-
   const handleCertify = async () => {
     if (!record || !assignedPR.trim()) return;
     setSaving(true);
@@ -909,18 +847,20 @@ function BACModal({
       let finalNotes = certNotes.trim();
       if (fileUri && fileName) {
         const remote = buildRemotePath(record.prNo, fileName);
-        const ct = fileType ?? guessContentType(fileName);
-        const uploaded = await uploadPRFile(fileUri, remote, ct);
+        const uploaded = await uploadPRFile(
+          fileUri,
+          remote,
+          fileType ?? guessContentType(fileName),
+        );
         finalNotes = `${finalNotes ? finalNotes + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
-      if (finalNotes) {
+      if (finalNotes)
         await insertRemark(
           record.id,
           currentUser!.id,
           finalNotes,
           getStatusFlagId(statusFlag),
         );
-      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({
@@ -962,11 +902,6 @@ function BACModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-                As <Text className="font-bold">BAC</Text>, assign the PR number
-                and certify inclusion in the Annual Procurement Plan before
-                forwarding to Budget (Step 4).
-              </InfoBanner>
               {header && <PRSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>BAC Action</SectionLabel>
               <Field label="PR Number" required>
@@ -997,34 +932,15 @@ function BACModal({
                   multiline
                 />
               </Field>
-              <Field label="Attachment (optional)">
-                <TouchableOpacity
-                  onPress={pickFile}
-                  activeOpacity={0.8}
-                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-gray-300 bg-gray-50"
-                  }`}
-                >
-                  <Text className="text-[13px] font-semibold text-gray-700">
-                    {fileName ?? "Tap to attach a file"}
-                  </Text>
-                  {fileName && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setFileName(null);
-                        setFileUri(null);
-                        setFileType(undefined);
-                      }}
-                      hitSlop={8}
-                      className="mt-1"
-                    >
-                      <Text className="text-[11px] text-red-500">Remove</Text>
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              </Field>
+              <AttachmentField
+                fileName={fileName}
+                onPick={() => pickFile(setFileName, setFileUri, setFileType)}
+                onClear={() => {
+                  setFileName(null);
+                  setFileUri(null);
+                  setFileType(undefined);
+                }}
+              />
             </ScrollView>
           )}
           <ModalFooter
@@ -1094,18 +1010,20 @@ function BudgetModal({
       let finalNote = earmarkNote.trim();
       if (fileUri && fileName) {
         const remote = buildRemotePath(record.prNo, fileName);
-        const ct = fileType ?? guessContentType(fileName);
-        const uploaded = await uploadPRFile(fileUri, remote, ct);
+        const uploaded = await uploadPRFile(
+          fileUri,
+          remote,
+          fileType ?? guessContentType(fileName),
+        );
         finalNote = `${finalNote ? finalNote + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
-      if (finalNote) {
+      if (finalNote)
         await insertRemark(
           record.id,
           currentUser!.id,
           finalNote,
           getStatusFlagId(statusFlag),
         );
-      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({
@@ -1147,11 +1065,6 @@ function BudgetModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-                As <Text className="font-bold">Budget Office</Text>, record the
-                PPMP budget number and PAP/Activity code to earmark funds, then
-                forward to PARPO for approval (Step 5).
-              </InfoBanner>
               {header && <PRSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>Earmarking Details</SectionLabel>
               <Field label="Budget Number (from PPMP)" required>
@@ -1182,52 +1095,15 @@ function BudgetModal({
                   multiline
                 />
               </Field>
-              <Field label="Attachment (optional)">
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      const res = await DocumentPicker.getDocumentAsync({
-                        type: "*/*",
-                        multiple: false,
-                        copyToCacheDirectory: true,
-                      });
-                      if (res.canceled || !res.assets?.length) return;
-                      const f = res.assets[0];
-                      setFileName(f.name ?? "attachment");
-                      setFileUri(f.uri);
-                      setFileType(f.mimeType);
-                    } catch (e: any) {
-                      Alert.alert(
-                        "File error",
-                        e?.message ?? "Could not pick file.",
-                      );
-                    }
-                  }}
-                  activeOpacity={0.8}
-                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-gray-300 bg-gray-50"
-                  }`}
-                >
-                  <Text className="text-[13px] font-semibold text-gray-700">
-                    {fileName ?? "Tap to attach a file"}
-                  </Text>
-                  {fileName && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setFileName(null);
-                        setFileUri(null);
-                        setFileType(undefined);
-                      }}
-                      hitSlop={8}
-                      className="mt-1"
-                    >
-                      <Text className="text-[11px] text-red-500">Remove</Text>
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              </Field>
+              <AttachmentField
+                fileName={fileName}
+                onPick={() => pickFile(setFileName, setFileUri, setFileType)}
+                onClear={() => {
+                  setFileName(null);
+                  setFileUri(null);
+                  setFileType(undefined);
+                }}
+              />
             </ScrollView>
           )}
           <ModalFooter
@@ -1287,18 +1163,20 @@ function PARPOModal({
       let final = notes.trim();
       if (fileUri && fileName) {
         const remote = buildRemotePath(record.prNo, fileName);
-        const ct = fileType ?? guessContentType(fileName);
-        const uploaded = await uploadPRFile(fileUri, remote, ct);
+        const uploaded = await uploadPRFile(
+          fileUri,
+          remote,
+          fileType ?? guessContentType(fileName),
+        );
         final = `${final ? final + "\n" : ""}Attachment: ${uploaded.publicUrl}`;
       }
-      if (final) {
+      if (final)
         await insertRemark(
           record.id,
           currentUser!.id,
           final,
           getStatusFlagId(statusFlag),
         );
-      }
       const { error } = await supabase
         .from("purchase_requests")
         .update({ status_id: meta.nextStatusId })
@@ -1336,11 +1214,6 @@ function PARPOModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <InfoBanner bg={meta.bannerBg} border={meta.bannerBorder}>
-                As <Text className="font-bold">PARPO</Text>, review and approve
-                this PR to complete Phase 1 and advance to Canvassing (Steps
-                6–10).
-              </InfoBanner>
               {header && <PRSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>Approval</SectionLabel>
               <Field label="Status Flag">
@@ -1357,52 +1230,15 @@ function PARPOModal({
                   multiline
                 />
               </Field>
-              <Field label="Attachment (optional)">
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      const res = await DocumentPicker.getDocumentAsync({
-                        type: "*/*",
-                        multiple: false,
-                        copyToCacheDirectory: true,
-                      });
-                      if (res.canceled || !res.assets?.length) return;
-                      const f = res.assets[0];
-                      setFileName(f.name ?? "attachment");
-                      setFileUri(f.uri);
-                      setFileType(f.mimeType);
-                    } catch (e: any) {
-                      Alert.alert(
-                        "File error",
-                        e?.message ?? "Could not pick file.",
-                      );
-                    }
-                  }}
-                  activeOpacity={0.8}
-                  className={`rounded-2xl border-2 border-dashed px-4 py-4 items-center ${
-                    fileName
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-gray-50 border-gray-300"
-                  }`}
-                >
-                  <Text className="text-[13px] font-semibold text-gray-700">
-                    {fileName ?? "Tap to attach a file"}
-                  </Text>
-                  {fileName && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setFileName(null);
-                        setFileUri(null);
-                        setFileType(undefined);
-                      }}
-                      hitSlop={8}
-                      className="mt-1"
-                    >
-                      <Text className="text-[11px] text-red-500">Remove</Text>
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
-              </Field>
+              <AttachmentField
+                fileName={fileName}
+                onPick={() => pickFile(setFileName, setFileUri, setFileType)}
+                onClear={() => {
+                  setFileName(null);
+                  setFileUri(null);
+                  setFileType(undefined);
+                }}
+              />
             </ScrollView>
           )}
           <ModalFooter
@@ -1426,7 +1262,7 @@ function PARPOModal({
   );
 }
 
-// ─── Root export — routes to the correct modal by role_id ─────────────────────
+// ─── Root export ──────────────────────────────────────────────────────────────
 
 export default function ProcessPRModal({
   roleId,

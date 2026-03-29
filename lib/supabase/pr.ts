@@ -76,7 +76,7 @@ export async function insertRemark(
 export async function updatePRStatus(prId: string | number, statusId: number) {
   const { error } = await supabase
     .from("purchase_requests")
-    .update({ status_id: statusId })
+    .update({ status_id: statusId, updated_at: new Date().toISOString() })
     .eq("id", prId);
   if (error) throw error;
 }
@@ -121,6 +121,7 @@ export async function insertPurchaseRequest(
   pr: Record<string, any>,
   items: Record<string, any>[],
 ) {
+  const now = new Date().toISOString();
   const base: Record<string, any> = {
     pr_no: pr.pr_no,
     office_section: pr.office_section,
@@ -130,6 +131,7 @@ export async function insertPurchaseRequest(
     status_id: pr.status_id,
     proposal_no: pr.proposal_no,
     division_id: pr.division_id,
+    updated_at: now,
   };
   if (pr.entity_name) base.entity_name = pr.entity_name;
   if (pr.fund_cluster) base.fund_cluster = pr.fund_cluster;
@@ -170,6 +172,67 @@ export async function insertProposalForPR(
   if (error) throw error;
 }
 
+/**
+ * Update editable PR header fields + replace all line items.
+ * Stamps updated_at so "Last Processed" sort reflects the edit.
+ *
+ * @param prId     - The purchase_requests.id
+ * @param patch    - Editable header fields (office_section, purpose, total_cost, etc.)
+ * @param items    - Full replacement item list (delete-then-insert)
+ */
+export async function updatePurchaseRequest(
+  prId: string,
+  patch: {
+    office_section?: string;
+    purpose?: string;
+    total_cost?: number;
+    is_high_value?: boolean;
+    req_name?: string | null;
+    req_desig?: string | null;
+    app_name?: string | null;
+    app_desig?: string | null;
+    entity_name?: string | null;
+    fund_cluster?: string | null;
+    resp_code?: string | null;
+    budget_number?: string | null;
+    pap_code?: string | null;
+    proposal_no?: string | null;
+  },
+  items?: Array<{
+    stock_no?: string | null;
+    unit: string;
+    description: string;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+  }>,
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // 1. Update header
+  const { error: headerErr } = await supabase
+    .from("purchase_requests")
+    .update({ ...patch, updated_at: now })
+    .eq("id", prId);
+  if (headerErr) throw headerErr;
+
+  // 2. Replace items only when caller provides a new list
+  if (items !== undefined) {
+    const { error: delErr } = await supabase
+      .from("purchase_request_items")
+      .delete()
+      .eq("pr_id", prId);
+    if (delErr) throw delErr;
+
+    if (items.length > 0) {
+      const { error: insErr } = await supabase
+        .from("purchase_request_items")
+        .insert(items.map((i) => ({ ...i, pr_id: prId })));
+      if (insErr) throw insErr;
+    }
+  }
+}
+
 export async function cancelPurchaseRequest(
   prId: string,
   reason?: string | null,
@@ -202,7 +265,6 @@ export async function cancelPurchaseRequest(
       .in("session_id", sessionIds);
     if (delAAAErr) throw delAAAErr;
 
-    // Assignments (optional but recommended)
     const { error: delAssignErr } = await supabase
       .from("canvasser_assignments")
       .delete()

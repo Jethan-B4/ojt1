@@ -1,28 +1,12 @@
 /**
  * RemarkSheet.tsx
  *
- * Self-contained bottom-sheet for viewing and adding PR remarks with attachments.
- *
- * Attachment encoding
- * ───────────────────
- * Attachments are stored inside the remark text as a markdown-style token:
- *
- *   [filename.pdf](https://…/storage/…/filename.pdf)
- *
- * This keeps the URL out of plain sight — only the filename is displayed —
- * while preserving the URL for View / Save actions. The helper `parseAttachments`
- * extracts all such tokens so the render layer never has to touch raw URLs.
- *
- * Usage
- * ─────
- *   import RemarkSheet from "@/components/RemarkSheet";
- *
- *   <RemarkSheet
- *     visible={moreVisible}
- *     record={moreRecord}          // { id, prNo, officeSection, itemDescription }
- *     currentUser={currentUser}
- *     onClose={() => setMoreVisible(false)}
- *   />
+ * Bottom-sheet for viewing and adding PR remarks with attachments.
+ * The sheet uses a full-height modal layout:
+ *   • Fixed header (PR info + close)
+ *   • Fixed "Add Remark" card
+ *   • Flex-1 FlatList so the history section grows to fill all remaining space
+ *     regardless of how many remarks exist.
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -60,7 +44,6 @@ import {
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-/** Minimal PR shape that RemarkSheet needs — no full PRRecord dependency. */
 export interface RemarkSheetRecord {
   id: string;
   prNo: string;
@@ -107,13 +90,6 @@ function getFlagFromId(id: number | null): StatusFlag | null {
 
 // ─── Attachment encoding / decoding ──────────────────────────────────────────
 
-/**
- * Encode an uploaded file as a markdown link token appended to the remark.
- * The URL is stored but hidden from display.
- *
- *   encodeAttachment("proposal.pdf", "https://…/proposal.pdf")
- *   → "[proposal.pdf](https://…/proposal.pdf)"
- */
 export function encodeAttachment(filename: string, url: string): string {
   return `[${filename}](${url})`;
 }
@@ -123,52 +99,33 @@ interface ParsedAttachment {
   url: string;
 }
 
-/**
- * Extract attachments from a remark string.
- *
- * Handles two formats for backwards compatibility:
- *
- *   New (token):  [filename.pdf](https://…)
- *   Old (legacy): Attachment: https://…/filename.pdf
- *
- * Returns the cleaned display text (all attachment tokens/lines removed)
- * alongside a list of parsed { filename, url } pairs.
- */
 export function parseAttachments(remark: string): {
   text: string;
   attachments: ParsedAttachment[];
 } {
   const attachments: ParsedAttachment[] = [];
 
-  // ── Pass 1: new token format  [filename](url) ──────────────────────────────
   const TOKEN_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   let text = remark.replace(TOKEN_RE, (_, filename, url) => {
     attachments.push({ filename: filename.trim(), url: url.trim() });
     return "";
   });
 
-  // ── Pass 2: legacy format  Attachment: https://… ──────────────────────────
-  // Matches lines like "Attachment: https://…" (case-insensitive prefix)
   const LEGACY_RE = /^Attachment:\s*(https?:\/\/\S+)/gim;
   text = text.replace(LEGACY_RE, (_, url: string) => {
     const cleanUrl = url.trim();
-    // Derive a display filename from the URL path segment after the last "/"
-    // e.g. "2024-PR-0001/1700000000-proposal_draft.pdf" → "proposal_draft.pdf"
     const rawSegment = decodeURIComponent(cleanUrl.split("/").pop() ?? "");
-    // Strip the leading timestamp prefix if present: "1700000000-filename" → "filename"
     const filename =
       rawSegment.replace(/^\d+-/, "") || rawSegment || "attachment";
     attachments.push({ filename, url: cleanUrl });
     return "";
   });
 
-  // Collapse runs of blank lines left by removed tokens/lines
   text = text.replace(/\n{2,}/g, "\n").trim();
-
   return { text, attachments };
 }
 
-// ─── MIME / UTI helpers for Sharing.shareAsync ───────────────────────────────
+// ─── MIME / UTI helpers ───────────────────────────────────────────────────────
 
 function guessMime(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
@@ -189,7 +146,6 @@ function guessMime(filename: string): string {
   return map[ext] ?? "application/octet-stream";
 }
 
-/** iOS UTI hint for Sharing.shareAsync — ignored on Android */
 function guessUTI(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
@@ -208,7 +164,7 @@ function guessUTI(filename: string): string {
   return map[ext] ?? "public.data";
 }
 
-// ─── AttachmentChip — renders one file as a tappable filename chip ────────────
+// ─── AttachmentChip ───────────────────────────────────────────────────────────
 
 const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
   attachment,
@@ -216,7 +172,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
   const { filename, url } = attachment;
   const [saving, setSaving] = useState(false);
 
-  // ── View: open in system browser / viewer ───────────────────────────────────
   const handleView = useCallback(async () => {
     try {
       const supported = await Linking.canOpenURL(url);
@@ -230,7 +185,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
     }
   }, [url]);
 
-  // ── Save: download to device cache then share / save via OS sheet ───────────
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
@@ -242,9 +196,7 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
         );
         return;
       }
-      // Use the display filename for the local file so the share sheet shows it clearly
-      const dest = baseDir + filename;
-      const { uri } = await FileSystem.downloadAsync(url, dest);
+      const { uri } = await FileSystem.downloadAsync(url, baseDir + filename);
       await Sharing.shareAsync(uri, {
         mimeType: guessMime(filename),
         dialogTitle: `Save ${filename}`,
@@ -257,7 +209,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
     }
   }, [url, filename]);
 
-  // ── Icon by extension ────────────────────────────────────────────────────────
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const iconName: React.ComponentProps<typeof MaterialIcons>["name"] = [
     "jpg",
@@ -280,7 +231,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
 
   return (
     <View className="flex-row items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 mt-2">
-      {/* Icon + filename (tapping also opens the file) */}
       <TouchableOpacity
         onPress={handleView}
         activeOpacity={0.75}
@@ -295,8 +245,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
           {filename}
         </Text>
       </TouchableOpacity>
-
-      {/* View + Save action buttons */}
       <View className="flex-row items-center gap-1.5">
         <TouchableOpacity
           onPress={handleView}
@@ -306,7 +254,6 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
           <MaterialIcons name="open-in-new" size={11} color="#fff" />
           <Text className="text-[10.5px] font-bold text-white">View</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={handleSave}
           disabled={saving}
@@ -327,17 +274,16 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
   );
 };
 
-// ─── RemarkTimelineItem — one history entry ───────────────────────────────────
+// ─── RemarkTimelineItem ───────────────────────────────────────────────────────
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
-const RemarkTimelineItem: React.FC<{
-  entry: RemarkEntry;
-  isLast: boolean;
-}> = ({ entry, isLast }) => {
+const RemarkTimelineItem: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
+  entry,
+  isLast,
+}) => {
   const flagKey = getFlagFromId(entry.status_flag_id);
   const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
-
   const date = new Date(entry.created_at);
   const timeStr = date.toLocaleString("en-PH", {
     month: "short",
@@ -346,7 +292,6 @@ const RemarkTimelineItem: React.FC<{
     minute: "2-digit",
     hour12: true,
   });
-
   const { text, attachments } = parseAttachments(entry.remark);
 
   return (
@@ -380,7 +325,6 @@ const RemarkTimelineItem: React.FC<{
 
       {/* Content bubble */}
       <View className="flex-1 pb-4">
-        {/* Meta row — flag badge, timestamp, author */}
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
           {flag && (
             <View
@@ -402,7 +346,6 @@ const RemarkTimelineItem: React.FC<{
             </Text>
           )}
         </View>
-
         <View
           className="bg-white rounded-xl px-3 py-2.5 border border-gray-100"
           style={{
@@ -412,14 +355,11 @@ const RemarkTimelineItem: React.FC<{
             elevation: 1,
           }}
         >
-          {/* Remark text — URLs stripped, only clean prose shown */}
           {text.length > 0 && (
             <Text className="text-[13px] text-gray-700 leading-[19px]">
               {text}
             </Text>
           )}
-
-          {/* Attachment chips — filename only, URL hidden */}
           {attachments.map((att, i) => (
             <AttachmentChip key={att.url + i} attachment={att} />
           ))}
@@ -454,7 +394,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [fileType, setFileType] = useState<string>("application/octet-stream");
 
-  // ── Load history whenever the sheet opens for a PR ────────────────────────
+  // ── Load history when sheet opens ────────────────────────────────────────
   useEffect(() => {
     if (!visible || !record) {
       setHistory([]);
@@ -488,7 +428,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
       });
   }, [visible, record]);
 
-  // ── Reset form fields when sheet closes ───────────────────────────────────
+  // ── Reset form on close ───────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) {
       setRemarksText("");
@@ -521,30 +461,24 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
     }
   }, []);
 
-  // ── Submit remark (+ optional attachment) ─────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (!record || !remarksText.trim()) return;
     setSaving(true);
     try {
       let finalRemark = remarksText.trim();
-
       if (fileUri && fileName) {
         const remote = buildRemotePath(record.prNo ?? "PR", fileName);
-        const ct = fileType ?? guessContentType(fileName); // now correctly falls back
+        const ct = fileType ?? guessContentType(fileName);
         const uploaded = await uploadPRFile(fileUri, remote, ct);
-
-        // Encode as [filename](url) — URL is stored but never shown raw
         finalRemark += `\n${encodeAttachment(fileName, uploaded.publicUrl)}`;
       }
-
       await insertRemark(
         record.id,
         currentUser?.id,
         finalRemark,
         getStatusFlagId(statusFlag),
       );
-
-      // Optimistically prepend to local history
       const newEntry: RemarkEntry = {
         id: Date.now(),
         remark: finalRemark,
@@ -554,8 +488,6 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
         username: currentUser?.fullname ?? "You",
       };
       setHistory((prev) => [newEntry, ...prev]);
-
-      // Reset form
       setRemarksText("");
       setStatusFlag(null);
       clearFile();
@@ -587,14 +519,26 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
         animationType="slide"
         onRequestClose={onClose}
       >
-        <Pressable className="flex-1 bg-black/40" onPress={onClose} />
+        {/* Scrim — tapping it closes the sheet */}
+        <Pressable
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}
+          onPress={onClose}
+        />
+
+        {/*
+          The sheet sits in a KeyboardAvoidingView that fills the remaining space
+          after the scrim. Using flex:1 here instead of maxHeight lets the history
+          list grow freely to fill the screen while still being pushed up by the
+          keyboard.
+        */}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ maxHeight: "85%" }}
+          style={{ flex: 1 }}
         >
           <View
             className="bg-gray-50 rounded-t-3xl overflow-hidden"
             style={{
+              flex: 1,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: -4 },
               shadowOpacity: 0.12,
@@ -602,7 +546,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
               elevation: 16,
             }}
           >
-            {/* ── Header ── */}
+            {/* ── Header ─────────────────────────────────────────────────── */}
             <View className="bg-[#064E3B] px-5 pt-4 pb-4">
               <View className="w-10 h-1 rounded-full bg-white/20 self-center mb-3" />
               <View className="flex-row items-start justify-between">
@@ -635,12 +579,18 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
               </View>
             </View>
 
+            {/*
+              FlatList takes flex:1, filling all remaining height.
+              The "Add Remark" form lives in ListHeaderComponent so it scrolls
+              with the list and stays logically above the history entries.
+            */}
             <FlatList
               data={history}
               keyExtractor={(item) => String(item.id)}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 32 }}
               ListHeaderComponent={
                 <>
                   {/* ── Add Remark form ── */}
@@ -659,7 +609,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                       </Text>
                     </View>
                     <View className="px-4 pt-3 pb-4 gap-3">
-                      {/* Status flag picker */}
+                      {/* Status flag */}
                       <View>
                         <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
                           Status Flag
@@ -682,76 +632,43 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                           placeholderTextColor="#9ca3af"
                           multiline
                           className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
-                          style={{ minHeight: 80, textAlignVertical: "top" }}
+                          style={{ minHeight: 72, textAlignVertical: "top" }}
                         />
                       </View>
 
-                      {/* Attachment picker */}
-                      <View>
-                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
-                          Attachment{" "}
-                          <Text className="text-gray-400 font-normal">
-                            (optional)
-                          </Text>
-                        </Text>
-                        <TouchableOpacity
-                          onPress={handlePickFile}
-                          activeOpacity={0.8}
-                          className={`rounded-xl border-2 border-dashed px-4 py-3 items-center ${
-                            fileName
-                              ? "border-emerald-400 bg-emerald-50"
-                              : "border-gray-300 bg-gray-50"
-                          }`}
+                      {/* Attachment */}
+                      <TouchableOpacity
+                        onPress={handlePickFile}
+                        activeOpacity={0.8}
+                        className={`flex-row items-center gap-2.5 rounded-xl border px-3.5 py-3 ${fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}
+                      >
+                        <MaterialIcons
+                          name={fileName ? "attach-file" : "upload-file"}
+                          size={15}
+                          color={fileName ? "#10b981" : "#9ca3af"}
+                        />
+                        <Text
+                          className={`flex-1 text-[13px] font-semibold ${fileName ? "text-emerald-700" : "text-gray-400"}`}
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
                         >
-                          {fileName ? (
-                            <View className="flex-row items-center gap-2">
-                              <MaterialIcons
-                                name="attach-file"
-                                size={14}
-                                color="#10b981"
-                              />
-                              <Text
-                                className="text-[12.5px] font-semibold text-emerald-700 flex-1"
-                                numberOfLines={1}
-                                ellipsizeMode="middle"
-                              >
-                                {fileName}
-                              </Text>
-                            </View>
-                          ) : (
-                            <View className="flex-row items-center gap-2">
-                              <MaterialIcons
-                                name="upload-file"
-                                size={14}
-                                color="#9ca3af"
-                              />
-                              <Text className="text-[12.5px] font-semibold text-gray-400">
-                                Tap to attach a file
-                              </Text>
-                            </View>
-                          )}
-                          {fileName && (
-                            <TouchableOpacity
-                              onPress={clearFile}
-                              hitSlop={8}
-                              className="mt-1.5"
-                            >
-                              <Text className="text-[10.5px] text-red-500 font-semibold">
-                                Remove
-                              </Text>
-                            </TouchableOpacity>
-                          )}
-                        </TouchableOpacity>
-                      </View>
+                          {fileName ?? "Attach a file (optional)"}
+                        </Text>
+                        {fileName && (
+                          <TouchableOpacity onPress={clearFile} hitSlop={8}>
+                            <Text className="text-[11px] text-red-500 font-semibold">
+                              Remove
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
 
-                      {/* Submit button */}
+                      {/* Submit */}
                       <TouchableOpacity
                         onPress={handleSubmit}
                         disabled={!canSubmit}
                         activeOpacity={0.8}
-                        className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${
-                          canSubmit ? "bg-[#064E3B]" : "bg-gray-200"
-                        }`}
+                        className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${canSubmit ? "bg-[#064E3B]" : "bg-gray-200"}`}
                       >
                         {saving ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -763,9 +680,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                           />
                         )}
                         <Text
-                          className={`text-[13px] font-bold ${
-                            canSubmit ? "text-white" : "text-gray-400"
-                          }`}
+                          className={`text-[13px] font-bold ${canSubmit ? "text-white" : "text-gray-400"}`}
                         >
                           {saving ? "Saving…" : "Save Remark"}
                         </Text>
@@ -774,7 +689,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                   </View>
 
                   {/* ── History header ── */}
-                  <View className="mx-4 mt-4 flex-row items-center justify-between mb-3">
+                  <View className="mx-4 mt-5 mb-3 flex-row items-center justify-between">
                     <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                       History
                     </Text>
@@ -821,7 +736,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* StatusFlagPicker rendered as a sibling to avoid Android nested-Modal bug */}
+      {/* StatusFlagPicker as Modal sibling to avoid Android nested-Modal bug */}
       <StatusFlagPicker
         visible={flagOpen}
         selected={statusFlag}
