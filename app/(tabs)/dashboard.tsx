@@ -65,6 +65,7 @@ const ROLE_LABELS: Record<number, string> = {
   4: "Budget Officer",
   5: "PARPO",
   6: "End User",
+  8: "Supply",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -350,7 +351,74 @@ function useEndUserData(divisionId: number | null) {
   return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
 }
 
-// ─── Micro-components ─────────────────────────────────────────────────────────
+// ─── Supply data hook — all PRs across all divisions ─────────────────────────
+
+function useSupplyData() {
+  const [rows, setRows] = useState<PRRow[]>([]);
+  const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [allRows, allStatuses] = await Promise.all([
+        fetchPurchaseRequests(),
+        fetchPRStatuses(),
+      ]);
+      setRows(allRows);
+      setStatuses(allStatuses);
+      setLastRefresh(new Date());
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load data.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const prs = rows.map((r) => rowToSummary(r, statuses));
+  const recent = [...prs]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 8);
+
+  // Supply-relevant KPIs: total system PRs, those ready for PO (status >= 6),
+  // pending (still in approval pipeline), and high-value count.
+  const total = prs.length;
+  const readyForPO = prs.filter((p) => p.statusId >= 6).length;
+  const pending = prs.filter((p) => p.statusId < 6).length;
+  const highValue = prs.filter((p) => p.isHighValue).length;
+
+  const statCards: StatCard[] = [
+    {
+      label: "Total PRs",
+      value: total,
+      icon: "description",
+      accent: CLR.brand700,
+    },
+    {
+      label: "Ready / PO",
+      value: readyForPO,
+      icon: "receipt-long",
+      accent: "#16a34a",
+    },
+    {
+      label: "In Pipeline",
+      value: pending,
+      icon: "pending-actions",
+      accent: "#d97706",
+    },
+    {
+      label: "High-Value",
+      value: highValue,
+      icon: "monetization-on",
+      accent: "#7c3aed",
+    },
+  ];
+
+  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
+}
 
 function LoadingScreen() {
   return (
@@ -900,6 +968,12 @@ const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
       { label: "View History", icon: "history", nav: "ProcurementLog" },
       { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
+    8: [
+      { label: "All PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+      { label: "Purchase Orders", icon: "receipt-long", nav: "PurchaseOrder" },
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+    ],
   };
 
 function QuickActionGrid({
@@ -972,12 +1046,143 @@ function QuickActionGrid({
   );
 }
 
+// ─── Supply Dashboard ─────────────────────────────────────────────────────────
+// role_id 8 — sees all PRs system-wide, oriented toward PO readiness.
+
+function SupplyDashboard({ navigation }: any) {
+  const { currentUser } = useAuth();
+  const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
+    useSupplyData();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }, [refresh]);
+
+  if (loading && prs.length === 0) return <LoadingScreen />;
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f9fafb" }}
+      contentContainerStyle={{ paddingBottom: 36 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={CLR.brand500}
+        />
+      }
+    >
+      <WelcomeHeader
+        roleLabel="Supply Section · All Divisions"
+        username={currentUser?.fullname ?? "Supply Officer"}
+      />
+
+      {error && <ErrorBanner message={error} onRetry={refresh} />}
+      <LastRefreshedBadge time={lastRefresh} />
+
+      {/* ── KPI tiles ── */}
+      <View
+        style={{
+          flexDirection: "row",
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          gap: 6,
+        }}
+      >
+        {statCards.map((card) => (
+          <StatTile key={card.label} card={card} />
+        ))}
+      </View>
+
+      {/* ── All recent PRs across every division ── */}
+      <SectionHeader
+        title="All Purchase Requests"
+        sub={
+          prs.length > 0
+            ? `${prs.length} total across all divisions`
+            : undefined
+        }
+        onViewAll={
+          prs.length > 0
+            ? () => navigation?.navigate?.("Procurement")
+            : undefined
+        }
+      />
+
+      {recent.length === 0 ? (
+        <View
+          style={{
+            marginHorizontal: 12,
+            backgroundColor: "#f9fafb",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            padding: 24,
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <MaterialIcons name="description" size={32} color="#d1d5db" />
+          <Text style={{ fontSize: 13, fontWeight: "700", color: "#374151" }}>
+            No Purchase Requests
+          </Text>
+          <Text
+            style={{ fontSize: 11.5, color: "#9ca3af", textAlign: "center" }}
+          >
+            {"No PRs have been submitted yet.\nPull down to refresh."}
+          </Text>
+        </View>
+      ) : (
+        <View
+          style={{
+            marginHorizontal: 12,
+            backgroundColor: "#ffffff",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            overflow: "hidden",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 1,
+          }}
+        >
+          {recent.map((record, i) => (
+            <PRTableRow
+              key={record.id}
+              record={record}
+              isEven={i % 2 === 0}
+              onPress={() => navigation?.navigate?.("Procurement")}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* ── Quick actions ── */}
+      <SectionHeader title="Quick Actions" />
+      <QuickActionGrid navigation={navigation} roleId={8} />
+    </ScrollView>
+  );
+}
+
 // ─── Dashboard entry point ────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }: any) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 6;
   if (roleId === 1) return <AdminDashboard navigation={navigation} />;
+  if (roleId === 8) return <SupplyDashboard navigation={navigation} />;
   if (roleId in ROLE_QUEUE_STATUS)
     return <ProcessorDashboard navigation={navigation} roleId={roleId} />;
   return <EndUserDashboard navigation={navigation} />;

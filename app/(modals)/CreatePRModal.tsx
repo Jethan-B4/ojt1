@@ -1,5 +1,5 @@
 /**
- * PurchaseRequestModal.tsx
+ * CreatePRModal.tsx
  *
  * On submit, assembles a Supabase-ready payload and passes it to the parent.
  * The parent (ProcurementContent) owns the DB insert and local list update.
@@ -863,7 +863,7 @@ function ModalHeader({
 
 // ─── PurchaseRequestModal ─────────────────────────────────────────────────────
 
-export function PurchaseRequestModal({
+export function CreatePRModal({
   visible,
   onClose,
   onSubmit,
@@ -1113,7 +1113,7 @@ export function PurchaseRequestModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            // ── High-value fields warning ────────────────────────────────────
+            {/* ── High-value fields warning ─────────────────────────────── */}
             {isHighValue && (
               <View className="flex-row items-start gap-3 bg-emerald-50 border-l-4 border-emerald-400 rounded-2xl p-3.5 mb-5">
                 <Text className="font-bold text-emerald-800">
@@ -1313,4 +1313,4 @@ export function PurchaseRequestModal({
   );
 }
 
-export default PurchaseRequestModal;
+export default CreatePRModal;

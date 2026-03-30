@@ -16,6 +16,10 @@ import {
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
+import {
+  CreatePRModal,
+  PRSubmitPayload,
+} from "../(modals)/CreatePRModal";
 import EditPRModal, {
   type PREditPayload,
   type PREditRecord,
@@ -25,9 +29,6 @@ import ProcessPRModal, {
   type ProcessRecord,
   type StatusFlag,
 } from "../(modals)/ProcessPRModal";
-import PurchaseRequestModal, {
-  PRSubmitPayload,
-} from "../(modals)/PurchaseRequestModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
   fetchCanvassablePRs,
@@ -38,7 +39,7 @@ import {
   fetchPurchaseRequestsByDivision,
   insertProposalForPR,
   insertPurchaseRequest,
-  updatePRStatus
+  updatePRStatus,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
@@ -745,30 +746,28 @@ export default function PRModule({
   const loadPRs = useCallback(async () => {
     try {
       let rows: PRRow[] = [];
+      // role_id 1 (Admin), PROCESS_ROLES (2-5), and role_id 8 (Supply) see all PRs.
+      const canSeeAll =
+        roleId === 1 || roleId === 8 || PROCESS_ROLES.has(roleId);
       if (activeSubTab === "pr") {
-        rows =
-          roleId === 1 || PROCESS_ROLES.has(roleId)
-            ? await fetchPurchaseRequests()
-            : await fetchPurchaseRequestsByDivision(
-                currentUser?.division_id ?? -1,
-              );
+        rows = canSeeAll
+          ? await fetchPurchaseRequests()
+          : await fetchPurchaseRequestsByDivision(
+              currentUser?.division_id ?? -1,
+            );
       } else if (activeSubTab === "canvass") {
-        rows =
-          roleId === 1 || PROCESS_ROLES.has(roleId)
-            ? await fetchCanvassablePRs()
-            : await fetchCanvassablePRsByDivision(
-                currentUser?.division_id ?? -1,
-              );
+        rows = canSeeAll
+          ? await fetchCanvassablePRs()
+          : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
       } else if (activeSubTab === "abstract_of_awards") {
         // Only fetch PRs with status_id = 11 (AAA Issuance)
-        rows =
-          roleId === 1 || PROCESS_ROLES.has(roleId)
-            ? (await fetchPurchaseRequests()).filter((r) => r.status_id === 11)
-            : (
-                await fetchPurchaseRequestsByDivision(
-                  currentUser?.division_id ?? -1,
-                )
-              ).filter((r) => r.status_id === 11);
+        rows = canSeeAll
+          ? (await fetchPurchaseRequests()).filter((r) => r.status_id === 11)
+          : (
+              await fetchPurchaseRequestsByDivision(
+                currentUser?.division_id ?? -1,
+              )
+            ).filter((r) => r.status_id === 11);
       } else {
         rows = [];
       }
@@ -1280,7 +1279,7 @@ export default function PRModule({
 
       {/* Create PR modal */}
       {prModalOpen && (
-        <PurchaseRequestModal
+        <CreatePRModal
           visible={prModalOpen}
           onClose={() => setPrModalOpen(false)}
           onSubmit={handlePRSubmit}
