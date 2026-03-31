@@ -56,7 +56,7 @@ type PRRecord = ReturnType<typeof toPRDisplay> & {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
- * Visual config keyed by status_id (FK from pr_status table).
+ * Visual config keyed by status_id (FK from status table).
  * Covers the full lifecycle including canvassing sub-statuses from the DB:
  *
  *   1  = Pending
@@ -827,7 +827,7 @@ export default function PRModule({
           officeSection: payload.pr.office_section,
           purpose: payload.pr.purpose,
           totalCost: payload.pr.total_cost,
-          statusId: 1, // Pending — status_id 1 per pr_status table
+          statusId: 1, // Pending — status_id 1 per status table
           date: new Date().toLocaleDateString("en-PH"),
           // Extra display-only fields
           itemDescription: payload.pr.purpose,
@@ -1255,7 +1255,7 @@ export default function PRModule({
           setProcessRoleOverride(null);
         }}
         onProcessed={(id, newStatusId) => {
-          // newStatusId is the raw status_id integer from pr_status.
+          // newStatusId is the raw status_id integer from status.
           // Update the record in-place so the list reflects the new state immediately.
           setRecords((prev) =>
             prev.map((r) =>

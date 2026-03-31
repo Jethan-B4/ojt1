@@ -12,7 +12,7 @@
  *
  * ─── DATABASE CONVENTION ──────────────────────────────────────────────────────
  * Cancellation is a soft-delete: we stamp status_id = 0 on the PR row.
- * You should add a row in `pr_status` ( id = 0, status_name = 'Cancelled' )
+ * You should add a row in `status` ( id = 0, status_name = 'Cancelled' )
  * so StatusPill / label lookups display it correctly.
  *
  * All child records (canvass_sessions, canvass_entries, canvasser_assignments,
@@ -25,7 +25,7 @@
 
 import { supabase } from "./client";
 
-/** pr_status.id that represents a cancelled PR in your schema. */
+/** status.id that represents a cancelled PR in your schema. */
 export const CANCELLED_STATUS_ID = 0;
 
 // ─── Types ────────────────────────────────────────────────────────────────────

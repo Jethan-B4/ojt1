@@ -1042,7 +1042,7 @@ export function CreatePRModal({
       purpose: form.purpose,
       total_cost: total,
       is_high_value: isHighValue,
-      status_id: 1, // 1 = "Pending" in pr_status table
+      status_id: 1, // 1 = "Pending" in status table
       budget_number: form.budgetNumber || null,
       pap_code: form.papCode || null,
       proposal_file: null,

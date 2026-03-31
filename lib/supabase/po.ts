@@ -1,17 +1,8 @@
 /**
  * lib/supabase/po.ts — Purchase Order data layer
  *
- * Mirrors pr.ts conventions.
- *
  * Table: purchase_orders
- * Columns: id, po_no, pr_no, pr_id, supplier, address, tin,
- *          mode_of_procurement, place_of_delivery, delivery_term,
- *          date_of_delivery, payment_term, date, office_section,
- *          fund_cluster, ors_no, ors_date, funds_available, ors_amount,
- *          total_amount, status_id, division_id,
- *          authorized_official_name, authorized_official_desig,
- *          accountant_name, accountant_desig,
- *          created_at, updated_at
+ * Columns mirror the Supabase schema exactly (snake_case).
  */
 
 import { supabase } from "./client";
@@ -19,17 +10,17 @@ import { supabase } from "./client";
 // ─── Row types ────────────────────────────────────────────────────────────────
 
 export interface PORow {
-  id: string | number;
+  id: string;
   po_no: string | null;
   pr_no: string | null;
   pr_id: string | null;
   supplier: string | null;
   address: string | null;
   tin: string | null;
-  mode_of_procurement: string | null;
-  place_of_delivery: string | null;
+  procurement_mode: string | null;
+  delivery_place: string | null;
   delivery_term: string | null;
-  date_of_delivery: string | null;
+  delivery_date: string | null;
   payment_term: string | null;
   date: string | null;
   office_section: string | null;
@@ -41,8 +32,8 @@ export interface PORow {
   total_amount: number | null;
   status_id: number | null;
   division_id: number | null;
-  authorized_official_name: string | null;
-  authorized_official_desig: string | null;
+  official_name: string | null;
+  official_desig: string | null;
   accountant_name: string | null;
   accountant_desig: string | null;
   created_at: string | null;
@@ -60,8 +51,13 @@ export interface POItemRow {
   subtotal: number;
 }
 
+/** Columns written on insert / update (everything except id, created_at, updated_at). */
+export type POInsertPayload = Omit<PORow, "id" | "created_at" | "updated_at">;
+export type POPatchPayload = Partial<POInsertPayload>;
+
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
+/** Fetch all purchase orders (admin / privileged roles). */
 export async function fetchPurchaseOrders(): Promise<PORow[]> {
   const { data, error } = await supabase
     .from("purchase_orders")
@@ -71,6 +67,7 @@ export async function fetchPurchaseOrders(): Promise<PORow[]> {
   return data as PORow[];
 }
 
+/** Fetch purchase orders scoped to a specific division. */
 export async function fetchPurchaseOrdersByDivision(
   divisionId: number,
 ): Promise<PORow[]> {
@@ -83,6 +80,7 @@ export async function fetchPurchaseOrdersByDivision(
   return data as PORow[];
 }
 
+/** Fetch a single PO with its line items. */
 export async function fetchPOWithItemsById(
   poId: string,
 ): Promise<{ header: PORow; items: POItemRow[] }> {
@@ -104,7 +102,7 @@ export async function fetchPOWithItemsById(
   return { header: header as PORow, items: (items ?? []) as POItemRow[] };
 }
 
-/** Advance status only (used by POModule process handler). */
+/** Advance (or revert) the status_id of a PO. */
 export async function updatePOStatus(
   poId: string,
   statusId: number,
@@ -118,17 +116,16 @@ export async function updatePOStatus(
 
 /**
  * Full header + items update (used by EditPOModal).
- * Mirrors updatePurchaseRequest: patch header, then delete-and-reinsert items.
+ * Patches the header row then delete-and-reinserts items when provided.
  */
 export async function updatePO(
   poId: string,
-  patch: Partial<Omit<PORow, "id" | "created_at" | "updated_at">>,
+  patch: POPatchPayload,
   items?: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<void> {
-  const now = new Date().toISOString();
   const { error: hErr } = await supabase
     .from("purchase_orders")
-    .update({ ...patch, updated_at: now })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", poId);
   if (hErr) throw hErr;
 
@@ -148,9 +145,12 @@ export async function updatePO(
   }
 }
 
-/** Insert a new PO header + items (used by CreatePOModal). */
+/**
+ * Insert a new PO header + items (used by CreatePOModal).
+ * Returns the full inserted row (including server-generated id).
+ */
 export async function insertPurchaseOrder(
-  po: Omit<PORow, "id" | "created_at" | "updated_at">,
+  po: POInsertPayload,
   items: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<PORow> {
   const now = new Date().toISOString();
@@ -160,12 +160,15 @@ export async function insertPurchaseOrder(
     .select()
     .single();
   if (error) throw error;
-  const parentId = (data as any).id;
+
+  const inserted = data as PORow;
+
   if (items.length > 0) {
     const { error: iErr } = await supabase
       .from("purchase_order_items")
-      .insert(items.map((i) => ({ ...i, po_id: parentId })));
+      .insert(items.map((i) => ({ ...i, po_id: inserted.id })));
     if (iErr) throw iErr;
   }
-  return data as PORow;
+
+  return inserted;
 }

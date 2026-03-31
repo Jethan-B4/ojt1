@@ -1,15 +1,15 @@
 import type { PRItemRow, PRRow } from "../lib/supabase";
 
 // Minimal, canonical PR header for UI and PDFs.
-// statusId is the FK integer from pr_status (1=Pending … 5=Processing(PARPO)).
-// The human-readable label is resolved at render time from the live pr_status lookup.
+// statusId is the FK integer from status (1=Pending … 5=Processing(PARPO)).
+// The human-readable label is resolved at render time from the live status lookup.
 export interface PRDisplay {
   id: string;
   prNo: string;
   officeSection: string;
   purpose: string;
   totalCost: number;
-  /** FK → pr_status.id  (1=Pending, 2=Div Head, 3=BAC, 4=Budget, 5=PARPO) */
+  /** FK → status.id  (1=Pending, 2=Div Head, 3=BAC, 4=Budget, 5=PARPO) */
   statusId: number;
   date: string; // Derived from created_at (MM-DD-YYYY)
 }

@@ -2,7 +2,7 @@ import { supabase } from "./client";
 
 export async function fetchPRStatuses() {
   const { data, error } = await supabase
-    .from("pr_status")
+    .from("status")
     .select("id, status_name")
     .order("id");
   if (error) throw error;

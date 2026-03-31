@@ -2,28 +2,17 @@
  * EditPOModal.tsx — Edit Purchase Order Modal
  *
  * Same field layout as CreatePOModal (Appendix 61) but:
- *   - Fetches the existing PO header + items on open (same pattern as EditPRModal)
- *   - Calls updatePO() instead of insertPurchaseOrder()
+ *   - Fetches the existing PO header + items on open
+ *   - Calls updatePO() with correctly mapped snake_case fields
  *   - Header subtitle shows "Edit Purchase Order · {poNo}"
  *   - Tab labels: "Edit" | "Preview"
  *   - Footer button: "Save Changes"
  *
- * PR No. is now a REQUIRED editable field.
- * A "Browse" / "Change" button lets the user pick a PR from the database,
- * which auto-fills office_section, fund_cluster, and authorized official
- * fields from the selected PR record.
- *
  * Only accessible from POModule's RecordCard Edit button.
- * The Edit button is only shown to Supply (role_id = 8) when
- * statusId <= 4 (PO still being prepared in Supply).
- *
- * Styles: NativeWind. Inline style= only for fontFamily, minHeight,
- *         textAlignVertical, flex: 1.4, and elevation.
+ * Edit button shown to Supply (role_id = 8) when statusId <= 4.
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -39,7 +28,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import WebView from "react-native-webview";
+import POPreviewPanel, {
+  buildPOHtml,
+  toWords,
+  usePOPreviewActions,
+  type POPreviewData,
+} from "../(components)/POPreviewPanel";
 import {
   fetchPOWithItemsById,
   updatePO,
@@ -61,8 +55,8 @@ export interface POEditPayload {
   supplier: string;
   address: string;
   tin: string;
-  modeOfProcurement: string;
-  placeOfDelivery: string;
+  procurementMode: string;
+  deliveryPlace: string;
   deliveryTerm: string;
   dateOfDelivery: string;
   paymentTerm: string;
@@ -74,8 +68,8 @@ export interface POEditPayload {
   fundsAvailable: string;
   orsAmount: number;
   totalAmount: number;
-  authorizedOfficialName: string;
-  authorizedOfficialDesig: string;
+  officialName: string;
+  officialDesig: string;
   accountantName: string;
   accountantDesig: string;
   items: POItemRow[];
@@ -88,7 +82,7 @@ interface EditPOModalProps {
   onSave: (payload: POEditPayload) => void;
 }
 
-// ─── PR suggestion row (minimal fetch shape) ─────────────────────────────────
+// ─── PR suggestion row ────────────────────────────────────────────────────────
 
 interface PRSuggestion {
   id: string;
@@ -97,8 +91,6 @@ interface PRSuggestion {
   purpose: string | null;
   total_cost: number | null;
   fund_cluster: string | null;
-  req_name: string | null;
-  req_desig: string | null;
   app_name: string | null;
   app_desig: string | null;
 }
@@ -112,146 +104,6 @@ const fmt = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-function toWords(amount: number): string {
-  if (!amount || isNaN(amount)) return "ZERO PESOS";
-  const ones = [
-    "",
-    "ONE",
-    "TWO",
-    "THREE",
-    "FOUR",
-    "FIVE",
-    "SIX",
-    "SEVEN",
-    "EIGHT",
-    "NINE",
-    "TEN",
-    "ELEVEN",
-    "TWELVE",
-    "THIRTEEN",
-    "FOURTEEN",
-    "FIFTEEN",
-    "SIXTEEN",
-    "SEVENTEEN",
-    "EIGHTEEN",
-    "NINETEEN",
-  ];
-  const tens = [
-    "",
-    "",
-    "TWENTY",
-    "THIRTY",
-    "FORTY",
-    "FIFTY",
-    "SIXTY",
-    "SEVENTY",
-    "EIGHTY",
-    "NINETY",
-  ];
-  function toH(n: number): string {
-    if (n === 0) return "";
-    if (n < 20) return ones[n] + " ";
-    if (n < 100)
-      return (
-        tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "") + " "
-      );
-    return ones[Math.floor(n / 100)] + " HUNDRED " + toH(n % 100);
-  }
-  const pesos = Math.floor(amount);
-  const cts = Math.round((amount - pesos) * 100);
-  let r = "";
-  const B = Math.floor(pesos / 1_000_000_000);
-  const M = Math.floor((pesos % 1_000_000_000) / 1_000_000);
-  const K = Math.floor((pesos % 1_000_000) / 1_000);
-  const R = pesos % 1_000;
-  if (B) r += toH(B) + "BILLION ";
-  if (M) r += toH(M) + "MILLION ";
-  if (K) r += toH(K) + "THOUSAND ";
-  if (R) r += toH(R);
-  r = r.trim() + " PESOS";
-  if (cts) r += " AND " + toH(cts).trim() + " CENTAVOS";
-  return r + " ONLY";
-}
-
-// ─── HTML builder (identical to CreatePOModal's) ─────────────────────────────
-
-function buildPOHtml(f: POEditPayload): string {
-  const fmtN = (n: number) =>
-    n.toLocaleString("en-PH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  const padded = [...f.items];
-  while (padded.length < 20)
-    padded.push({
-      stock_no: null,
-      unit: "",
-      description: "",
-      quantity: 0,
-      unit_price: 0,
-      subtotal: 0,
-    });
-
-  const rows = padded
-    .map((it) => {
-      const qty = Number(it.quantity) || 0,
-        price = Number(it.unit_price) || 0,
-        amt = qty * price;
-      return `<tr>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif;height:16px">${it.stock_no || ""}</td>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${it.unit || ""}</td>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 4px;text-align:left;font-family:'Times New Roman',serif">${it.description || ""}</td>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 3px;text-align:center;font-family:'Times New Roman',serif">${qty || ""}</td>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${price ? fmtN(price) : ""}</td>
-      <td style="border:1px solid #000;font-size:8pt;padding:1px 3px;text-align:right;font-family:'Times New Roman',serif">${amt > 0 ? fmtN(amt) : ""}</td>
-    </tr>`;
-    })
-    .join("");
-
-  const td = `border:1px solid #000;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif`;
-  const tdb = `${td};font-weight:bold`;
-
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Times New Roman',Times,serif;font-size:9pt;color:#000;background:#fff;padding:20px}table{width:100%;border-collapse:collapse;table-layout:fixed;color:#000}@media print{body{padding:8mm}@page{margin:6mm}}</style>
-</head><body>
-<table>
-  <colgroup><col style="width:13%"/><col style="width:8%"/><col style="width:38%"/><col style="width:10%"/><col style="width:14%"/><col style="width:17%"/></colgroup>
-  <tbody>
-    <tr><td colspan="6" style="text-align:right;font-size:9pt;padding-right:4px;font-family:'Times New Roman',serif">Appendix 61</td></tr>
-    <tr><td colspan="6" style="text-align:center;font-weight:bold;font-size:13pt;padding:4px;font-family:'Times New Roman',serif">PURCHASE ORDER</td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Supplier: <span style="font-weight:normal">${f.supplier}</span></td><td colspan="3" style="${tdb}">P.O. No.: <span style="font-weight:normal">${f.poNo}</span></td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Address: <span style="font-weight:normal">${f.address}</span></td><td colspan="3" style="${tdb}">Date: <span style="font-weight:normal">${f.date}</span></td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">TIN: <span style="font-weight:normal">${f.tin}</span></td><td colspan="3" style="${tdb}">Mode of Procurement: <span style="font-weight:normal">${f.modeOfProcurement}</span></td></tr>
-    <tr><td colspan="6" style="font-size:8pt;padding:4px;font-family:'Times New Roman',serif;font-style:italic">Gentlemen:</td></tr>
-    <tr><td colspan="6" style="font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif">Please furnish this Office the following articles subject to the terms and conditions contained herein:</td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Place of Delivery: <span style="font-weight:normal">${f.placeOfDelivery}</span></td><td colspan="3" style="${tdb}">Delivery Term: <span style="font-weight:normal">${f.deliveryTerm}</span></td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Date of Delivery: <span style="font-weight:normal">${f.dateOfDelivery}</span></td><td colspan="3" style="${tdb}">Payment Term: <span style="font-weight:normal">${f.paymentTerm}</span></td></tr>
-    <tr style="height:22px">
-      <th style="${tdb};text-align:center">Stock/Property No.</th><th style="${tdb};text-align:center">Unit</th>
-      <th style="${tdb};text-align:center">Description</th><th style="${tdb};text-align:center">Quantity</th>
-      <th style="${tdb};text-align:center">Unit Cost</th><th style="${tdb};text-align:center">Amount</th>
-    </tr>
-    ${rows}
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Fund Cluster: <span style="font-weight:normal">${f.fundCluster}</span></td><td colspan="3" style="${tdb}">ORS No.: <span style="font-weight:normal">${f.orsNo}</span></td></tr>
-    <tr style="height:20px"><td colspan="3" style="${tdb}">Funds Available: <span style="font-weight:normal">${f.fundsAvailable}</span></td><td colspan="3" style="${tdb}">Date of the ORS: <span style="font-weight:normal">${f.orsDate}</span></td></tr>
-    <tr style="height:20px"><td colspan="3" style="${td}"></td><td colspan="3" style="${tdb}">Amount: <span style="font-weight:normal">₱${fmtN(f.orsAmount)}</span></td></tr>
-    <tr style="height:14px"><td colspan="6" style="${td};font-style:italic">Signature over Printed Name of Chief Accountant/Head of Accounting Division/Unit</td></tr>
-    <tr style="height:20px"><td colspan="3" style="${td}">${f.accountantName}</td><td colspan="3" style="${td}"></td></tr>
-    <tr style="height:14px"><td colspan="3" style="${td};font-size:7.5pt;color:#555">${f.accountantDesig}</td><td colspan="3" style="${td}"></td></tr>
-    <tr><td colspan="6" style="font-size:7.5pt;padding:4px;font-family:'Times New Roman',serif;font-style:italic">In case of failure to make the full delivery within the time specified above, a penalty of one-tenth (1/10) of one percent for every day of delay shall be imposed on the undelivered item/s.</td></tr>
-    <tr style="height:24px"><td colspan="4" style="${td};text-align:center;font-style:italic">(Total Amount in Words)</td><td colspan="2" style="${td}"></td></tr>
-    <tr style="height:22px"><td colspan="4" style="${tdb};text-align:center;font-size:7.5pt">${toWords(f.totalAmount)}</td><td colspan="2" style="${td}"></td></tr>
-    <tr style="height:14px"><td colspan="3" style="${td};font-style:italic">Conforme:</td><td colspan="3" style="${td};font-style:italic;text-align:right">Very truly yours,</td></tr>
-    <tr style="height:28px"><td colspan="3" style="${td}"></td><td colspan="3" style="${td}"></td></tr>
-    <tr style="height:14px"><td colspan="3" style="${tdb};text-align:center">Signature over Printed Name of Supplier</td><td colspan="3" style="${tdb};text-align:center">Signature over Printed Name of Authorized Official</td></tr>
-    <tr style="height:18px"><td colspan="3" style="${td}"></td><td colspan="3" style="${td};text-align:center">${f.authorizedOfficialName}</td></tr>
-    <tr style="height:14px"><td colspan="3" style="${td};font-size:7.5pt">Date</td><td colspan="3" style="${td};text-align:center;font-size:8pt">${f.authorizedOfficialDesig}</td></tr>
-  </tbody>
-</table>
-</body></html>`;
-}
-
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
@@ -261,6 +113,7 @@ function SectionLabel({ children }: { children: string }) {
     </Text>
   );
 }
+
 function FieldLabel({
   children,
   required,
@@ -275,6 +128,7 @@ function FieldLabel({
     </Text>
   );
 }
+
 function Divider() {
   return <View className="h-px bg-gray-100 my-1.5 mb-3.5" />;
 }
@@ -295,11 +149,15 @@ function StyledInput(
         setFocused(false);
         props.onBlur?.(e);
       }}
-      className={`bg-gray-50 rounded-[10px] border px-3 py-2.5 text-sm text-gray-900 ${focused ? "border-[#064E3B]" : "border-gray-200"}`}
+      className={`bg-gray-50 rounded-[10px] border px-3 py-2.5 text-sm text-gray-900 ${
+        focused ? "border-[#064E3B]" : "border-gray-200"
+      }`}
       style={[mono ? { fontFamily: MONO } : {}, style ?? {}]}
     />
   );
 }
+
+// ─── Item row ─────────────────────────────────────────────────────────────────
 
 function ItemRow({
   item,
@@ -430,15 +288,14 @@ function PRPickerModal({
       transparent={false}
     >
       <SafeAreaView className="flex-1 bg-white">
-        {/* Header */}
         <View className="bg-[#064E3B] px-5 pt-5 pb-4">
           <View className="flex-row items-center justify-between mb-3">
             <View>
               <Text className="text-[10px] font-bold tracking-widest uppercase text-white/40">
-                Select a Purchase Request
+                Change PR Link
               </Text>
               <Text className="text-[16px] font-black text-white mt-0.5">
-                Link PR to this PO
+                Select Purchase Request
               </Text>
             </View>
             <TouchableOpacity
@@ -451,7 +308,6 @@ function PRPickerModal({
               </Text>
             </TouchableOpacity>
           </View>
-          {/* Search bar */}
           <View className="flex-row items-center bg-white/10 rounded-[10px] px-3 gap-2">
             <MaterialIcons
               name="search"
@@ -477,7 +333,6 @@ function PRPickerModal({
           </View>
         </View>
 
-        {/* List */}
         {loading ? (
           <View className="flex-1 items-center justify-center gap-3">
             <ActivityIndicator size="large" color="#064E3B" />
@@ -491,7 +346,7 @@ function PRPickerModal({
             <Text className="text-[13px] text-gray-400 text-center">
               {query
                 ? "No PRs match your search."
-                : "No purchase requests found in the database."}
+                : "No purchase requests found."}
             </Text>
           </View>
         ) : (
@@ -583,8 +438,8 @@ export default function EditPOModal({
   const [supplier, setSupplier] = useState("");
   const [address, setAddress] = useState("");
   const [tin, setTin] = useState("");
-  const [modeOfProcurement, setModeOfProcurement] = useState("");
-  const [placeOfDelivery, setPlaceOfDelivery] = useState("");
+  const [procurementMode, setProcurementMode] = useState("");
+  const [deliveryPlace, setDeliveryPlace] = useState("");
   const [deliveryTerm, setDeliveryTerm] = useState("");
   const [dateOfDelivery, setDateOfDelivery] = useState("");
   const [paymentTerm, setPaymentTerm] = useState("");
@@ -595,8 +450,8 @@ export default function EditPOModal({
   const [orsDate, setOrsDate] = useState("");
   const [fundsAvailable, setFundsAvailable] = useState("");
   const [orsAmount, setOrsAmount] = useState("");
-  const [authorizedOfficialName, setAuthorizedOfficialName] = useState("");
-  const [authorizedOfficialDesig, setAuthorizedOfficialDesig] = useState("");
+  const [officialName, setOfficialName] = useState("");
+  const [officialDesig, setOfficialDesig] = useState("");
   const [accountantName, setAccountantName] = useState("");
   const [accountantDesig, setAccountantDesig] = useState("");
   const [items, setItems] = useState<POItemRow[]>([]);
@@ -612,30 +467,31 @@ export default function EditPOModal({
     setLoading(true);
     setError(null);
     setLinkedPrNo(null);
+
     fetchPOWithItemsById(record.id)
       .then(({ header: h, items: rows }) => {
-        setPrNo((h as any).pr_no ?? "");
-        setSupplier((h as any).supplier ?? "");
-        setAddress((h as any).address ?? "");
-        setTin((h as any).tin ?? "");
-        setModeOfProcurement((h as any).mode_of_procurement ?? "");
-        setPlaceOfDelivery((h as any).place_of_delivery ?? "");
-        setDeliveryTerm((h as any).delivery_term ?? "");
-        setDateOfDelivery((h as any).date_of_delivery ?? "");
-        setPaymentTerm((h as any).payment_term ?? "");
-        setDate((h as any).date ?? "");
-        setOfficeSection((h as any).office_section ?? "");
-        setFundCluster((h as any).fund_cluster ?? "");
-        setOrsNo((h as any).ors_no ?? "");
-        setOrsDate((h as any).ors_date ?? "");
-        setFundsAvailable((h as any).funds_available ?? "");
-        setOrsAmount(String((h as any).ors_amount ?? ""));
-        setAuthorizedOfficialName((h as any).authorized_official_name ?? "");
-        setAuthorizedOfficialDesig((h as any).authorized_official_desig ?? "");
-        setAccountantName((h as any).accountant_name ?? "");
-        setAccountantDesig((h as any).accountant_desig ?? "");
+        setPrNo(h.pr_no ?? "");
+        setSupplier(h.supplier ?? "");
+        setAddress(h.address ?? "");
+        setTin(h.tin ?? "");
+        setProcurementMode(h.procurement_mode ?? "");
+        setDeliveryPlace(h.delivery_place ?? "");
+        setDeliveryTerm(h.delivery_term ?? "");
+        setDateOfDelivery(h.delivery_date ?? "");
+        setPaymentTerm(h.payment_term ?? "");
+        setDate(h.date ?? "");
+        setOfficeSection(h.office_section ?? "");
+        setFundCluster(h.fund_cluster ?? "");
+        setOrsNo(h.ors_no ?? "");
+        setOrsDate(h.ors_date ?? "");
+        setFundsAvailable(h.funds_available ?? "");
+        setOrsAmount(h.ors_amount != null ? String(h.ors_amount) : "");
+        setOfficialName(h.official_name ?? "");
+        setOfficialDesig(h.official_desig ?? "");
+        setAccountantName(h.accountant_name ?? "");
+        setAccountantDesig(h.accountant_desig ?? "");
         setItems(
-          (rows ?? []).map((i: any) => ({
+          rows.map((i) => ({
             id: i.id,
             po_id: i.po_id,
             stock_no: i.stock_no ?? null,
@@ -660,14 +516,12 @@ export default function EditPOModal({
       const rows = await fetchPurchaseRequests();
       setPrSuggestions(
         (rows ?? []).map((r: any) => ({
-          id: r.id,
+          id: String(r.id),
           pr_no: r.pr_no ?? "",
           office_section: r.office_section ?? null,
           purpose: r.purpose ?? null,
           total_cost: r.total_cost ?? null,
           fund_cluster: r.fund_cluster ?? null,
-          req_name: r.req_name ?? null,
-          req_desig: r.req_desig ?? null,
           app_name: r.app_name ?? null,
           app_desig: r.app_desig ?? null,
         })),
@@ -683,11 +537,10 @@ export default function EditPOModal({
   const handleSelectPR = (pr: PRSuggestion) => {
     setPrNo(pr.pr_no);
     setLinkedPrNo(pr.pr_no);
-    // Auto-fill fields derived from the selected PR
     if (pr.office_section) setOfficeSection(pr.office_section);
     if (pr.fund_cluster) setFundCluster(pr.fund_cluster);
-    if (pr.app_name) setAuthorizedOfficialName(pr.app_name);
-    if (pr.app_desig) setAuthorizedOfficialDesig(pr.app_desig);
+    if (pr.app_name) setOfficialName(pr.app_name);
+    if (pr.app_desig) setOfficialDesig(pr.app_desig);
     setShowPicker(false);
   };
 
@@ -732,50 +585,50 @@ export default function EditPOModal({
     0,
   );
 
-  const buildPayload = (): POEditPayload => ({
-    id: record!.id,
-    poNo: record!.poNo,
-    prNo,
-    supplier,
-    address,
-    tin,
-    modeOfProcurement,
-    placeOfDelivery,
-    deliveryTerm,
-    dateOfDelivery,
-    paymentTerm,
-    date,
-    officeSection,
-    fundCluster,
-    orsNo,
-    orsDate,
-    fundsAvailable,
-    orsAmount: Number(orsAmount) || 0,
-    totalAmount,
-    authorizedOfficialName,
-    authorizedOfficialDesig,
-    accountantName,
-    accountantDesig,
-    items: items.map((it) => ({
-      stock_no: it.stock_no ?? null,
-      unit: it.unit,
-      description: it.description,
-      quantity: Number(it.quantity) || 0,
-      unit_price: Number(it.unit_price) || 0,
-      subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
-    })),
-  });
+  // ── Preview data ────────────────────────────────────────────────────────
 
-  const previewHtml = useMemo(
-    () => (record ? buildPOHtml(buildPayload()) : ""),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
+  const previewData: POPreviewData = useMemo(
+    () => ({
+      poNo: record?.poNo,
       prNo,
       supplier,
       address,
       tin,
-      modeOfProcurement,
-      placeOfDelivery,
+      procurementMode,
+      deliveryPlace,
+      deliveryTerm,
+      dateOfDelivery,
+      paymentTerm,
+      date,
+      officeSection,
+      fundCluster,
+      orsNo,
+      orsDate,
+      fundsAvailable,
+      orsAmount: Number(orsAmount) || 0,
+      totalAmount,
+      officialName,
+      officialDesig,
+      accountantName,
+      accountantDesig,
+      items: items.map((it) => ({
+        stock_no: it.stock_no ?? null,
+        unit: it.unit,
+        description: it.description,
+        quantity: Number(it.quantity) || 0,
+        unit_price: Number(it.unit_price) || 0,
+        subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
+      })),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      record?.poNo,
+      prNo,
+      supplier,
+      address,
+      tin,
+      procurementMode,
+      deliveryPlace,
       deliveryTerm,
       dateOfDelivery,
       paymentTerm,
@@ -786,33 +639,19 @@ export default function EditPOModal({
       orsDate,
       fundsAvailable,
       orsAmount,
-      authorizedOfficialName,
-      authorizedOfficialDesig,
+      totalAmount,
+      officialName,
+      officialDesig,
       accountantName,
       accountantDesig,
       items,
     ],
   );
 
-  const handlePrint = async () => {
-    try {
-      await Print.printAsync({ html: previewHtml });
-    } catch {}
-  };
-  const handleDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html: previewHtml });
-      const ok = await Sharing.isAvailableAsync();
-      if (ok)
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      else Alert.alert("Saved", `PDF saved at: ${uri}`);
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message ?? String(e));
-    }
-  };
+  const previewHtml = useMemo(() => buildPOHtml(previewData), [previewData]);
+  const { handlePrint, handleDownload } = usePOPreviewActions(previewHtml);
+
+  // ── Save ────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!record) return;
@@ -824,20 +663,28 @@ export default function EditPOModal({
 
     setSaving(true);
     setError(null);
-    const payload = buildPayload();
+
+    const lineItems = items.map((it) => ({
+      stock_no: it.stock_no ?? null,
+      unit: it.unit,
+      description: it.description,
+      quantity: Number(it.quantity) || 0,
+      unit_price: Number(it.unit_price) || 0,
+      subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
+    }));
 
     try {
       await updatePO(
         record.id,
         {
-          pr_no: prNo,
-          supplier,
+          pr_no: prNo || null,
+          supplier: supplier || null,
           address: address || null,
           tin: tin || null,
-          mode_of_procurement: modeOfProcurement || null,
-          place_of_delivery: placeOfDelivery || null,
+          procurement_mode: procurementMode || null,
+          delivery_place: deliveryPlace || null,
           delivery_term: deliveryTerm || null,
-          date_of_delivery: dateOfDelivery || null,
+          delivery_date: dateOfDelivery || null,
           payment_term: paymentTerm || null,
           date: date || null,
           office_section: officeSection || null,
@@ -847,13 +694,41 @@ export default function EditPOModal({
           funds_available: fundsAvailable || null,
           ors_amount: Number(orsAmount) || null,
           total_amount: totalAmount,
-          authorized_official_name: authorizedOfficialName || null,
-          authorized_official_desig: authorizedOfficialDesig || null,
+          official_name: officialName || null,
+          official_desig: officialDesig || null,
           accountant_name: accountantName || null,
           accountant_desig: accountantDesig || null,
         },
-        payload.items,
+        lineItems,
       );
+
+      const payload: POEditPayload = {
+        id: record.id,
+        poNo: record.poNo,
+        prNo,
+        supplier,
+        address,
+        tin,
+        procurementMode,
+        deliveryPlace,
+        deliveryTerm,
+        dateOfDelivery,
+        paymentTerm,
+        date,
+        officeSection,
+        fundCluster,
+        orsNo,
+        orsDate,
+        fundsAvailable,
+        orsAmount: Number(orsAmount) || 0,
+        totalAmount,
+        officialName,
+        officialDesig,
+        accountantName,
+        accountantDesig,
+        items: lineItems as POItemRow[],
+      };
+
       onSave(payload);
       onClose();
     } catch (e: any) {
@@ -867,21 +742,7 @@ export default function EditPOModal({
 
   return (
     <>
-      {/* ── PR Database Picker ───────────────────────────────────────────── */}
-      <PRPickerModal
-        visible={showPicker}
-        suggestions={prSuggestions}
-        loading={prLoadingDB}
-        onSelect={handleSelectPR}
-        onDismiss={() => setShowPicker(false)}
-      />
-
-      {/* ── Main Edit Modal ──────────────────────────────────────────────── */}
-      <Modal
-        visible={visible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
+      <Modal visible animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView className="flex-1 bg-white">
           {/* ── Header ── */}
           <View className="bg-[#064E3B] px-5 pt-5 pb-0">
@@ -897,20 +758,16 @@ export default function EditPOModal({
                   {record.poNo}
                 </Text>
                 {linkedPrNo ? (
-                  <View className="flex-row items-center gap-1.5 mt-0.5">
+                  <View className="flex-row items-center gap-1.5 mt-1">
                     <MaterialIcons
                       name="link"
                       size={11}
                       color="rgba(255,255,255,0.5)"
                     />
-                    <Text className="text-[10.5px] text-white/50">
-                      Linked to PR {linkedPrNo}
+                    <Text className="text-[11px] text-white/50">
+                      Re-linked to {linkedPrNo}
                     </Text>
                   </View>
-                ) : supplier ? (
-                  <Text className="text-[11.5px] text-white/60 mt-0.5">
-                    {supplier}
-                  </Text>
                 ) : null}
               </View>
               <TouchableOpacity
@@ -923,7 +780,9 @@ export default function EditPOModal({
                 </Text>
               </TouchableOpacity>
             </View>
-            <View className="flex-row bg-black/20 rounded-xl p-1">
+
+            {/* Tab toggle */}
+            <View className="flex-row bg-black/20 rounded-xl p-1 mb-0">
               {(["edit", "preview"] as const).map((t) => (
                 <TouchableOpacity
                   key={t}
@@ -939,147 +798,118 @@ export default function EditPOModal({
                 </TouchableOpacity>
               ))}
             </View>
-            {tab === "preview" && (
-              <View className="flex-row justify-end gap-2.5 pt-2 pb-1">
-                <TouchableOpacity
-                  onPress={handlePrint}
-                  activeOpacity={0.8}
-                  className="px-3.5 py-2 rounded-xl bg-white/10 border border-white/20"
-                >
-                  <Text className="text-[12px] font-bold text-white">
-                    Print
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleDownload}
-                  activeOpacity={0.8}
-                  className="px-3.5 py-2 rounded-xl bg-white"
-                >
-                  <Text className="text-[12px] font-bold text-[#064E3B]">
-                    Download PDF
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
 
-          {/* ── Body ── */}
-          {loading ? (
+          {/* Loading overlay */}
+          {loading && (
             <View className="flex-1 items-center justify-center gap-3">
               <ActivityIndicator size="large" color="#064E3B" />
               <Text className="text-[13px] text-gray-400">
-                Loading PO details…
+                Loading PO data…
               </Text>
             </View>
-          ) : tab === "preview" ? (
-            <WebView
-              source={{ html: previewHtml }}
-              style={{ flex: 1 }}
-              originWhitelist={["*"]}
-              showsVerticalScrollIndicator={false}
+          )}
+
+          {/* Error banner */}
+          {!loading && error ? (
+            <View className="mx-4 mt-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 flex-row items-center gap-2">
+              <MaterialIcons name="error-outline" size={15} color="#dc2626" />
+              <Text className="text-[12.5px] text-red-600 flex-1">{error}</Text>
+              <TouchableOpacity onPress={() => setError(null)} hitSlop={6}>
+                <MaterialIcons name="close" size={14} color="#dc2626" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {!loading && tab === "preview" ? (
+            <POPreviewPanel
+              html={previewHtml}
+              showActions
+              onPrint={handlePrint}
+              onDownload={handleDownload}
             />
-          ) : (
+          ) : !loading ? (
             <KeyboardAvoidingView
               behavior={Platform.OS === "ios" ? "padding" : "height"}
-              className="flex-1"
+              style={{ flex: 1 }}
             >
-              <View className="flex-1">
+              <View style={{ flex: 1 }}>
                 <ScrollView
-                  className="flex-1"
-                  contentContainerStyle={{
-                    paddingHorizontal: 20,
-                    paddingTop: 20,
-                    paddingBottom: 16,
-                  }}
+                  className="flex-1 px-5"
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingTop: 16, paddingBottom: 12 }}
                 >
-                  {error && (
-                    <View className="bg-red-50 border border-red-200 rounded-[10px] px-3 py-2.5 mb-4 flex-row items-center gap-2">
-                      <MaterialIcons
-                        name="error-outline"
-                        size={15}
-                        color="#dc2626"
-                      />
-                      <Text className="text-red-600 text-[12.5px] flex-1">
-                        {error}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* ── PR No. — required ── */}
-                  <SectionLabel>Reference</SectionLabel>
-                  <View className="mb-3.5">
-                    <FieldLabel required>PR No.</FieldLabel>
-                    <View className="flex-row items-center gap-2">
-                      <View className="flex-1">
-                        <StyledInput
-                          value={prNo}
-                          onChangeText={(v) => {
-                            setPrNo(v);
-                            setLinkedPrNo(null);
-                          }}
-                          placeholder="e.g. PR-2025-001"
-                          placeholderTextColor="#9ca3af"
-                          mono
-                          editable={!linkedPrNo}
-                        />
-                      </View>
-                      {/* Change / Browse button */}
-                      {linkedPrNo ? (
-                        <TouchableOpacity
-                          onPress={openPRPicker}
-                          className="flex-row items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-[10px] px-2.5 py-2.5"
+                  {/* ── PO Identification ── */}
+                  <SectionLabel>PO Identification</SectionLabel>
+                  <View className="flex-row gap-2.5 mb-3.5">
+                    <View className="flex-1">
+                      <FieldLabel>PO No. (read-only)</FieldLabel>
+                      <View className="bg-gray-100 rounded-[10px] border border-gray-200 px-3 py-2.5">
+                        <Text
+                          className="text-sm text-gray-500"
+                          style={{ fontFamily: MONO }}
                         >
-                          <MaterialIcons
-                            name="swap-horiz"
-                            size={14}
-                            color="#064E3B"
+                          {record.poNo}
+                        </Text>
+                      </View>
+                    </View>
+                    <View className="flex-1">
+                      <FieldLabel required>PR No.</FieldLabel>
+                      <View className="flex-row items-center gap-1.5">
+                        <View className="flex-1">
+                          <StyledInput
+                            value={prNo}
+                            onChangeText={setPrNo}
+                            placeholder="PR-2025-001"
+                            placeholderTextColor="#9ca3af"
+                            mono
                           />
-                          <Text className="text-[11px] font-bold text-[#064E3B]">
-                            Change
-                          </Text>
-                        </TouchableOpacity>
-                      ) : (
+                        </View>
                         <TouchableOpacity
                           onPress={openPRPicker}
-                          className="flex-row items-center gap-1 bg-gray-100 border border-gray-200 rounded-[10px] px-2.5 py-2.5"
+                          className="w-9 h-9 rounded-[10px] bg-[#064E3B]/10 items-center justify-center"
                         >
                           <MaterialIcons
                             name="list-alt"
-                            size={14}
-                            color="#374151"
+                            size={16}
+                            color="#064E3B"
                           />
-                          <Text className="text-[11px] font-bold text-gray-600">
-                            Browse
-                          </Text>
                         </TouchableOpacity>
-                      )}
-                    </View>
-                    {linkedPrNo && (
-                      <View className="flex-row items-center gap-1 mt-1.5">
-                        <MaterialIcons
-                          name="check-circle"
-                          size={12}
-                          color="#10b981"
-                        />
-                        <Text className="text-[11px] text-emerald-600">
-                          Auto-filled from database PR
-                        </Text>
                       </View>
-                    )}
+                    </View>
+                  </View>
+                  <View className="flex-row gap-2.5 mb-3.5">
+                    <View className="flex-1">
+                      <FieldLabel>Date</FieldLabel>
+                      <StyledInput
+                        value={date}
+                        onChangeText={setDate}
+                        placeholder="January 1, 2025"
+                        placeholderTextColor="#9ca3af"
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <FieldLabel>Office / Section</FieldLabel>
+                      <StyledInput
+                        value={officeSection}
+                        onChangeText={setOfficeSection}
+                        placeholder="e.g. Finance Division"
+                        placeholderTextColor="#9ca3af"
+                      />
+                    </View>
                   </View>
 
                   <Divider />
 
-                  {/* Supplier */}
-                  <SectionLabel>Supplier</SectionLabel>
+                  {/* ── Supplier Details ── */}
+                  <SectionLabel>Supplier Details</SectionLabel>
                   <View className="mb-3.5">
                     <FieldLabel required>Supplier Name</FieldLabel>
                     <StyledInput
                       value={supplier}
                       onChangeText={setSupplier}
-                      placeholder="Supplier / company name"
+                      placeholder="Business / company name"
                       placeholderTextColor="#9ca3af"
                     />
                   </View>
@@ -1088,10 +918,10 @@ export default function EditPOModal({
                     <StyledInput
                       value={address}
                       onChangeText={setAddress}
-                      placeholder="Supplier address"
+                      placeholder="Street, City, Province"
                       placeholderTextColor="#9ca3af"
                       multiline
-                      style={{ minHeight: 54, textAlignVertical: "top" }}
+                      style={{ minHeight: 52, textAlignVertical: "top" }}
                     />
                   </View>
                   <View className="flex-row gap-2.5 mb-3.5">
@@ -1102,41 +932,32 @@ export default function EditPOModal({
                         onChangeText={setTin}
                         placeholder="000-000-000"
                         placeholderTextColor="#9ca3af"
-                        keyboardType="numbers-and-punctuation"
+                        keyboardType="numeric"
                         mono
                       />
                     </View>
                     <View className="flex-1">
                       <FieldLabel>Mode of Procurement</FieldLabel>
                       <StyledInput
-                        value={modeOfProcurement}
-                        onChangeText={setModeOfProcurement}
-                        placeholder="Shopping…"
+                        value={procurementMode}
+                        onChangeText={setProcurementMode}
+                        placeholder="Public Bidding…"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
                   </View>
-                  <View className="mb-3.5">
-                    <FieldLabel>Date</FieldLabel>
-                    <StyledInput
-                      value={date}
-                      onChangeText={setDate}
-                      placeholder="January 1, 2025"
-                      placeholderTextColor="#9ca3af"
-                    />
-                  </View>
 
                   <Divider />
 
-                  {/* Delivery */}
-                  <SectionLabel>Delivery Terms</SectionLabel>
+                  {/* ── Delivery ── */}
+                  <SectionLabel>Delivery</SectionLabel>
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Place of Delivery</FieldLabel>
                       <StyledInput
-                        value={placeOfDelivery}
-                        onChangeText={setPlaceOfDelivery}
-                        placeholder="DAR Office"
+                        value={deliveryPlace}
+                        onChangeText={setDeliveryPlace}
+                        placeholder="Address / warehouse"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
@@ -1145,7 +966,7 @@ export default function EditPOModal({
                       <StyledInput
                         value={deliveryTerm}
                         onChangeText={setDeliveryTerm}
-                        placeholder="30 days"
+                        placeholder="30 days, FOB…"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
@@ -1156,7 +977,7 @@ export default function EditPOModal({
                       <StyledInput
                         value={dateOfDelivery}
                         onChangeText={setDateOfDelivery}
-                        placeholder="Feb 15, 2025"
+                        placeholder="February 15, 2025"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
@@ -1165,25 +986,16 @@ export default function EditPOModal({
                       <StyledInput
                         value={paymentTerm}
                         onChangeText={setPaymentTerm}
-                        placeholder="30 days"
+                        placeholder="30 days, COD…"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
                   </View>
-                  <View className="mb-3.5">
-                    <FieldLabel>Office / Section</FieldLabel>
-                    <StyledInput
-                      value={officeSection}
-                      onChangeText={setOfficeSection}
-                      placeholder="Finance Division"
-                      placeholderTextColor="#9ca3af"
-                    />
-                  </View>
 
                   <Divider />
 
-                  {/* ORS / Funds */}
-                  <SectionLabel>ORS & Funds</SectionLabel>
+                  {/* ── ORS / Funds ── */}
+                  <SectionLabel>ORS &amp; Funds</SectionLabel>
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Fund Cluster</FieldLabel>
@@ -1211,7 +1023,7 @@ export default function EditPOModal({
                       <StyledInput
                         value={orsDate}
                         onChangeText={setOrsDate}
-                        placeholder="Jan 10, 2025"
+                        placeholder="January 10, 2025"
                         placeholderTextColor="#9ca3af"
                       />
                     </View>
@@ -1239,14 +1051,14 @@ export default function EditPOModal({
 
                   <Divider />
 
-                  {/* Signatories */}
+                  {/* ── Signatories ── */}
                   <SectionLabel>Signatories</SectionLabel>
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Authorized Official</FieldLabel>
                       <StyledInput
-                        value={authorizedOfficialName}
-                        onChangeText={setAuthorizedOfficialName}
+                        value={officialName}
+                        onChangeText={setOfficialName}
                         placeholder="Full name"
                         placeholderTextColor="#9ca3af"
                       />
@@ -1254,8 +1066,8 @@ export default function EditPOModal({
                     <View className="flex-1">
                       <FieldLabel>Designation</FieldLabel>
                       <StyledInput
-                        value={authorizedOfficialDesig}
-                        onChangeText={setAuthorizedOfficialDesig}
+                        value={officialDesig}
+                        onChangeText={setOfficialDesig}
                         placeholder="Title"
                         placeholderTextColor="#9ca3af"
                       />
@@ -1284,7 +1096,7 @@ export default function EditPOModal({
 
                   <Divider />
 
-                  {/* Line Items */}
+                  {/* ── Line Items ── */}
                   <View className="flex-row items-center justify-between mb-2.5">
                     <SectionLabel>{`Line Items (${items.length})`}</SectionLabel>
                     <TouchableOpacity
@@ -1297,6 +1109,7 @@ export default function EditPOModal({
                       </Text>
                     </TouchableOpacity>
                   </View>
+
                   {items.map((item, idx) => (
                     <ItemRow
                       key={idx}
@@ -1306,6 +1119,7 @@ export default function EditPOModal({
                       onRemove={handleRemoveItem}
                     />
                   ))}
+
                   {!items.length && (
                     <View
                       className="items-center py-6 bg-gray-50 rounded-[10px] border border-gray-200 mb-3.5"
@@ -1317,7 +1131,7 @@ export default function EditPOModal({
                     </View>
                   )}
 
-                  {/* Total */}
+                  {/* Total bar */}
                   <View className="bg-[#064E3B] rounded-2xl px-5 py-4 flex-row items-center justify-between mt-1 mb-1.5">
                     <View>
                       <Text className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -1358,7 +1172,7 @@ export default function EditPOModal({
                     {saving ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <MaterialIcons name="check" size={16} color="#fff" />
+                      <MaterialIcons name="save" size={16} color="#fff" />
                     )}
                     <Text className="text-sm font-bold text-white">
                       {saving ? "Saving…" : "Save Changes"}
@@ -1367,9 +1181,18 @@ export default function EditPOModal({
                 </View>
               </View>
             </KeyboardAvoidingView>
-          )}
+          ) : null}
         </SafeAreaView>
       </Modal>
+
+      {/* PR picker rendered outside main modal */}
+      <PRPickerModal
+        visible={showPicker}
+        suggestions={prSuggestions}
+        loading={prLoadingDB}
+        onSelect={handleSelectPR}
+        onDismiss={() => setShowPicker(false)}
+      />
     </>
   );
 }
