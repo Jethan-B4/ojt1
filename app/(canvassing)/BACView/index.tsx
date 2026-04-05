@@ -435,7 +435,8 @@ export default function BACView({
         notes: null,
       });
       // status_id 10 = BAC Resolution (canvassing step just completed)
-      await updatePRStatus(prId, 10);
+      // Move PR to AAA Issuance after BAC Resolution
+      await updatePRStatus(prId, 11);
       await updateCanvassStage(sessionId, "aaa_preparation");
       // advance() marks bac_resolution done and moves stage → aaa_preparation
       // (aaa_preparation is now included in STAGE_ORDER in constants.ts)

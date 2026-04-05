@@ -3,6 +3,11 @@
  *
  * Table: purchase_orders
  * Columns mirror the Supabase schema exactly (snake_case).
+ *
+ * PO lifecycle status_id values (from public.status table):
+ *   12 → PO (Reception)  ← default starting status on insert
+ *   13 → PO (Create)
+ *   14 → ORS Processing
  */
 
 import { supabase } from "./client";
@@ -148,6 +153,7 @@ export async function updatePO(
 /**
  * Insert a new PO header + items (used by CreatePOModal).
  * Returns the full inserted row (including server-generated id).
+ * Always starts at status_id 12 ("PO Reception") unless explicitly overridden.
  */
 export async function insertPurchaseOrder(
   po: POInsertPayload,
@@ -156,7 +162,7 @@ export async function insertPurchaseOrder(
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("purchase_orders")
-    .insert({ ...po, created_at: now, updated_at: now })
+    .insert({ ...po, status_id: 12, created_at: now, updated_at: now })
     .select()
     .single();
   if (error) throw error;
@@ -171,4 +177,37 @@ export async function insertPurchaseOrder(
   }
 
   return inserted;
+}
+
+/** Fetch PO-lifecycle status rows from public.status for label lookups. */
+export async function fetchPOStatuses(): Promise<
+  { id: number; status_name: string }[]
+> {
+  const { data, error } = await supabase
+    .from("status")
+    .select("id, status_name")
+    // PO lifecycle status IDs start at 12
+    .gte("id", 12)
+    .order("id", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as { id: number; status_name: string }[];
+}
+
+/**
+ * Fetch the single most-recent remark for a PO.
+ * Mirrors fetchLatestRemarkByPR from pr.ts.
+ * Returns null if the PO has no remarks yet.
+ */
+export async function fetchLatestRemarkByPO(
+  poId: string,
+): Promise<import("@/lib/supabase-types").RemarkRow | null> {
+  const { data, error } = await supabase
+    .from("po_remarks")
+    .select("*")
+    .eq("po_id", poId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data as import("@/lib/supabase-types").RemarkRow | null;
 }

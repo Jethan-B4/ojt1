@@ -1,19 +1,31 @@
 /**
  * POModule.tsx — Purchase Order Module
  *
- * Key behaviours:
- *   - Supply (role_id 8) can Create (status_id 1) and Edit (status_id ≤ 4)
- *   - BAC (role_id 3), Supply (8), Budget (4), Accounting (9), PARPO (5)
- *     process POs via role-step mapping
- *   - ORSInlinePanel shown when PO status_id === 6 (ORS Preparation step)
- *   - Create: uses real PORow from DB (no fake IDs)
- *   - Edit: syncs supplier / officeSection / totalAmount in-memory after save
+ * Mirrors PRModule UI patterns exactly:
+ *   - Status labels fetched from public.status (same fetchPOStatuses helper)
+ *   - Latest remark / status-flag badge shown on each card
+ *   - RecordCard: View | Process (primary) | ••• (Remarks · Edit · Cancel)
+ *   - Edit is inside the ••• sheet, NOT a primary card button
+ *   - Filter panel, pagination — identical shape to PRModule
+ *   - Pull-to-refresh, saving overlay, empty state
+ *
+ * PO status lifecycle (public.status table):
+ *   12 = PO (Reception)   ← every new PO starts here
+ *   13 = PO (Create)
+ *   14 = ORS Processing
+ *
+ * Role permissions:
+ *   role_id 1  = Admin   — sees all, can process (override), can edit
+ *   role_id 8  = Supply  — sees all, can create, can process 12→13, can edit ≤ 13
+ *   All others           — view only
  */
 
+import type { RemarkRow } from "@/lib/supabase-types";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -29,11 +41,18 @@ import EditPOModal, {
   type POEditPayload,
   type POEditRecord,
 } from "../(modals)/EditPOModal";
+import ProcessPOModal, {
+  STATUS_FLAGS,
+  canRoleProcessPO,
+  type ProcessPORecord,
+  type StatusFlag,
+} from "../(modals)/ProcessPOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
+  fetchLatestRemarkByPO,
+  fetchPOStatuses,
   fetchPurchaseOrders,
   fetchPurchaseOrdersByDivision,
-  updatePOStatus,
   type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
@@ -54,124 +73,32 @@ export interface PORecord {
 }
 
 type SortBy = "date_created" | "date_modified";
-type SubTab = "po" | "ors" | "coa";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+/**
+ * Visual config keyed by status_id — mirrors public.status table.
+ * PO lifecycle starts at 12 (PO Reception).
+ *   12 = PO (Reception)
+ *   13 = PO (Create)
+ *   14 = ORS Processing
+ */
 const PO_STATUS_CFG: Record<
   number,
-  {
-    bg: string;
-    text: string;
-    dot: string;
-    label: string;
-    step: number;
-    actor: string;
-  }
+  { bg: string; text: string; dot: string; label: string }
 > = {
-  1: {
-    bg: "#fdf4ff",
-    text: "#86198f",
-    dot: "#c026d3",
-    label: "AAA Signing",
-    step: 11,
-    actor: "BAC",
-  },
-  2: {
-    bg: "#eff6ff",
-    text: "#1e40af",
-    dot: "#3b82f6",
-    label: "Fwd. to Supply",
-    step: 12,
-    actor: "BAC",
-  },
-  3: {
-    bg: "#fefce8",
-    text: "#854d0e",
-    dot: "#eab308",
-    label: "PO # Assignment",
-    step: 13,
-    actor: "Supply",
-  },
-  4: {
-    bg: "#f0fdf4",
-    text: "#166534",
-    dot: "#22c55e",
-    label: "PO Preparation",
-    step: 14,
-    actor: "Supply",
-  },
-  5: {
-    bg: "#fff7ed",
-    text: "#9a3412",
-    dot: "#f97316",
-    label: "Budget Allocation",
-    step: 15,
-    actor: "Budget",
-  },
-  6: {
-    bg: "#fefce8",
-    text: "#713f12",
-    dot: "#ca8a04",
-    label: "ORS Preparation",
-    step: 16,
-    actor: "Budget",
-  },
-  7: {
-    bg: "#fff7ed",
-    text: "#7c2d12",
-    dot: "#ea580c",
-    label: "ORS # Assignment",
-    step: 17,
-    actor: "Budget",
-  },
-  8: {
-    bg: "#ecfdf5",
-    text: "#065f46",
-    dot: "#10b981",
-    label: "Budget Approval",
-    step: 18,
-    actor: "Budget",
-  },
-  9: {
-    bg: "#f0f9ff",
-    text: "#0c4a6e",
-    dot: "#0ea5e9",
-    label: "Accounting Review",
-    step: 19,
-    actor: "Accounting",
-  },
-  10: {
-    bg: "#ecfdf5",
-    text: "#064e3b",
-    dot: "#059669",
-    label: "PARPO Signature",
-    step: 20,
-    actor: "PARPO",
-  },
-  11: {
-    bg: "#f0fdf4",
-    text: "#14532d",
-    dot: "#16a34a",
-    label: "PO Approved",
-    step: 21,
-    actor: "Supply",
-  },
   12: {
     bg: "#f0fdfa",
     text: "#0f766e",
     dot: "#0d9488",
-    label: "Served to Supplier",
-    step: 22,
-    actor: "Supply",
+    label: "PO (Reception)",
   },
-  13: {
-    bg: "#faf5ff",
-    text: "#6b21a8",
-    dot: "#9333ea",
-    label: "COA Submission",
-    step: 23,
-    actor: "Supply",
+  13: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", label: "PO (Create)" },
+  14: {
+    bg: "#fff7ed",
+    text: "#9a3412",
+    dot: "#f97316",
+    label: "ORS Processing",
   },
 };
 
@@ -182,33 +109,12 @@ function poCfgFor(id: number) {
       text: "#6b7280",
       dot: "#9ca3af",
       label: `Status ${id}`,
-      step: 0,
-      actor: "—",
     }
   );
 }
 
-/**
- * Maps role_id → the status_id values that role can process (advance).
- * role_id 8 = Supply, role_id 9 = Accounting, role_id 5 = PARPO
- */
-const PO_ROLE_STEPS: Record<number, number[]> = {
-  3: [1, 2], // BAC
-  8: [3, 4, 11, 12, 13], // Supply
-  4: [5, 6, 7, 8], // Budget
-  9: [9], // Accounting
-  5: [10], // PARPO
-  1: [], // Admin — view only
-};
-
-const SUB_TABS: { key: SubTab; label: string }[] = [
-  { key: "po", label: "Purchase Order" },
-  { key: "ors", label: "ORS" },
-  { key: "coa", label: "COA" },
-];
-
-// ORS inline panel shown when PO is at "ORS Preparation" (status_id 6)
-const ORS_INLINE_STATUS = 6;
+// ORS inline panel is shown when PO reaches ORS Processing (status_id 14)
+const ORS_INLINE_STATUS = 14;
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
@@ -217,6 +123,23 @@ const fmt = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+// ─── Flag ID helpers (mirrors PRModule) ──────────────────────────────────────
+
+const ID_TO_FLAG: Record<number, StatusFlag> = {
+  2: "complete",
+  3: "incomplete_info",
+  4: "wrong_information",
+  5: "needs_revision",
+  6: "on_hold",
+  7: "urgent",
+};
+
+function getFlagFromId(id: number | null): StatusFlag | null {
+  return id ? (ID_TO_FLAG[id] ?? null) : null;
+}
+
+// ─── Row → display record ─────────────────────────────────────────────────────
 
 function rowToPORecord(row: PORow): PORecord {
   const created = row.created_at ? new Date(row.created_at) : new Date();
@@ -235,52 +158,29 @@ function rowToPORecord(row: PORow): PORecord {
     supplier: row.supplier ?? "—",
     officeSection: row.office_section ?? "—",
     totalAmount: Number(row.total_amount) || 0,
-    statusId: Number(row.status_id) || 1,
+    statusId: Number(row.status_id) || 12,
     date: created.toLocaleDateString("en-PH"),
     updatedAt: updated.toLocaleDateString("en-PH"),
     elapsedTime: elapsed,
   };
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-const SubTabRow: React.FC<{
-  active: SubTab;
-  onSelect: (s: SubTab) => void;
-}> = ({ active, onSelect }) => (
-  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
-    {SUB_TABS.map((sub) => {
-      const on = sub.key === active;
-      return (
-        <TouchableOpacity
-          key={sub.key}
-          onPress={() => onSelect(sub.key)}
-          activeOpacity={0.8}
-          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}>
-          <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}>
-            {sub.label}
-          </Text>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-);
+// ─── SearchBar ────────────────────────────────────────────────────────────────
 
 const SearchBar: React.FC<{
   value: string;
   onChange: (t: string) => void;
+  onCreatePress: () => void;
+  canCreate: boolean;
   filterActive: boolean;
   onFilterToggle: () => void;
-  canCreate: boolean;
-  onCreatePress: () => void;
 }> = ({
   value,
   onChange,
+  onCreatePress,
+  canCreate,
   filterActive,
   onFilterToggle,
-  canCreate,
-  onCreatePress,
 }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
@@ -306,7 +206,8 @@ const SearchBar: React.FC<{
         filterActive
           ? "bg-[#064E3B] border-[#064E3B]"
           : "bg-white border-gray-200"
-      }`}>
+      }`}
+    >
       <MaterialIcons
         name="filter-list"
         size={18}
@@ -317,7 +218,8 @@ const SearchBar: React.FC<{
       <Pressable
         onPress={onCreatePress}
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}>
+        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
+      >
         <Text className="text-white text-[18px] leading-none font-light">
           +
         </Text>
@@ -326,6 +228,8 @@ const SearchBar: React.FC<{
     )}
   </View>
 );
+
+// ─── FilterChip ───────────────────────────────────────────────────────────────
 
 const FilterChip: React.FC<{
   label: string;
@@ -341,18 +245,23 @@ const FilterChip: React.FC<{
       backgroundColor: active ? (color ?? "#064E3B") : "#ffffff",
       borderWidth: 1.5,
       borderColor: active ? (color ?? "#064E3B") : "#e5e7eb",
-    }}>
+    }}
+  >
     <Text
       className="text-[11.5px] font-bold"
-      style={{ color: active ? "#ffffff" : "#6b7280" }}>
+      style={{ color: active ? "#ffffff" : "#6b7280" }}
+    >
       {label}
     </Text>
   </TouchableOpacity>
 );
 
+// ─── FilterPanel ──────────────────────────────────────────────────────────────
+
 const FilterPanel: React.FC<{
   visible: boolean;
   records: PORecord[];
+  statuses: { id: number; status_name: string }[];
   statusFilter: number | null;
   sectionFilter: string;
   sortBy: SortBy;
@@ -363,6 +272,7 @@ const FilterPanel: React.FC<{
 }> = ({
   visible,
   records,
+  statuses,
   statusFilter,
   sectionFilter,
   sortBy,
@@ -382,16 +292,16 @@ const FilterPanel: React.FC<{
   const hasActive = statusFilter !== null || sectionFilter !== "All";
 
   return (
-    <View
-      className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3 gap-2.5 shadow-sm"
-      style={{ elevation: 2 }}>
+    <View className="mx-3 mb-2 bg-white rounded-2xl border border-gray-200 p-3 gap-2.5 shadow-sm elevation-2">
+      {/* Status */}
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         Status
       </Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
+      >
         <FilterChip
           label="All"
           active={statusFilter === null}
@@ -399,10 +309,12 @@ const FilterPanel: React.FC<{
         />
         {presentStatusIds.map((sid) => {
           const c = poCfgFor(sid);
+          const dbLabel =
+            statuses.find((s) => s.id === sid)?.status_name ?? c.label;
           return (
             <FilterChip
               key={sid}
-              label={c.label}
+              label={dbLabel}
               active={statusFilter === sid}
               color={c.dot}
               onPress={() => onStatusFilter(statusFilter === sid ? null : sid)}
@@ -411,13 +323,15 @@ const FilterPanel: React.FC<{
         })}
       </ScrollView>
 
+      {/* Section */}
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         Section
       </Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
+      >
         {presentSections.map((s) => (
           <FilterChip
             key={s}
@@ -428,6 +342,7 @@ const FilterPanel: React.FC<{
         ))}
       </ScrollView>
 
+      {/* Sort */}
       <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         Sort By
       </Text>
@@ -460,14 +375,16 @@ const FilterPanel: React.FC<{
                 active
                   ? "bg-[#064E3B] border-[#064E3B]"
                   : "bg-white border-gray-200"
-              }`}>
+              }`}
+            >
               <MaterialIcons
                 name={opt.icon}
                 size={13}
                 color={active ? "#fff" : "#6b7280"}
               />
               <Text
-                className={`text-[11.5px] font-bold ${active ? "text-white" : "text-gray-500"}`}>
+                className={`text-[11.5px] font-bold ${active ? "text-white" : "text-gray-500"}`}
+              >
                 {opt.label}
               </Text>
             </TouchableOpacity>
@@ -486,21 +403,25 @@ const FilterPanel: React.FC<{
   );
 };
 
-const StatusPill: React.FC<{ statusId: number; elapsed: string }> = ({
-  statusId,
-  elapsed,
-}) => {
+// ─── StatusPill ───────────────────────────────────────────────────────────────
+
+const StatusPill: React.FC<{
+  statusId: number;
+  label: string;
+  elapsed: string;
+}> = ({ statusId, label, elapsed }) => {
   const cfg = poCfgFor(statusId);
   return (
     <View
       className="flex-row items-center self-start rounded-full px-2.5 py-1 gap-1.5"
-      style={{ backgroundColor: cfg.bg }}>
+      style={{ backgroundColor: cfg.bg }}
+    >
       <View
         className="w-1.5 h-1.5 rounded-full"
         style={{ backgroundColor: cfg.dot }}
       />
       <Text className="text-[10.5px] font-bold" style={{ color: cfg.text }}>
-        {cfg.label}
+        {label}
       </Text>
       <View
         className="w-px h-2.5 opacity-30"
@@ -508,106 +429,345 @@ const StatusPill: React.FC<{ statusId: number; elapsed: string }> = ({
       />
       <Text
         className="text-[10px] font-semibold opacity-70"
-        style={{ color: cfg.text }}>
+        style={{ color: cfg.text }}
+      >
         {elapsed}
       </Text>
     </View>
   );
 };
 
-const StepBadge: React.FC<{ statusId: number }> = ({ statusId }) => {
-  const cfg = poCfgFor(statusId);
-  if (!cfg.step) return null;
+// ─── MoreSheet ────────────────────────────────────────────────────────────────
+
+interface MoreSheetProps {
+  visible: boolean;
+  record: PORecord | null;
+  canEdit: boolean;
+  onClose: () => void;
+  onRemarks: () => void;
+  onEdit: () => void;
+}
+
+const MoreSheet: React.FC<MoreSheetProps> = ({
+  visible,
+  record,
+  canEdit,
+  onClose,
+  onRemarks,
+  onEdit,
+}) => {
+  if (!record) return null;
+  const cfg = poCfgFor(record.statusId);
+
+  type Action = {
+    icon: keyof typeof MaterialIcons.glyphMap;
+    label: string;
+    sublabel: string;
+    color: string;
+    bg: string;
+    onPress: () => void;
+  };
+
+  const actions: Action[] = [
+    {
+      icon: "chat-bubble-outline",
+      label: "Remarks",
+      sublabel: "View or add processing notes",
+      color: "#065f46",
+      bg: "#ecfdf5",
+      onPress: () => {
+        onClose();
+        onRemarks();
+      },
+    },
+    ...(canEdit
+      ? ([
+          {
+            icon: "edit",
+            label: "Edit PO",
+            sublabel: "Modify PO details and line items",
+            color: "#b45309",
+            bg: "#fffbeb",
+            onPress: () => {
+              onClose();
+              onEdit();
+            },
+          },
+        ] as Action[])
+      : []),
+  ];
+
   return (
-    <View className="flex-row items-center gap-1 bg-gray-100 rounded-md px-2 py-0.5">
-      <MaterialIcons name="linear-scale" size={10} color="#9ca3af" />
-      <Text className="text-[10px] font-bold text-gray-400">
-        Step {cfg.step} · {cfg.actor}
-      </Text>
-    </View>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        className="flex-1 bg-black/40 justify-end"
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        {/* Prevent tap-through on the sheet itself */}
+        <TouchableOpacity activeOpacity={1}>
+          <View
+            className="bg-white rounded-t-3xl overflow-hidden"
+            style={{ paddingBottom: 32 }}
+          >
+            {/* Drag handle */}
+            <View className="items-center pt-3 pb-1">
+              <View className="w-10 h-1 rounded-full bg-gray-200" />
+            </View>
+
+            {/* PO identity header */}
+            <View className="px-5 pt-2 pb-4 border-b border-gray-100">
+              <Text
+                className="text-[15px] font-extrabold text-gray-900"
+                style={{ fontFamily: MONO }}
+              >
+                {record.poNo}
+              </Text>
+              <Text
+                className="text-[12px] text-gray-500 mt-0.5"
+                numberOfLines={1}
+              >
+                {record.supplier}
+              </Text>
+              <View
+                className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
+                style={{ backgroundColor: cfg.bg }}
+              >
+                <View
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: cfg.dot }}
+                />
+                <Text
+                  className="text-[10.5px] font-bold"
+                  style={{ color: cfg.text }}
+                >
+                  {cfg.label}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action rows */}
+            <View className="px-4 pt-3 gap-2">
+              {actions.map((a) => (
+                <TouchableOpacity
+                  key={a.label}
+                  onPress={a.onPress}
+                  activeOpacity={0.8}
+                  className="flex-row items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-gray-100"
+                  style={{ backgroundColor: a.bg }}
+                >
+                  <View
+                    className="w-9 h-9 rounded-xl items-center justify-center"
+                    style={{ backgroundColor: a.color + "18" }}
+                  >
+                    <MaterialIcons name={a.icon} size={18} color={a.color} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-[13.5px] font-bold text-gray-800">
+                      {a.label}
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                      {a.sublabel}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={18}
+                    color="#d1d5db"
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Dismiss */}
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.8}
+              className="mx-4 mt-3 py-3 rounded-2xl bg-gray-100 items-center"
+            >
+              <Text className="text-[13.5px] font-bold text-gray-500">
+                Dismiss
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 };
+
+// ─── RecordCard ───────────────────────────────────────────────────────────────
 
 const RecordCard: React.FC<{
   record: PORecord;
   isEven: boolean;
   roleId: number;
-  onView: (r: PORecord) => void;
-  onEdit: (r: PORecord) => void;
-  onProcess: (r: PORecord) => void;
+  statuses: { id: number; status_name: string }[];
+  latestFlag: RemarkRow | null;
   canProcess: boolean;
-  canEdit: boolean;
-}> = ({ record, isEven, onView, onEdit, onProcess, canProcess, canEdit }) => (
-  <View
-    className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden shadow-sm ${isEven ? "bg-white" : "bg-gray-50"}`}
-    style={{ elevation: 3 }}>
-    <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
-      <View className="flex-1 pr-3">
+  onView: (r: PORecord) => void;
+  onProcess: (r: PORecord) => void;
+  onMore: (r: PORecord) => void;
+}> = ({
+  record,
+  isEven,
+  statuses,
+  latestFlag,
+  canProcess,
+  onView,
+  onProcess,
+  onMore,
+}) => {
+  const statusLabel =
+    statuses.find((s) => s.id === record.statusId)?.status_name ??
+    poCfgFor(record.statusId).label;
+
+  const flagKey = latestFlag?.status_flag_id
+    ? getFlagFromId(latestFlag.status_flag_id)
+    : null;
+  const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
+
+  return (
+    <View
+      className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden shadow-sm ${isEven ? "bg-white" : "bg-gray-50"}`}
+      style={{ elevation: 3 }}
+    >
+      {/* Top: PO no + status pill */}
+      <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
+        <View className="flex-1 pr-3">
+          <Text
+            className="text-[13px] font-bold text-[#1a4d2e] mb-0.5"
+            style={{ fontFamily: MONO }}
+          >
+            {record.poNo}
+          </Text>
+          <Text
+            className="text-[12.5px] text-gray-700 leading-5"
+            numberOfLines={2}
+          >
+            {record.supplier}
+          </Text>
+        </View>
+        <StatusPill
+          statusId={record.statusId}
+          label={statusLabel}
+          elapsed={record.elapsedTime}
+        />
+      </View>
+
+      {/* Meta: section badge · date · amount */}
+      <View className="h-px bg-gray-100 mx-4" />
+      <View className="flex-row items-center gap-3 px-4 py-2.5">
+        <View className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
+          <Text
+            className="text-[10.5px] font-bold text-emerald-700"
+            numberOfLines={1}
+          >
+            {record.officeSection}
+          </Text>
+        </View>
+        <View className="w-px h-3.5 bg-gray-200" />
         <Text
-          className="text-[13px] font-bold text-[#1a4d2e] mb-0.5"
-          style={{ fontFamily: MONO }}>
-          {record.poNo}
+          className="text-[11px] text-gray-400"
+          style={{ fontFamily: MONO }}
+        >
+          {record.date}
         </Text>
-        <Text className="text-[11.5px] text-gray-500 mb-1.5" numberOfLines={1}>
-          PR: <Text className="font-semibold">{record.prNo}</Text>
-        </Text>
-        <Text className="text-[11.5px] text-gray-500 mb-1" numberOfLines={1}>
-          {record.supplier}
-        </Text>
-        <Text className="text-[10.5px] text-gray-400" numberOfLines={1}>
-          {record.officeSection}
+        <View className="flex-1" />
+        <Text
+          className="text-[12.5px] font-bold text-gray-700"
+          style={{ fontFamily: MONO }}
+        >
+          ₱{fmt(record.totalAmount)}
         </Text>
       </View>
-      <StatusPill statusId={record.statusId} elapsed={record.elapsedTime} />
-    </View>
 
-    <View className="px-4 pb-2">
-      <Text
-        className="text-[12.5px] font-bold text-gray-700"
-        style={{ fontFamily: MONO }}>
-        ₱{fmt(record.totalAmount)}
-      </Text>
-    </View>
+      {/* Latest status flag from remarks — mirrors PRModule */}
+      {flag && (
+        <>
+          <View className="h-px bg-gray-100 mx-4" />
+          <View className="flex-row items-center gap-2 px-4 py-2">
+            <View
+              className="flex-row items-center gap-1.5 rounded-full px-2 py-0.5 border"
+              style={{ backgroundColor: flag.bg, borderColor: flag.dot + "40" }}
+            >
+              <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
+              <Text
+                className="text-[10.5px] font-bold"
+                style={{ color: flag.text }}
+              >
+                {flag.label}
+              </Text>
+            </View>
+            {latestFlag?.username && (
+              <Text className="text-[10px] text-gray-400">
+                by {latestFlag.username}
+              </Text>
+            )}
+            {latestFlag?.remark && (
+              <Text
+                className="flex-1 text-[10.5px] text-gray-500"
+                numberOfLines={1}
+              >
+                · {latestFlag.remark}
+              </Text>
+            )}
+          </View>
+        </>
+      )}
 
-    <View className="flex-row items-center px-4 pb-2 gap-2">
-      <StepBadge statusId={record.statusId} />
-    </View>
-
-    <View className="h-px bg-gray-100 mx-4" />
-
-    <View className="flex-row items-center gap-2 px-4 py-2.5">
-      <TouchableOpacity
-        onPress={() => onView(record)}
-        activeOpacity={0.8}
-        className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
-        <Text className="text-white text-[12px] font-bold">View</Text>
-      </TouchableOpacity>
-
-      {canEdit ? (
-        <TouchableOpacity
-          onPress={() => onEdit(record)}
-          activeOpacity={0.8}
-          className="flex-1 bg-amber-500 rounded-xl py-2 items-center">
-          <Text className="text-white text-[12px] font-bold">Edit</Text>
-        </TouchableOpacity>
-      ) : canProcess ? (
-        <TouchableOpacity
-          onPress={() => onProcess(record)}
-          activeOpacity={0.8}
-          className="flex-1 bg-violet-600 rounded-xl py-2 items-center">
-          <Text className="text-white text-[12px] font-bold">Process</Text>
-        </TouchableOpacity>
-      ) : (
+      {/* Action buttons */}
+      <View className="h-px bg-gray-100 mx-4" />
+      <View className="flex-row items-center gap-2 px-4 py-2.5">
+        {/* View — always shown */}
         <TouchableOpacity
           onPress={() => onView(record)}
           activeOpacity={0.8}
-          className="flex-1 bg-gray-600 rounded-xl py-2 items-center">
-          <Text className="text-white text-[12px] font-bold">+ Remark</Text>
+          className="flex-1 bg-blue-600 rounded-xl py-2 items-center"
+        >
+          <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
-      )}
+
+        {/* Process — primary action; locked when role cannot advance this status */}
+        {canProcess ? (
+          <TouchableOpacity
+            onPress={() => onProcess(record)}
+            activeOpacity={0.8}
+            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+          >
+            <Text className="text-white text-[12px] font-bold">Process</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            disabled
+            activeOpacity={1}
+            className="flex-1 bg-gray-200 rounded-xl py-2 items-center"
+          >
+            <Text className="text-gray-400 text-[12px] font-bold">Locked</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ••• sheet — Remarks + Edit (role-gated) */}
+        <TouchableOpacity
+          onPress={() => onMore(record)}
+          activeOpacity={0.8}
+          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
+        >
+          <Text className="text-white text-[11px] font-bold tracking-widest">
+            •••
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
-  </View>
-);
+  );
+};
+
+// ─── EmptyState ───────────────────────────────────────────────────────────────
 
 const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   <View className="flex-1 items-center justify-center py-24 px-8">
@@ -620,6 +780,8 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
     </Text>
   </View>
 );
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
 
 const Pagination: React.FC<{
   page: number;
@@ -659,7 +821,8 @@ const Pagination: React.FC<{
               : btn.disabled
                 ? "bg-gray-50 border-gray-100"
                 : "bg-white border-gray-200"
-          }`}>
+          }`}
+        >
           <Text
             className={`text-[12px] font-bold ${
               (btn as any).active
@@ -667,7 +830,8 @@ const Pagination: React.FC<{
                 : btn.disabled
                   ? "text-gray-300"
                   : "text-gray-500"
-            }`}>
+            }`}
+          >
             {btn.label}
           </Text>
         </TouchableOpacity>
@@ -682,7 +846,6 @@ export default function POModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("po");
   const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
@@ -690,28 +853,56 @@ export default function POModule() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [records, setRecords] = useState<PORecord[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
-  // View modal
+  // Status rows fetched from public.status — labels come from DB, not hardcoded
+  const [statuses, setStatuses] = useState<
+    { id: number; status_name: string }[]
+  >([]);
+
+  // Latest remark per PO id — for status-flag badges on cards
+  const [latestRemarks, setLatestRemarks] = useState<
+    Record<string, RemarkRow | null>
+  >({});
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // ── Modal state ────────────────────────────────────────────────────────────
+
   const [viewRecord, setViewRecord] = useState<PORecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
 
-  // Create modal — Supply only
   const [createVisible, setCreateVisible] = useState(false);
 
-  // Edit modal
   const [editRecord, setEditRecord] = useState<POEditRecord | null>(null);
   const [editVisible, setEditVisible] = useState(false);
 
-  // Sub-tab → status range predicate
-  const subTabStatusRange: Record<SubTab, ((id: number) => boolean) | null> = {
-    po: (id) => id >= 1 && id <= 10,
-    ors: (id) => id >= 5 && id <= 8,
-    coa: (id) => id === 13,
-  };
+  const [processRecord, setProcessRecord] = useState<ProcessPORecord | null>(
+    null,
+  );
+  const [processVisible, setProcessVisible] = useState(false);
 
+  const [moreRecord, setMoreRecord] = useState<PORecord | null>(null);
+  const [moreVisible, setMoreVisible] = useState(false);
+
+  // ── Permissions ────────────────────────────────────────────────────────────
+
+  // Roles that can see every PO regardless of division
   const canSeeAll = roleId === 1 || [3, 4, 5, 6, 8].includes(roleId);
+
+  // Only Supply (8) can create new POs
+  const canCreate = roleId === 8;
+
+  // Budget (4) and Admin (1) can edit ORS entries in the inline panel
+  const canEditOrs = roleId === 1 || roleId === 4;
+
+  // ── One-time lookups ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetchPOStatuses()
+      .then(setStatuses)
+      .catch(() => {}); // non-fatal; falls back to "Status N"
+  }, []);
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
@@ -721,6 +912,17 @@ export default function POModule() {
         ? await fetchPurchaseOrders()
         : await fetchPurchaseOrdersByDivision(currentUser?.division_id ?? -1);
       setRecords(rows.map(rowToPORecord));
+
+      // Fetch latest remark for each PO in parallel (non-blocking, for flag badges)
+      const remarkEntries = await Promise.all(
+        rows.map(async (r) => {
+          const remark = await fetchLatestRemarkByPO(String(r.id)).catch(
+            () => null,
+          );
+          return [String(r.id), remark] as [string, RemarkRow | null];
+        }),
+      );
+      setLatestRemarks(Object.fromEntries(remarkEntries));
     } catch {}
   }, [canSeeAll, currentUser?.division_id]);
 
@@ -736,16 +938,11 @@ export default function POModule() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  /**
-   * Called with the real DB PORow after a successful insert.
-   * Converts to PORecord and prepends to the list — no fake IDs.
-   */
   const handlePOCreated = useCallback((row: POCreatePayload) => {
     setRecords((prev) => [rowToPORecord(row), ...prev]);
     setPage(1);
   }, []);
 
-  /** Sync in-memory list after a successful edit. */
   const handlePOSave = useCallback((payload: POEditPayload) => {
     setRecords((prev) =>
       prev.map((r) =>
@@ -761,139 +958,13 @@ export default function POModule() {
     );
   }, []);
 
-  const handleProcess = useCallback(
-    async (r: PORecord) => {
-      const allowedSteps = PO_ROLE_STEPS[roleId] ?? [];
+  const handlePOProcessed = useCallback((id: string, newStatusId: number) => {
+    setRecords((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, statusId: newStatusId } : r)),
+    );
+  }, []);
 
-      if (roleId === 1) {
-        Alert.alert(
-          "Admin View",
-          "Admins can view POs but processing is role-specific.",
-        );
-        return;
-      }
-      if (!allowedSteps.includes(r.statusId)) {
-        Alert.alert(
-          "Not Available",
-          `Your role cannot process a PO at step "${poCfgFor(r.statusId).label}".`,
-        );
-        return;
-      }
-
-      const next = r.statusId + 1;
-
-      // BAC completeness check before forwarding to Supply
-      if (roleId === 3 && r.statusId === 2) {
-        Alert.alert(
-          "Documents Complete?",
-          "Are all required attachments complete?",
-          [
-            {
-              text: "Yes — Forward to Supply",
-              onPress: async () => {
-                try {
-                  setSaving(true);
-                  await updatePOStatus(r.id, 3);
-                  setRecords((prev) =>
-                    prev.map((x) =>
-                      x.id === r.id ? { ...x, statusId: 3 } : x,
-                    ),
-                  );
-                } catch (e: any) {
-                  Alert.alert("Failed", e?.message ?? "Could not update PO.");
-                } finally {
-                  setSaving(false);
-                }
-              },
-            },
-            {
-              text: "No — Return to BAC",
-              style: "destructive",
-              onPress: async () => {
-                try {
-                  setSaving(true);
-                  await updatePOStatus(r.id, 1);
-                  setRecords((prev) =>
-                    prev.map((x) =>
-                      x.id === r.id ? { ...x, statusId: 1 } : x,
-                    ),
-                  );
-                  Alert.alert("Returned", "PO returned to BAC.");
-                } catch (e: any) {
-                  Alert.alert("Failed", e?.message ?? "Could not return PO.");
-                } finally {
-                  setSaving(false);
-                }
-              },
-            },
-            { text: "Cancel", style: "cancel" },
-          ],
-        );
-        return;
-      }
-
-      // Accounting: route to PARPO or return
-      if (roleId === 8 && r.statusId === 9) {
-        Alert.alert("Accounting Decision", "How should this PO be routed?", [
-          {
-            text: "Pathway B — Accountant Approves → PARPO",
-            onPress: async () => {
-              try {
-                setSaving(true);
-                await updatePOStatus(r.id, 10);
-                setRecords((prev) =>
-                  prev.map((x) => (x.id === r.id ? { ...x, statusId: 10 } : x)),
-                );
-              } catch (e: any) {
-                Alert.alert("Failed", e?.message);
-              } finally {
-                setSaving(false);
-              }
-            },
-          },
-          {
-            text: "Pathway A — Lacks Documents → Return",
-            style: "destructive",
-            onPress: () => Alert.alert("Returned", "PO returned to approver."),
-          },
-          { text: "Cancel", style: "cancel" },
-        ]);
-        return;
-      }
-
-      // Default: advance one step
-      Alert.alert(
-        "Advance PO",
-        `Mark as "${poCfgFor(next).label}" (Step ${poCfgFor(next).step})?`,
-        [
-          {
-            text: "Confirm",
-            onPress: async () => {
-              try {
-                setSaving(true);
-                await updatePOStatus(r.id, next);
-                setRecords((prev) =>
-                  prev.map((x) =>
-                    x.id === r.id ? { ...x, statusId: next } : x,
-                  ),
-                );
-              } catch (e: any) {
-                Alert.alert("Failed", e?.message ?? "Could not update PO.");
-              } finally {
-                setSaving(false);
-              }
-            },
-          },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
-    },
-    [roleId],
-  );
-
-  // ── Derived data ───────────────────────────────────────────────────────────
-
-  const subTabFilter = subTabStatusRange[activeSubTab];
+  // ── Derived list ──────────────────────────────────────────────────────────
 
   const filtered = records
     .filter((r) => {
@@ -907,8 +978,7 @@ export default function POModule() {
       const matchSection =
         sectionFilter === "All" || r.officeSection === sectionFilter;
       const matchStatus = statusFilter === null || r.statusId === statusFilter;
-      const matchSubTab = subTabFilter === null || subTabFilter(r.statusId);
-      return matchSearch && matchSection && matchStatus && matchSubTab;
+      return matchSearch && matchSection && matchStatus;
     })
     .sort((a, b) => {
       if (sortBy === "date_modified") {
@@ -921,36 +991,30 @@ export default function POModule() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
-  // Supply (role_id 8) can create and edit while PO is still in preparation (status ≤ 4)
-  const canCreate = roleId === 8; // Supply role
-  // Budget (role 4) and Admin (role 1) can edit ORS entries in ORSInlinePanel
-  const canEditOrs = roleId === 1 || roleId === 4;
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <View className="flex-1 bg-gray-50">
-      <SubTabRow
-        active={activeSubTab}
-        onSelect={(s) => {
-          setActiveSubTab(s);
-          setPage(1);
-        }}
-      />
+      {/* Search + filter toggle + create button */}
       <SearchBar
         value={searchQuery}
         onChange={(t) => {
           setSearchQuery(t);
           setPage(1);
         }}
+        onCreatePress={() => setCreateVisible(true)}
+        canCreate={canCreate}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
         onFilterToggle={() => setFilterOpen((o) => !o)}
-        canCreate={canCreate}
-        onCreatePress={() => setCreateVisible(true)}
       />
+
+      {/* Collapsible filter panel */}
       <FilterPanel
         visible={filterOpen}
         records={records}
+        statuses={statuses}
         statusFilter={statusFilter}
         sectionFilter={sectionFilter}
         sortBy={sortBy}
@@ -973,7 +1037,7 @@ export default function POModule() {
         }}
       />
 
-      {/* Results count + sort indicator */}
+      {/* Results count + active sort indicator */}
       <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
         <Text className="text-[11px] text-gray-400">
           <Text className="font-semibold text-gray-500">{filtered.length}</Text>
@@ -995,6 +1059,7 @@ export default function POModule() {
         </View>
       </View>
 
+      {/* Record list */}
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
@@ -1007,15 +1072,13 @@ export default function POModule() {
             tintColor="#064E3B"
             colors={["#064E3B"]}
           />
-        }>
+        }
+      >
         {paged.length === 0 ? (
           <EmptyState label="No purchase orders found" />
         ) : (
           paged.map((record, idx) => {
-            const allowedSteps = PO_ROLE_STEPS[roleId] ?? [];
-            const canProcess = allowedSteps.includes(record.statusId);
-            // Supply (role_id 8) can edit while status ≤ 4 (PO still being prepared)
-            const canEdit = roleId === 8 && record.statusId <= 4;
+            const canProcess = canRoleProcessPO(roleId, record.statusId);
 
             return (
               <React.Fragment key={record.id}>
@@ -1023,19 +1086,27 @@ export default function POModule() {
                   record={record}
                   isEven={idx % 2 === 0}
                   roleId={roleId}
+                  statuses={statuses}
+                  latestFlag={latestRemarks[record.id] ?? null}
                   canProcess={canProcess}
-                  canEdit={canEdit}
                   onView={(r) => {
                     setViewRecord(r);
                     setViewVisible(true);
                   }}
-                  onEdit={(r) => {
-                    setEditRecord({ id: r.id, poNo: r.poNo });
-                    setEditVisible(true);
+                  onProcess={(r) => {
+                    setProcessRecord({
+                      id: r.id,
+                      poNo: r.poNo,
+                      statusId: r.statusId,
+                    });
+                    setProcessVisible(true);
                   }}
-                  onProcess={handleProcess}
+                  onMore={(r) => {
+                    setMoreRecord(r);
+                    setMoreVisible(true);
+                  }}
                 />
-                {/* ORS inline panel — shown when PO is at ORS Preparation (status_id 6) */}
+                {/* ORS inline panel — appears contextually at status 14 */}
                 {record.statusId === ORS_INLINE_STATUS && (
                   <ORSInlinePanel
                     prNo={record.prNo}
@@ -1050,6 +1121,7 @@ export default function POModule() {
         )}
       </ScrollView>
 
+      {/* Pagination */}
       <Pagination
         page={page}
         totalPages={totalPages}
@@ -1057,7 +1129,8 @@ export default function POModule() {
         onPage={setPage}
       />
 
-      {/* ── Modals ── */}
+      {/* ── Modals ────────────────────────────────────────────────────────── */}
+
       <ViewPOModal
         visible={viewVisible}
         record={viewRecord}
@@ -1082,6 +1155,43 @@ export default function POModule() {
           setEditRecord(null);
         }}
         onSave={handlePOSave}
+      />
+
+      <ProcessPOModal
+        visible={processVisible}
+        record={processRecord}
+        roleId={roleId}
+        onClose={() => {
+          setProcessVisible(false);
+          setProcessRecord(null);
+        }}
+        onProcessed={handlePOProcessed}
+      />
+
+      {/* MoreSheet — Remarks + Edit (role-gated) */}
+      <MoreSheet
+        visible={moreVisible}
+        record={moreRecord}
+        canEdit={
+          moreRecord
+            ? (roleId === 8 && moreRecord.statusId <= 13) || roleId === 1
+            : false
+        }
+        onClose={() => {
+          setMoreVisible(false);
+          setMoreRecord(null);
+        }}
+        onRemarks={() => {
+          // TODO: wire to your RemarkSheet component the same way PRModule does:
+          // setRemarkRecord(moreRecord); setRemarkVisible(true);
+          Alert.alert("Remarks", `Opening remarks for ${moreRecord?.poNo}`);
+        }}
+        onEdit={() => {
+          if (moreRecord) {
+            setEditRecord({ id: moreRecord.id, poNo: moreRecord.poNo });
+            setEditVisible(true);
+          }
+        }}
       />
 
       {/* Saving overlay */}

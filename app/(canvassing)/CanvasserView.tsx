@@ -43,8 +43,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
-  RefreshControl,
   Platform,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -500,7 +500,9 @@ export default function CanvasserView({
             a.canvasser_id === (currentUser?.id ?? -1) ||
             a.division_id === (currentUser?.division_id ?? -1),
         );
-        if (!mine) setAssigned(false);
+        setAssigned(
+          Boolean(mine && (mine.status === "released" || !mine.returned_at)),
+        );
 
         const { items } = await fetchPRWithItemsById(prId);
         setLiveItems(
@@ -556,7 +558,9 @@ export default function CanvasserView({
           a.canvasser_id === (currentUser?.id ?? -1) ||
           a.division_id === (currentUser?.division_id ?? -1),
       );
-      setAssigned(Boolean(mine));
+      setAssigned(
+        Boolean(mine && (mine.status === "released" || !mine.returned_at)),
+      );
       const { items } = await fetchPRWithItemsById(prId);
       setLiveItems(
         items.map((i) => ({
@@ -591,8 +595,8 @@ export default function CanvasserView({
       setAssignments(asgnsAll);
       setAllEntries(entries);
       setAllUsers(users);
-    } catch {}
-    finally {
+    } catch {
+    } finally {
       setRefreshing(false);
     }
   }, [pr.prNo, currentUser?.id, currentUser?.division_id]);

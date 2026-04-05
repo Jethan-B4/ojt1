@@ -733,7 +733,7 @@ export default function CreatePOModal({
           funds_available: fundsAvailable || null,
           ors_amount: Number(orsAmount) || null,
           total_amount: totalAmount,
-          status_id: 1, // AAA Signing — initial PO status
+          status_id: 12,
           division_id: divisionId ?? null,
           official_name: officialName || null,
           official_desig: officialDesig || null,
