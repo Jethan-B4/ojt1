@@ -7,12 +7,13 @@
  *   role_id 6+ (End User)   → own division's PRs only
  *
  * Each PR row expands to show its full remark timeline sourced from the
- * `remarks` table via fetchRemarksByPR / fetchRemarksByPR.
+ * `remarks` table via fetchRemarksByPR.
  *
  * Filters: free-text search · status filter · flag filter
  */
 
 import {
+  fetchLatestRemarkByPR,
   fetchPRStatuses,
   fetchPurchaseRequests,
   fetchPurchaseRequestsByDivision,
@@ -21,10 +22,9 @@ import {
   type PRStatusRow,
   type RemarkRow,
   type StatusFlag,
-} from "@/lib/supabase";
+} from "@/lib/supabase/index";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
-import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Platform,
@@ -74,15 +74,17 @@ function buildStatusConfig(
   return cfg;
 }
 
-const FLAG_CFG: Record<
-  StatusFlag,
-  {
-    label: string;
-    icon: keyof typeof MaterialIcons.glyphMap;
-    bg: string;
-    text: string;
-    dot: string;
-  }
+const FLAG_CFG: Partial<
+  Record<
+    StatusFlag,
+    {
+      label: string;
+      icon: keyof typeof MaterialIcons.glyphMap;
+      bg: string;
+      text: string;
+      dot: string;
+    }
+  >
 > = {
   complete: {
     label: "Complete",
@@ -138,7 +140,7 @@ const ENDUSER_ROLE = 6;
  * Reverse mapping: status_flag_id → StatusFlag string.
  * Used to display flag badges in remarks and filtering.
  */
-const ID_TO_FLAG: Record<number, StatusFlag> = {
+const ID_TO_FLAG: Partial<Record<number, StatusFlag>> = {
   2: "complete",
   3: "incomplete_info",
   4: "wrong_information",
@@ -213,7 +215,8 @@ function StatusPill({
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 999,
-      }}>
+      }}
+    >
       <View
         style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.dot }}
       />
@@ -226,6 +229,7 @@ function StatusPill({
 
 function FlagPill({ flag }: { flag: StatusFlag }) {
   const c = FLAG_CFG[flag];
+  if (!c) return null;
   return (
     <View
       style={{
@@ -236,7 +240,8 @@ function FlagPill({ flag }: { flag: StatusFlag }) {
         paddingHorizontal: 7,
         paddingVertical: 2,
         borderRadius: 999,
-      }}>
+      }}
+    >
       <MaterialIcons name={c.icon} size={10} color={c.dot} />
       <Text style={{ fontSize: 9.5, fontWeight: "700", color: c.text }}>
         {c.label}
@@ -270,10 +275,11 @@ function RemarkItem({
             borderColor: flag ? flag.dot : "#e5e7eb",
             alignItems: "center",
             justifyContent: "center",
-          }}>
+          }}
+        >
           <MaterialIcons
             name={flag ? flag.icon : "chat-bubble-outline"}
-            size={11}
+            size={12}
             color={flag ? flag.dot : "#9ca3af"}
           />
         </View>
@@ -298,7 +304,8 @@ function RemarkItem({
             gap: 6,
             flexWrap: "wrap",
             marginBottom: 3,
-          }}>
+          }}
+        >
           <Text style={{ fontSize: 11, fontWeight: "700", color: "#111827" }}>
             {remark.username ?? `User ${remark.user_id}`}
           </Text>
@@ -322,15 +329,18 @@ function PRLogCard({
   expanded,
   onToggle,
   statusConfig,
+  latestRemark,
 }: {
   entry: LogEntry;
   expanded: boolean;
   onToggle: () => void;
   statusConfig?: Record<number, any>;
+  latestRemark: RemarkRow | null;
 }) {
   const { pr, remarks, loaded } = entry;
-  const latestFlagId =
-    remarks.find((r) => r.status_flag_id)?.status_flag_id ?? null;
+  const latestFlagId = loaded
+    ? (remarks.find((r) => r.status_flag_id)?.status_flag_id ?? null)
+    : (latestRemark?.status_flag_id ?? null);
   const latestFlag = getFlagFromId(latestFlagId);
 
   return (
@@ -348,14 +358,17 @@ function PRLogCard({
         shadowOpacity: 0.05,
         shadowRadius: 5,
         elevation: 2,
-      }}>
+      }}
+    >
       {/* ── Header row (always visible) ── */}
       <TouchableOpacity
         onPress={onToggle}
         activeOpacity={0.75}
-        style={{ padding: 14 }}>
+        style={{ padding: 14 }}
+      >
         <View
-          style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
+        >
           {/* PR icon */}
           <View
             style={{
@@ -365,21 +378,24 @@ function PRLogCard({
               backgroundColor: "#ecfdf5",
               alignItems: "center",
               justifyContent: "center",
-            }}>
+            }}
+          >
             <MaterialIcons name="description" size={18} color="#064E3B" />
           </View>
 
           {/* PR info */}
           <View style={{ flex: 1, gap: 2 }}>
             <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
               <Text
                 style={{
                   fontSize: 12.5,
                   fontWeight: "800",
                   color: "#064E3B",
                   fontFamily: MONO,
-                }}>
+                }}
+              >
                 {pr.pr_no}
               </Text>
               {pr.is_high_value && (
@@ -389,13 +405,15 @@ function PRLogCard({
                     paddingHorizontal: 5,
                     paddingVertical: 1,
                     borderRadius: 4,
-                  }}>
+                  }}
+                >
                   <Text
                     style={{
                       fontSize: 8.5,
                       fontWeight: "700",
                       color: "#a7f3d0",
-                    }}>
+                    }}
+                  >
                     HIGH-VALUE
                   </Text>
                 </View>
@@ -403,7 +421,8 @@ function PRLogCard({
             </View>
             <Text
               style={{ fontSize: 11.5, color: "#6b7280" }}
-              numberOfLines={1}>
+              numberOfLines={1}
+            >
               {pr.purpose}
             </Text>
             <View
@@ -413,7 +432,8 @@ function PRLogCard({
                 gap: 6,
                 marginTop: 3,
                 flexWrap: "wrap",
-              }}>
+              }}
+            >
               <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
               {latestFlag && <FlagPill flag={latestFlag} />}
             </View>
@@ -427,12 +447,20 @@ function PRLogCard({
                 fontWeight: "700",
                 color: "#374151",
                 fontFamily: MONO,
-              }}>
+              }}
+            >
               ₱{Number(pr.total_cost).toLocaleString("en-PH")}
             </Text>
             <Text style={{ fontSize: 10, color: "#9ca3af" }}>
-              {fmtDate(pr.created_at)}
+              Created: {fmtDate(pr.created_at)}
             </Text>
+            {pr.updated_at && pr.updated_at !== pr.created_at && (
+              <Text
+                style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}
+              >
+                Updated: {fmtDate(pr.updated_at)}
+              </Text>
+            )}
             <MaterialIcons
               name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
               size={18}
@@ -452,7 +480,8 @@ function PRLogCard({
               paddingTop: 8,
               borderTopWidth: 1,
               borderTopColor: "#f3f4f6",
-            }}>
+            }}
+          >
             <MaterialIcons
               name="chat-bubble-outline"
               size={12}
@@ -470,7 +499,8 @@ function PRLogCard({
                   color: "#064E3B",
                   fontWeight: "600",
                   marginLeft: "auto",
-                }}>
+                }}
+              >
                 {expanded ? "Hide trail" : "View trail →"}
               </Text>
             )}
@@ -487,7 +517,8 @@ function PRLogCard({
             backgroundColor: "#fafffe",
             padding: 14,
             paddingTop: 16,
-          }}>
+          }}
+        >
           {/* Section label */}
           <View
             style={{
@@ -495,7 +526,8 @@ function PRLogCard({
               alignItems: "center",
               gap: 6,
               marginBottom: 14,
-            }}>
+            }}
+          >
             <View style={{ flex: 1, height: 1, backgroundColor: "#e5e7eb" }} />
             <Text
               style={{
@@ -504,7 +536,8 @@ function PRLogCard({
                 color: "#9ca3af",
                 textTransform: "uppercase",
                 letterSpacing: 1,
-              }}>
+              }}
+            >
               Audit Trail
             </Text>
             <View style={{ flex: 1, height: 1, backgroundColor: "#e5e7eb" }} />
@@ -563,7 +596,8 @@ function FilterChip({
         backgroundColor: bg,
         borderWidth: 1.5,
         borderColor: border,
-      }}>
+      }}
+    >
       <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>
         {label}
       </Text>
@@ -583,6 +617,9 @@ export default function ProcurementLog({ navigation }: any) {
   const [allPRs, setAllPRs] = useState<PRRow[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
   const [entries, setEntries] = useState<Record<string, LogEntry>>({});
+  const [latestRemarks, setLatestRemarks] = useState<
+    Record<string, RemarkRow | null>
+  >({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -591,9 +628,9 @@ export default function ProcurementLog({ navigation }: any) {
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
   const [flagFilter, setFlagFilter] = useState<StatusFlag | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<"date_created" | "has_flag">(
-    "date_created",
-  );
+  const [sortBy, setSortBy] = useState<
+    "date_created" | "last_updated" | "has_flag"
+  >("last_updated");
 
   // ── Expanded cards ────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -614,6 +651,16 @@ export default function ProcurementLog({ navigation }: any) {
         ]);
         setAllPRs(rows);
         setStatuses(statRows);
+
+        // Fetch latest remarks for all PRs in parallel
+        const remarkEntries = await Promise.all(
+          rows.map(async (r) => {
+            const remark = await fetchLatestRemarkByPR(r.id).catch(() => null);
+            return [String(r.id), remark] as [string, RemarkRow | null];
+          }),
+        );
+        setLatestRemarks(Object.fromEntries(remarkEntries));
+
         // Seed entries map — remarks fetched lazily on expand
         setEntries((prev) => {
           const next: Record<string, LogEntry> = {};
@@ -632,11 +679,9 @@ export default function ProcurementLog({ navigation }: any) {
     [isEndUser, divisionId],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      loadPRs();
-    }, [loadPRs]),
-  );
+  useEffect(() => {
+    loadPRs();
+  }, [loadPRs]);
 
   // ── Lazy-load remarks on expand ───────────────────────────────────────────────
   const handleToggle = useCallback(
@@ -668,15 +713,22 @@ export default function ProcurementLog({ navigation }: any) {
     .filter((pr) => {
       if (statusFilter !== null && pr.status_id !== statusFilter) return false;
       if (flagFilter !== null) {
-        const entry = entries[String(pr.id)];
-        // Only filter by flag if remarks are loaded; otherwise keep in list
-        if (
+        const prId = String(pr.id);
+        const entry = entries[prId];
+        const latest = latestRemarks[prId];
+
+        // Check if any loaded remark matches the flag
+        const loadedMatch =
           entry?.loaded &&
-          !entry.remarks.some(
+          entry.remarks.some(
             (r) => getFlagFromId(r.status_flag_id) === flagFilter,
-          )
-        )
-          return false;
+          );
+
+        // Or if the latest pre-fetched remark matches the flag
+        const latestMatch =
+          getFlagFromId(latest?.status_flag_id) === flagFilter;
+
+        if (!loadedMatch && !latestMatch) return false;
       }
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -693,6 +745,11 @@ export default function ProcurementLog({ navigation }: any) {
         return (
           new Date(b.created_at || "").getTime() -
           new Date(a.created_at || "").getTime()
+        );
+      } else if (sortBy === "last_updated") {
+        return (
+          new Date(b.updated_at || b.created_at || "").getTime() -
+          new Date(a.updated_at || a.created_at || "").getTime()
         );
       } else if (sortBy === "has_flag") {
         // Sort by presence of flags (flagged first), then by creation date
@@ -721,7 +778,8 @@ export default function ProcurementLog({ navigation }: any) {
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: "#f9fafb",
-        }}>
+        }}
+      >
         <ActivityIndicator size="large" color="#064E3B" />
         <Text style={{ fontSize: 13, color: "#9ca3af", marginTop: 10 }}>
           Loading procurement log…
@@ -739,7 +797,8 @@ export default function ProcurementLog({ navigation }: any) {
           paddingHorizontal: 16,
           paddingTop: 14,
           paddingBottom: 16,
-        }}>
+        }}
+      >
         <Text
           style={{
             fontSize: 9.5,
@@ -747,7 +806,8 @@ export default function ProcurementLog({ navigation }: any) {
             color: "rgba(255,255,255,0.4)",
             textTransform: "uppercase",
             letterSpacing: 1.2,
-          }}>
+          }}
+        >
           DAR · Procurement
         </Text>
         <Text
@@ -756,7 +816,8 @@ export default function ProcurementLog({ navigation }: any) {
             fontWeight: "800",
             color: "#ffffff",
             marginTop: 2,
-          }}>
+          }}
+        >
           Procurement Log
         </Text>
         <Text
@@ -764,7 +825,8 @@ export default function ProcurementLog({ navigation }: any) {
             fontSize: 12,
             color: "rgba(255,255,255,0.5)",
             marginTop: 2,
-          }}>
+          }}
+        >
           {isEndUser
             ? "Your division's PR audit trail"
             : "System-wide PR history & remarks"}
@@ -776,23 +838,20 @@ export default function ProcurementLog({ navigation }: any) {
             flexDirection: "row",
             gap: 8,
             marginTop: 14,
-          }}>
+          }}
+        >
           {[
             { label: "Total PRs", value: allPRs.length },
             {
               label: "With Remarks",
-              value: Object.values(entries).filter(
-                (e) => e.loaded && e.remarks.length > 0,
-              ).length,
+              value: Object.values(latestRemarks).filter((r) => r !== null)
+                .length,
             },
             {
               label: "Flagged",
-              value: allPRs.filter((p) => {
-                const entry = entries[String(p.id)];
-                return (
-                  entry?.loaded && entry.remarks.some((r) => r.status_flag_id)
-                );
-              }).length,
+              value: Object.values(latestRemarks).filter(
+                (r) => r && r.status_flag_id,
+              ).length,
             },
           ].map((s) => (
             <View
@@ -805,9 +864,11 @@ export default function ProcurementLog({ navigation }: any) {
                 alignItems: "center",
                 borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.12)",
-              }}>
+              }}
+            >
               <Text
-                style={{ fontSize: 20, fontWeight: "800", color: "#ffffff" }}>
+                style={{ fontSize: 20, fontWeight: "800", color: "#ffffff" }}
+              >
                 {s.value}
               </Text>
               <Text
@@ -816,7 +877,8 @@ export default function ProcurementLog({ navigation }: any) {
                   color: "rgba(255,255,255,0.5)",
                   marginTop: 1,
                   textAlign: "center",
-                }}>
+                }}
+              >
                 {s.label}
               </Text>
             </View>
@@ -833,7 +895,8 @@ export default function ProcurementLog({ navigation }: any) {
           marginHorizontal: 12,
           marginTop: 12,
           marginBottom: 4,
-        }}>
+        }}
+      >
         <View
           style={{
             flex: 1,
@@ -846,7 +909,8 @@ export default function ProcurementLog({ navigation }: any) {
             borderColor: "#e5e7eb",
             paddingHorizontal: 12,
             paddingVertical: 9,
-          }}>
+          }}
+        >
           <MaterialIcons name="search" size={16} color="#9ca3af" />
           <TextInput
             value={search}
@@ -880,7 +944,8 @@ export default function ProcurementLog({ navigation }: any) {
               statusFilter !== null || flagFilter !== null
                 ? "#064E3B"
                 : "#e5e7eb",
-          }}>
+          }}
+        >
           <MaterialIcons
             name="filter-list"
             size={20}
@@ -905,7 +970,8 @@ export default function ProcurementLog({ navigation }: any) {
             borderColor: "#e5e7eb",
             padding: 12,
             gap: 10,
-          }}>
+          }}
+        >
           {/* Sort options */}
           <Text
             style={{
@@ -914,14 +980,17 @@ export default function ProcurementLog({ navigation }: any) {
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
-            }}>
+            }}
+          >
             Sort By
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6 }}>
+            contentContainerStyle={{ gap: 6 }}
+          >
             {[
+              { key: "last_updated", label: "Last Updated" },
               { key: "date_created", label: "Date Created" },
               { key: "has_flag", label: "Flagged First" },
             ].map((opt) => (
@@ -931,7 +1000,9 @@ export default function ProcurementLog({ navigation }: any) {
                 active={sortBy === opt.key}
                 color="#064E3B"
                 onPress={() =>
-                  setSortBy(opt.key as "date_created" | "has_flag")
+                  setSortBy(
+                    opt.key as "date_created" | "last_updated" | "has_flag",
+                  )
                 }
               />
             ))}
@@ -945,13 +1016,15 @@ export default function ProcurementLog({ navigation }: any) {
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
-            }}>
+            }}
+          >
             Status
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6 }}>
+            contentContainerStyle={{ gap: 6 }}
+          >
             <FilterChip
               label="All"
               active={statusFilter === null}
@@ -983,13 +1056,15 @@ export default function ProcurementLog({ navigation }: any) {
               color: "#9ca3af",
               textTransform: "uppercase",
               letterSpacing: 0.8,
-            }}>
+            }}
+          >
             Latest Flag
           </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6 }}>
+            contentContainerStyle={{ gap: 6 }}
+          >
             <FilterChip
               label="Any"
               active={flagFilter === null}
@@ -997,6 +1072,7 @@ export default function ProcurementLog({ navigation }: any) {
             />
             {ALL_FLAGS.map((flag) => {
               const c = FLAG_CFG[flag];
+              if (!c) return null;
               return (
                 <FilterChip
                   key={flag}
@@ -1004,7 +1080,7 @@ export default function ProcurementLog({ navigation }: any) {
                   active={flagFilter === flag}
                   color={c.dot}
                   onPress={() =>
-                    setFlagFilter((prev) => (prev === flag ? null : flag))
+                    setFlagFilter((prev: any) => (prev === flag ? null : flag))
                   }
                 />
               );
@@ -1018,9 +1094,11 @@ export default function ProcurementLog({ navigation }: any) {
                 setStatusFilter(null);
                 setFlagFilter(null);
               }}
-              style={{ alignSelf: "flex-end" }}>
+              style={{ alignSelf: "flex-end" }}
+            >
               <Text
-                style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}>
+                style={{ fontSize: 11.5, fontWeight: "700", color: "#ef4444" }}
+              >
                 Clear filters
               </Text>
             </TouchableOpacity>
@@ -1052,7 +1130,8 @@ export default function ProcurementLog({ navigation }: any) {
             }}
             tintColor="#064E3B"
           />
-        }>
+        }
+      >
         {filteredPRs.length === 0 ? (
           <View style={{ alignItems: "center", paddingTop: 48, gap: 10 }}>
             <MaterialIcons name="history" size={44} color="#d1d5db" />
@@ -1060,7 +1139,8 @@ export default function ProcurementLog({ navigation }: any) {
               No records found
             </Text>
             <Text
-              style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
+              style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}
+            >
               {search
                 ? `No PRs match "${search}"`
                 : "Try adjusting your filters."}
@@ -1077,6 +1157,7 @@ export default function ProcurementLog({ navigation }: any) {
                 expanded={expanded.has(key)}
                 onToggle={() => handleToggle(key)}
                 statusConfig={statusConfig}
+                latestRemark={latestRemarks[key] ?? null}
               />
             );
           })

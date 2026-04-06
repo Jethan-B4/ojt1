@@ -59,3 +59,44 @@ export interface EnrichedAssignmentRow extends CanvasserAssignmentRow {
   division_name: string | null;
   canvasser_name: string | null;
 }
+
+/**
+ * lib/supabase/types.ts
+ * Shared domain types for the Procurement system.
+ */
+
+export type StatusFlag =
+  | "all"
+  | "no_flag"
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent"
+  | "cancelled";
+
+export const STATUS_FLAGS: StatusFlag[] = [
+  "all",
+  "no_flag",
+  "complete",
+  "incomplete_info",
+  "wrong_information",
+  "needs_revision",
+  "on_hold",
+  "urgent",
+  "cancelled",
+];
+
+// Mapping helper if you need to convert string flags to DB IDs
+export const FLAG_TO_ID: Record<StatusFlag, number | null> = {
+  all: null,
+  no_flag: 1,
+  complete: 2,
+  incomplete_info: 3,
+  wrong_information: 4,
+  needs_revision: 5,
+  on_hold: 6,
+  urgent: 7,
+  cancelled: 8,
+};

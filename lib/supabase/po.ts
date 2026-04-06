@@ -194,16 +194,17 @@ export async function fetchPOStatuses(): Promise<
 }
 
 /**
- * Fetch the single most-recent remark for a PO.
- * Mirrors fetchLatestRemarkByPR from pr.ts.
+ * Fetch the single most-recent remark for a PO from the remarks table.
  * Returns null if the PO has no remarks yet.
  */
 export async function fetchLatestRemarkByPO(
   poId: string,
 ): Promise<import("@/lib/supabase-types").RemarkRow | null> {
   const { data, error } = await supabase
-    .from("po_remarks")
-    .select("*")
+    .from("remarks")
+    .select(
+      "id, po_id, remark, status_flag_id, created_at, user_id, users(fullname)",
+    )
     .eq("po_id", poId)
     .order("created_at", { ascending: false })
     .limit(1)

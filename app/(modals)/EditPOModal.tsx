@@ -15,31 +15,31 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import POPreviewPanel, {
-  buildPOHtml,
-  toWords,
-  usePOPreviewActions,
-  type POPreviewData,
+    buildPOHtml,
+    toWords,
+    usePOPreviewActions,
+    type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import {
-  fetchPOWithItemsById,
-  updatePO,
-  type POItemRow,
+    fetchPOWithItemsById,
+    updatePO,
+    type POItemRow,
 } from "../../lib/supabase/po";
-import { fetchPurchaseRequests } from "../../lib/supabase/pr";
+import { fetchPRIdByNo, fetchPurchaseRequests } from "../../lib/supabase/pr";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -72,6 +72,7 @@ export interface POEditPayload {
   officialDesig: string;
   accountantName: string;
   accountantDesig: string;
+  prId: string | null;
   items: POItemRow[];
 }
 
@@ -432,6 +433,7 @@ export default function EditPOModal({
   const [prSuggestions, setPrSuggestions] = useState<PRSuggestion[]>([]);
   const [prLoadingDB, setPrLoadingDB] = useState(false);
   const [linkedPrNo, setLinkedPrNo] = useState<string | null>(null);
+  const [linkedPrId, setLinkedPrId] = useState<string | null>(null);
 
   // ── PO editable fields ──────────────────────────────────────────────────
   const [prNo, setPrNo] = useState("");
@@ -467,10 +469,13 @@ export default function EditPOModal({
     setLoading(true);
     setError(null);
     setLinkedPrNo(null);
+    setLinkedPrId(null);
 
     fetchPOWithItemsById(record.id)
       .then(({ header: h, items: rows }) => {
         setPrNo(h.pr_no ?? "");
+        setLinkedPrNo(h.pr_no ?? null);
+        setLinkedPrId(h.pr_id ?? null);
         setSupplier(h.supplier ?? "");
         setAddress(h.address ?? "");
         setTin(h.tin ?? "");
@@ -537,6 +542,7 @@ export default function EditPOModal({
   const handleSelectPR = (pr: PRSuggestion) => {
     setPrNo(pr.pr_no);
     setLinkedPrNo(pr.pr_no);
+    setLinkedPrId(pr.id);
     if (pr.office_section) setOfficeSection(pr.office_section);
     if (pr.fund_cluster) setFundCluster(pr.fund_cluster);
     if (pr.app_name) setOfficialName(pr.app_name);
@@ -664,20 +670,27 @@ export default function EditPOModal({
     setSaving(true);
     setError(null);
 
-    const lineItems = items.map((it) => ({
-      stock_no: it.stock_no ?? null,
-      unit: it.unit,
-      description: it.description,
-      quantity: Number(it.quantity) || 0,
-      unit_price: Number(it.unit_price) || 0,
-      subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
-    }));
-
     try {
+      // If entered manually (linkedPrId is null), try to resolve the ID from DB
+      let finalPrId = linkedPrId;
+      if (!finalPrId && prNo.trim()) {
+        finalPrId = await fetchPRIdByNo(prNo.trim());
+      }
+
+      const lineItems = items.map((it) => ({
+        stock_no: it.stock_no ?? null,
+        unit: it.unit,
+        description: it.description,
+        quantity: Number(it.quantity) || 0,
+        unit_price: Number(it.unit_price) || 0,
+        subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
+      }));
+
       await updatePO(
         record.id,
         {
           pr_no: prNo || null,
+          pr_id: finalPrId ?? null, // ← Resolved ID
           supplier: supplier || null,
           address: address || null,
           tin: tin || null,
@@ -726,6 +739,7 @@ export default function EditPOModal({
         officialDesig,
         accountantName,
         accountantDesig,
+        prId: finalPrId ?? null,
         items: lineItems as POItemRow[],
       };
 

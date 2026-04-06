@@ -22,36 +22,8 @@ import EndUserView from "@/app/(canvassing)/EndUserView";
 import { ensureCanvassSession, fetchPRIdByNo } from "@/lib/supabase";
 import type { CanvassPayload, CanvassingPR } from "@/types/canvassing";
 import React from "react";
+import { Text, View } from "react-native";
 import { useAuth } from "../AuthContext";
-
-// ─── Placeholder used when no prNo param is passed ────────────────────────────
-
-const PLACEHOLDER_PR: CanvassingPR = {
-  prNo: "2026-PR-0001",
-  date: new Date().toLocaleDateString("en-PH"),
-  officeSection: "STOD",
-  responsibilityCode: "10-001",
-  purpose: "Procurement of office supplies for Q1 operations.",
-  isHighValue: false,
-  items: [
-    {
-      id: 1,
-      desc: "Bond Paper, Short (70gsm)",
-      stock: "SP-001",
-      unit: "ream",
-      qty: 10,
-      unitCost: 220,
-    },
-    {
-      id: 2,
-      desc: "Ballpen, Black (0.5mm)",
-      stock: "SP-002",
-      unit: "box",
-      qty: 5,
-      unitCost: 85,
-    },
-  ],
-};
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +48,38 @@ export default function CanvassingModule({
   const roleId = currentUser?.role_id ?? 0;
 
   // Seed the PR shell with the prNo — each view hydrates items from Supabase.
-  const pr: CanvassingPR = prNo ? { ...PLACEHOLDER_PR, prNo } : PLACEHOLDER_PR;
+  const prNoValue = prNo || "";
+
+  if (!prNoValue) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f9fafb",
+        }}
+      >
+        <Text style={{ fontSize: 16, color: "#6b7280", fontWeight: "600" }}>
+          No PR Selected
+        </Text>
+        <Text style={{ fontSize: 13, color: "#9ca3af", marginTop: 8 }}>
+          Please select a PR from the Procurement view to process its
+          canvassing.
+        </Text>
+      </View>
+    );
+  }
+
+  const pr: CanvassingPR = {
+    prNo: prNoValue,
+    date: "",
+    officeSection: "",
+    responsibilityCode: "",
+    purpose: "",
+    isHighValue: false,
+    items: [],
+  };
 
   // If explicitly opening AAA stage for BAC, hydrate session meta and render AAAView
   const [aaaProps, setAAAProps] = React.useState<{

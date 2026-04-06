@@ -40,7 +40,7 @@ import {
   type POItemRow,
   type PORow,
 } from "../../lib/supabase/po";
-import { fetchPurchaseRequests } from "../../lib/supabase/pr";
+import { fetchPRIdByNo, fetchPurchaseRequests } from "../../lib/supabase/pr";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -66,6 +66,8 @@ interface PRSuggestion {
   fund_cluster: string | null;
   app_name: string | null;
   app_desig: string | null;
+  /** status_id from public.status — only PRs at 11 (AAA Issuance) are eligible */
+  status_id: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -274,6 +276,12 @@ function PRPickerModal({
               <Text className="text-[16px] font-black text-white mt-0.5">
                 Link PR to this PO
               </Text>
+              <View className="flex-row items-center gap-1.5 mt-1.5 bg-white/10 self-start rounded-full px-2.5 py-0.5">
+                <View className="w-1.5 h-1.5 rounded-full bg-amber-300" />
+                <Text className="text-[10.5px] font-bold text-white/70">
+                  AAA Issuance (status 11) only
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               onPress={onDismiss}
@@ -320,11 +328,17 @@ function PRPickerModal({
         ) : filtered.length === 0 ? (
           <View className="flex-1 items-center justify-center gap-2 px-8">
             <MaterialIcons name="inbox" size={36} color="#d1d5db" />
-            <Text className="text-[13px] text-gray-400 text-center">
-              {query
-                ? "No PRs match your search."
-                : "No purchase requests found."}
+            <Text className="text-[13px] font-semibold text-gray-500 text-center">
+              {query ? "No PRs match your search." : "No eligible PRs found."}
             </Text>
+            {!query && (
+              <Text className="text-[11.5px] text-gray-400 text-center leading-5">
+                Only PRs at{" "}
+                <Text className="font-bold text-amber-600">AAA Issuance</Text>{" "}
+                (status 11) can be linked to a PO. Ask BAC to complete the AAA
+                step first.
+              </Text>
+            )}
           </View>
         ) : (
           <FlatList
@@ -491,6 +505,8 @@ export default function CreatePOModal({
   const [prSuggestions, setPrSuggestions] = useState<PRSuggestion[]>([]);
   const [prLoadingDB, setPrLoadingDB] = useState(false);
   const [linkedPrNo, setLinkedPrNo] = useState<string | null>(null);
+  /** The purchase_requests.id of the PR chosen from DB — stored as pr_id on insert */
+  const [linkedPrId, setLinkedPrId] = useState<string | null>(null);
 
   // ── PO header fields ────────────────────────────────────────────────────
   const [poNo, setPoNo] = useState("");
@@ -552,8 +568,12 @@ export default function CreatePOModal({
     setStage("picker");
     try {
       const rows = await fetchPurchaseRequests();
+      // Only PRs at status_id 11 (AAA Issuance) are eligible to be linked to a PO
+      const eligible = (rows ?? []).filter(
+        (r: any) => Number(r.status_id) === 11,
+      );
       setPrSuggestions(
-        (rows ?? []).map((r: any) => ({
+        eligible.map((r: any) => ({
           id: String(r.id),
           pr_no: r.pr_no ?? "",
           office_section: r.office_section ?? null,
@@ -562,6 +582,7 @@ export default function CreatePOModal({
           fund_cluster: r.fund_cluster ?? null,
           app_name: r.app_name ?? null,
           app_desig: r.app_desig ?? null,
+          status_id: Number(r.status_id) ?? null,
         })),
       );
     } catch (e: any) {
@@ -575,6 +596,7 @@ export default function CreatePOModal({
   const handleSelectPR = (pr: PRSuggestion) => {
     setPrNo(pr.pr_no);
     setLinkedPrNo(pr.pr_no);
+    setLinkedPrId(pr.id); // ← store the DB id for pr_id FK on insert
     if (pr.office_section) setOfficeSection(pr.office_section);
     if (pr.fund_cluster) setFundCluster(pr.fund_cluster);
     if (pr.app_name) setOfficialName(pr.app_name);
@@ -584,6 +606,7 @@ export default function CreatePOModal({
 
   const handleEnterManually = () => {
     setLinkedPrNo(null);
+    setLinkedPrId(null);
     setStage("form");
   };
 
@@ -702,21 +725,27 @@ export default function CreatePOModal({
     setSaving(true);
     setError(null);
 
-    const lineItems = items.map((it) => ({
-      stock_no: it.stock_no ?? null,
-      unit: it.unit,
-      description: it.description,
-      quantity: Number(it.quantity) || 0,
-      unit_price: Number(it.unit_price) || 0,
-      subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
-    }));
-
     try {
+      // If entered manually (linkedPrId is null), try to resolve the ID from DB
+      let finalPrId = linkedPrId;
+      if (!finalPrId && prNo.trim()) {
+        finalPrId = await fetchPRIdByNo(prNo.trim());
+      }
+
+      const lineItems = items.map((it) => ({
+        stock_no: it.stock_no ?? null,
+        unit: it.unit,
+        description: it.description,
+        quantity: Number(it.quantity) || 0,
+        unit_price: Number(it.unit_price) || 0,
+        subtotal: (Number(it.quantity) || 0) * (Number(it.unit_price) || 0),
+      }));
+
       const inserted = await insertPurchaseOrder(
         {
           po_no: poNo || null,
           pr_no: prNo || null,
-          pr_id: null,
+          pr_id: finalPrId ?? null, // ← Resolved ID
           supplier: supplier || null,
           address: address || null,
           tin: tin || null,
@@ -756,6 +785,7 @@ export default function CreatePOModal({
     setTab("create");
     setStage("prompt");
     setLinkedPrNo(null);
+    setLinkedPrId(null);
     setPoNo("");
     setPrNo("");
     setSupplier("");

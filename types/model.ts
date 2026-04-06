@@ -34,14 +34,18 @@ export function toPRDisplay(row: PRRow): PRDisplay {
     purpose: row.purpose,
     totalCost: row.total_cost,
     statusId: row.status_id,
-    date: created.toLocaleDateString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric" }),
+    date: created.toLocaleDateString("en-PH", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+    }),
   };
 }
 
 // Map DB line item → display line item
 export function toLineItemDisplay(item: PRItemRow): PRLineItem {
   return {
-    stock_no: item.stock_no,
+    stock_no: item.stock_no ?? "",
     unit: item.unit,
     description: item.description,
     quantity: item.quantity,

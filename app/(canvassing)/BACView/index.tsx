@@ -60,16 +60,15 @@ import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
 import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
 import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
 import { useAuth } from "../../AuthContext";
+import PRReceptionStep from "./PRReceptionStep";
 import RFQReviewModal from "./RFQReviewModal";
 
 /* Import modularized components */
 import {
   AssignmentList,
   CompletedBanner,
-  ItemsTable,
   StageStrip,
-  StepHeader,
-  StepNav,
+  StepNav
 } from "./components";
 import { CANVASS_ROLE_IDS, PROC_MODES, STAGE_ORDER } from "./constants";
 import { Banner, Card, Divider, Field, Input, PickerField } from "./ui";
@@ -876,72 +875,31 @@ export default function BACView({
 
         {/* ── Step 6: PR Received ── */}
         {stage === "pr_received" && (
-          <View>
-            <StepHeader
-              stage="pr_received"
-              title="PR Received from PARPO"
-              desc="Assign a BAC canvass number to acknowledge receipt of the approved PR."
-            />
-            {isViewingCompleted ? (
-              <CompletedBanner
-                label={`BAC Canvass No. ${bacNo} recorded.`}
-                onResubmit={() =>
-                  setDone((prev) => {
-                    const n = new Set(prev);
-                    n.delete("pr_received");
-                    return n;
-                  })
-                }
-              />
-            ) : (
-              <Banner
-                type="info"
-                text="PR has been approved by PARPO. Assign a BAC canvass number to begin."
-              />
-            )}
-            <Card>
-              <View className="px-4 pt-3 pb-2">
-                <Divider label="BAC Acknowledgement" />
-                <Field label="BAC Canvass No." required>
-                  <Input
-                    value={bacNo}
-                    onChange={setBacNo}
-                    placeholder="e.g. BAC-2026-001"
-                  />
-                </Field>
-                <Field label="Date Received">
-                  <Input
-                    value={new Date().toLocaleDateString("en-PH")}
-                    readonly
-                  />
-                </Field>
-              </View>
-            </Card>
-            <ItemsTable items={liveItems} />
-            <StepNav
-              stage={stage}
-              done={done}
-              onPrev={goToStage}
-              onNext={goToStage}
-              canSubmit={!isViewingCompleted && !!bacNo}
-              submitLabel="Acknowledged → Release Canvass"
-              onSubmit={handleStep6}
-            />
-          </View>
+          <PRReceptionStep
+            pr={pr}
+            liveItems={liveItems}
+            bacNo={bacNo}
+            onBacNoChange={setBacNo}
+            currentUser={currentUser}
+            isCompleted={isViewingCompleted}
+            onResubmit={() =>
+              setDone((prev) => {
+                const n = new Set(prev);
+                n.delete("pr_received");
+                return n;
+              })
+            }
+            onForward={handleStep6}
+            stage={stage}
+            done={done}
+            onPrev={goToStage}
+            onNext={goToStage}
+          />
         )}
 
         {/* ── Step 7: Release Canvass ── */}
         {stage === "release_canvass" && (
           <View>
-            <StepHeader
-              stage="release_canvass"
-              title="Release Canvass to Divisions"
-              desc="Release canvass sheets (RFQs) to the End Users and Canvassers per division."
-            />
-            <Banner
-              type="warning"
-              text="Verify availability before releasing. End Users (role 6) and Canvassers (role 7) are listed."
-            />
             <Card>
               <View className="px-4 pt-3 pb-2">
                 <Divider label="Canvassers & End Users by Division" />
@@ -987,7 +945,6 @@ export default function BACView({
                             {user.division_name ?? "—"}
                           </Text>
                         </View>
-
                         <View className="flex-1 px-2">
                           <Text
                             className="text-[12.5px] text-gray-700 font-semibold"
@@ -1005,7 +962,6 @@ export default function BACView({
                             </Text>
                           </View>
                         </View>
-
                         <View
                           className={`px-2 py-0.5 rounded-full mr-2 ${
                             st.status === "pending"
@@ -1031,7 +987,6 @@ export default function BACView({
                                 : "Returned"}
                           </Text>
                         </View>
-
                         {st.status !== "returned" && (
                           <TouchableOpacity
                             onPress={async () =>
@@ -1057,7 +1012,8 @@ export default function BACView({
                 )}
               </View>
             </Card>
-            {assignments.length > 0 || assignmentsLoading ? (
+
+            {(assignments.length > 0 || assignmentsLoading) && (
               <Card>
                 <View className="px-4 pt-3 pb-3">
                   <Divider label="Recorded Assignments" />
@@ -1068,10 +1024,11 @@ export default function BACView({
                   />
                 </View>
               </Card>
-            ) : null}
+            )}
+
             {isViewingCompleted && (
               <CompletedBanner
-                label="Canvass sheets released. Waiting for returns."
+                label="Canvass sheets released."
                 onResubmit={() =>
                   setDone((prev) => {
                     const n = new Set(prev);
@@ -1081,6 +1038,7 @@ export default function BACView({
                 }
               />
             )}
+
             <StepNav
               stage={stage}
               done={done}
@@ -1096,13 +1054,6 @@ export default function BACView({
         {/* ── Step 8: Collect & Encode Quotations ── */}
         {stage === "collect_canvass" && (
           <View>
-            <StepHeader
-              stage="collect_canvass"
-              title="Collect & Encode Canvass"
-              desc="Collect returned RFQ forms and encode each supplier's quoted prices."
-            />
-
-            {/* ── Returned canvassers banner + Review button ── */}
             {(() => {
               const returnedCount = assignments.filter(
                 (a) => a.status === "returned",
@@ -1225,10 +1176,7 @@ export default function BACView({
                     {filteredEntries.length > 0 && (
                       <View
                         className="flex-row justify-end mt-1.5 px-3 pt-2"
-                        style={{
-                          borderTopWidth: 1,
-                          borderTopColor: "#d1fae5",
-                        }}
+                        style={{ borderTopWidth: 1, borderTopColor: "#d1fae5" }}
                       >
                         <Text className="text-[11px] font-bold text-gray-500 mr-3">
                           Grand Total
@@ -1248,6 +1196,7 @@ export default function BACView({
                 </Card>
               ) : null;
             })()}
+
             <Card>
               <View className="px-4 pt-3 pb-3">
                 <Divider label="Supplier Quotations" />
@@ -1398,6 +1347,7 @@ export default function BACView({
                 </TouchableOpacity>
               </View>
             </Card>
+
             {isViewingCompleted && (
               <CompletedBanner
                 label="Supplier quotations encoded."
@@ -1410,6 +1360,7 @@ export default function BACView({
                 }
               />
             )}
+
             <View className="flex-row justify-center mb-3">
               <TouchableOpacity
                 onPress={() => setPreviewOpen(true)}
@@ -1422,6 +1373,7 @@ export default function BACView({
                 </Text>
               </TouchableOpacity>
             </View>
+
             <StepNav
               stage={stage}
               done={done}
@@ -1437,11 +1389,6 @@ export default function BACView({
         {/* ── Step 9: BAC Resolution ── */}
         {stage === "bac_resolution" && (
           <View>
-            <StepHeader
-              stage="bac_resolution"
-              title="BAC Resolution"
-              desc="Prepare the BAC Resolution and collect all member signatures."
-            />
             <Card>
               <View className="px-4 pt-3 pb-2">
                 <Divider label="Resolution Details" />
@@ -1471,13 +1418,6 @@ export default function BACView({
                 </Field>
               </View>
             </Card>
-
-            {!allSigned && (
-              <Banner
-                type="warning"
-                text="All BAC members and PARPO II must sign before proceeding."
-              />
-            )}
 
             <Card>
               <View className="px-4 pt-3 pb-2">
@@ -1552,7 +1492,10 @@ export default function BACView({
                                     signed: true,
                                     signedAt: new Date().toLocaleTimeString(
                                       "en-PH",
-                                      { hour: "2-digit", minute: "2-digit" },
+                                      {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
                                     ),
                                   },
                             ),
@@ -1590,7 +1533,6 @@ export default function BACView({
               )
             )}
 
-            {/* Preview Resolution button — visible once resolution no. is filled */}
             {!!resNo && (
               <View className="flex-row justify-center mb-3">
                 <TouchableOpacity

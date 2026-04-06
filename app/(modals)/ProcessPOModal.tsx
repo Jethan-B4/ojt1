@@ -612,16 +612,18 @@ function FlagButton({
 
 async function insertPORemark(
   poId: string,
+  prId: string | null,
   userId: string | number,
-  note: string,
+  remark: string,
 ): Promise<void> {
-  const { error } = await supabase.from("po_remarks").insert({
+  const { error } = await supabase.from("remarks").insert({
     po_id: poId,
+    pr_id: prId,
     user_id: String(userId),
-    note,
+    remark,
     created_at: new Date().toISOString(),
   });
-  // Non-fatal: table may not exist yet; log but don't throw
+  // Non-fatal: log but don't throw
   if (error) console.warn("insertPORemark:", error.message);
 }
 
@@ -674,7 +676,12 @@ function SupplyModal({
     setSaving(true);
     try {
       if (remarks.trim() && currentUser?.id) {
-        await insertPORemark(record.id, currentUser.id, remarks.trim());
+        await insertPORemark(
+          record.id,
+          header?.pr_id ?? null,
+          currentUser.id,
+          remarks.trim(),
+        );
       }
       await updatePOStatus(record.id, nextStatusId);
       onProcessed(record.id, nextStatusId);
@@ -820,7 +827,12 @@ function AdminModal({
     setSaving(true);
     try {
       if (remarks.trim() && currentUser?.id) {
-        await insertPORemark(record.id, currentUser.id, remarks.trim());
+        await insertPORemark(
+          record.id,
+          header?.pr_id ?? null,
+          currentUser.id,
+          remarks.trim(),
+        );
       }
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);

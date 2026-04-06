@@ -43,6 +43,21 @@ export async function fetchCanvassablePRsByDivision(divisionId: number) {
   return data;
 }
 
+export async function fetchRemarksByPR(prId: string | number) {
+  const { data, error } = await supabase
+    .from("remarks")
+    .select(
+      "id, pr_id, remark, status_flag_id, created_at, users(fullname), status_flag(*)",
+    )
+    .eq("pr_id", prId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    username: r.users?.fullname ?? null,
+  }));
+}
+
 export async function fetchLatestRemarkByPR(prId: string | number) {
   const { data, error } = await supabase
     .from("remarks")

@@ -24,7 +24,6 @@ import type { RemarkRow } from "@/lib/supabase-types";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
   Modal,
   Platform,
   Pressable,
@@ -36,6 +35,9 @@ import {
   View,
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
+import PORemarkSheet, {
+  type PORemarkSheetRecord,
+} from "../(components)/PORemarkSheet";
 import CreatePOModal, { type POCreatePayload } from "../(modals)/CreatePOModal";
 import EditPOModal, {
   type POEditPayload,
@@ -63,6 +65,8 @@ export interface PORecord {
   id: string;
   poNo: string;
   prNo: string;
+  /** purchase_orders.pr_id — UUID of the linked purchase_requests row, if any */
+  prId: string | null;
   supplier: string;
   officeSection: string;
   totalAmount: number;
@@ -155,6 +159,7 @@ function rowToPORecord(row: PORow): PORecord {
     id: String(row.id),
     poNo: row.po_no ?? "—",
     prNo: row.pr_no ?? "—",
+    prId: row.pr_id ?? null,
     supplier: row.supplier ?? "—",
     officeSection: row.office_section ?? "—",
     totalAmount: Number(row.total_amount) || 0,
@@ -885,6 +890,12 @@ export default function POModule() {
   const [moreRecord, setMoreRecord] = useState<PORecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
 
+  // PORemarkSheet state
+  const [remarkRecord, setRemarkRecord] = useState<PORemarkSheetRecord | null>(
+    null,
+  );
+  const [remarkVisible, setRemarkVisible] = useState(false);
+
   // ── Permissions ────────────────────────────────────────────────────────────
 
   // Roles that can see every PO regardless of division
@@ -950,6 +961,8 @@ export default function POModule() {
           ? r
           : {
               ...r,
+              prNo: payload.prNo,
+              prId: payload.prId,
               supplier: payload.supplier,
               officeSection: payload.officeSection,
               totalAmount: payload.totalAmount,
@@ -1182,15 +1195,33 @@ export default function POModule() {
           setMoreRecord(null);
         }}
         onRemarks={() => {
-          // TODO: wire to your RemarkSheet component the same way PRModule does:
-          // setRemarkRecord(moreRecord); setRemarkVisible(true);
-          Alert.alert("Remarks", `Opening remarks for ${moreRecord?.poNo}`);
+          if (moreRecord) {
+            setRemarkRecord({
+              id: moreRecord.id,
+              poNo: moreRecord.poNo,
+              prNo: moreRecord.prNo,
+              linkedPrId: moreRecord.prId,
+              supplier: moreRecord.supplier,
+            });
+            setRemarkVisible(true);
+          }
         }}
         onEdit={() => {
           if (moreRecord) {
             setEditRecord({ id: moreRecord.id, poNo: moreRecord.poNo });
             setEditVisible(true);
           }
+        }}
+      />
+
+      {/* PORemarkSheet — unified PO + linked PR remarks */}
+      <PORemarkSheet
+        visible={remarkVisible}
+        record={remarkRecord}
+        currentUser={currentUser}
+        onClose={() => {
+          setRemarkVisible(false);
+          setRemarkRecord(null);
         }}
       />
 
