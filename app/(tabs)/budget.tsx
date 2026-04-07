@@ -249,9 +249,16 @@ export default function BudgetScreen() {
         <View
           className={`self-start mt-2.5 px-2.5 py-1 rounded-lg ${canEdit ? "bg-emerald-700" : "bg-white/10"}`}
         >
-          <Text className="text-[10px] font-bold text-white/80 uppercase tracking-wide">
-            {canEdit ? "✏️ Edit Access" : "👁 Read-Only"}
-          </Text>
+          <View className="flex-row items-center gap-1">
+            <MaterialIcons
+              name={canEdit ? "edit" : "visibility"}
+              size={12}
+              color="rgba(255,255,255,0.85)"
+            />
+            <Text className="text-[10px] font-bold text-white/80 uppercase tracking-wide">
+              {canEdit ? "Edit Access" : "Read-Only"}
+            </Text>
+          </View>
         </View>
       </View>
 

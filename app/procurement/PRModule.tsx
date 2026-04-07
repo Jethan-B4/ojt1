@@ -225,7 +225,7 @@ const SearchBar: React.FC<{
 }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
-      <Text className="text-gray-400 text-sm">🔍</Text>
+      <MaterialIcons name="search" size={16} color="#9ca3af" />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -236,7 +236,7 @@ const SearchBar: React.FC<{
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChange("")} hitSlop={8}>
-          <Text className="text-gray-400 text-sm">✕</Text>
+          <MaterialIcons name="close" size={16} color="#9ca3af" />
         </TouchableOpacity>
       )}
     </View>
@@ -262,9 +262,7 @@ const SearchBar: React.FC<{
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
         style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
       >
-        <Text className="text-white text-[18px] leading-none font-light">
-          +
-        </Text>
+        <MaterialIcons name="add" size={18} color="#ffffff" />
         <Text className="text-white text-[13px] font-bold">Create</Text>
       </Pressable>
     )}
@@ -1167,7 +1165,7 @@ export default function PRModule({
         </Text>
         <View className="flex-row items-center gap-1.5">
           {[
-            { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
+            { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
             ...Array.from(
               { length: Math.min(5, totalPages) },
               (_, i) => i + 1,
@@ -1178,7 +1176,7 @@ export default function PRModule({
               active: p === page,
             })),
             {
-              label: "›",
+              label: "next",
               page: Math.min(totalPages, page + 1),
               disabled: page === totalPages,
             },
@@ -1196,17 +1194,43 @@ export default function PRModule({
                     : "bg-white border-gray-200"
               }`}
             >
-              <Text
-                className={`text-[12px] font-bold ${
-                  (btn as any).active
-                    ? "text-white"
-                    : btn.disabled
-                      ? "text-gray-300"
-                      : "text-gray-500"
-                }`}
-              >
-                {btn.label}
-              </Text>
+              {btn.label === "prev" ? (
+                <MaterialIcons
+                  name="chevron-left"
+                  size={18}
+                  color={
+                    (btn as any).active
+                      ? "#ffffff"
+                      : btn.disabled
+                        ? "#d1d5db"
+                        : "#6b7280"
+                  }
+                />
+              ) : btn.label === "next" ? (
+                <MaterialIcons
+                  name="chevron-right"
+                  size={18}
+                  color={
+                    (btn as any).active
+                      ? "#ffffff"
+                      : btn.disabled
+                        ? "#d1d5db"
+                        : "#6b7280"
+                  }
+                />
+              ) : (
+                <Text
+                  className={`text-[12px] font-bold ${
+                    (btn as any).active
+                      ? "text-white"
+                      : btn.disabled
+                        ? "text-gray-300"
+                        : "text-gray-500"
+                  }`}
+                >
+                  {btn.label}
+                </Text>
+              )}
             </TouchableOpacity>
           ))}
         </View>

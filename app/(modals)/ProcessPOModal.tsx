@@ -3,13 +3,14 @@
  *
  * Roles that can process POs:
  *   role_id 1  → Admin   — can advance any PO step; override capability
- *   role_id 8  → Supply  — primary processor for the PO lifecycle
+ *   role_id 4  → Budget  — processes ORS at status 14 (ORS Creation → ORS Processing)
+ *   role_id 8  → Supply  — primary processor: creates and allocates PO (12 → 13 → 14)
  *
  * PO Status flow (matches public.status table):
- *   12 → PO (Reception)   [starting status on create]
- *   13 → PO (Create)
- *   14 → ORS Processing
- *   … future statuses as workflow grows
+ *   12 → PO (Creation)      [starting status on create — Supply logs & creates PO]
+ *   13 → PO (Allocation)    [Supply assigns PO # and prepares the document]
+ *   14 → ORS (Creation)     [Supply forwards to Budget; Budget prepares ORS]
+ *   15 → ORS (Processing)   [Budget officer signs and finalises ORS]
  *
  * Pattern mirrors ProcessPRModal: each role gets its own inner modal
  * component; the root export selects the right one.
@@ -32,6 +33,7 @@ import {
 import { supabase } from "../../lib/supabase/client";
 import {
   fetchPOWithItemsById,
+  updatePO,
   updatePOStatus,
   type PORow,
 } from "../../lib/supabase/po";
@@ -61,35 +63,43 @@ interface ProcessPOModalProps {
  * Only PO-lifecycle statuses are listed here.
  */
 export const PO_STATUS_LABELS: Record<number, string> = {
-  12: "PO (Reception)",
-  13: "PO (Create)",
-  14: "ORS Processing",
+  12: "PO (Creation)",
+  13: "PO (Allocation)",
+  14: "ORS (Creation)",
+  15: "ORS (Processing)",
 };
 
 /**
  * The natural next status for each PO status_id.
- * Supply and Admin follow this linear flow.
  */
 const PO_NEXT_STATUS: Record<number, number> = {
   12: 13,
   13: 14,
+  14: 15,
 };
 
 /**
  * Status IDs that Admin (role_id 1) can process.
- * Admin can advance any PO status in the PO lifecycle.
  */
-const ADMIN_PROCESSABLE = [12, 13, 14];
+const ADMIN_PROCESSABLE = [12, 13, 14, 15];
 
 /**
  * Status IDs that Supply (role_id 8) can process.
+ * Supply creates the PO (12→13) and allocates it (13→14), then forwards to Budget.
  */
 const SUPPLY_PROCESSABLE = [12, 13];
+
+/**
+ * Status IDs that Budget (role_id 4) can process.
+ * Budget prepares and processes the ORS (14→15).
+ */
+const BUDGET_PROCESSABLE = [14];
 
 /** Returns true if the given role can process a PO at the given statusId. */
 export function canRoleProcessPO(roleId: number, statusId: number): boolean {
   if (roleId === 1) return ADMIN_PROCESSABLE.includes(statusId);
   if (roleId === 8) return SUPPLY_PROCESSABLE.includes(statusId);
+  if (roleId === 4) return BUDGET_PROCESSABLE.includes(statusId);
   return false;
 }
 
@@ -103,6 +113,11 @@ const ROLE_META: Record<
     title: "Admin — PO Override",
     accentColor: "#1d4ed8",
     stepLabel: "Admin",
+  },
+  4: {
+    title: "Budget — ORS Processing",
+    accentColor: "#b45309",
+    stepLabel: "Budget",
   },
   8: {
     title: "Supply — PO Processing",
@@ -275,6 +290,32 @@ function ModalHeader({
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Current status badge */}
+      <View className="flex-row items-center gap-2 mt-3">
+        <View className="bg-white/10 rounded-lg px-2.5 py-1 flex-row items-center gap-1.5">
+          <View className="w-1.5 h-1.5 rounded-full bg-white/60" />
+          <Text className="text-[10.5px] font-bold text-white/80">
+            {PO_STATUS_LABELS[statusId] ?? `Status ${statusId}`}
+          </Text>
+        </View>
+        {PO_NEXT_STATUS[statusId] && (
+          <>
+            <MaterialIcons
+              name="arrow-forward"
+              size={12}
+              color="rgba(255,255,255,0.4)"
+            />
+            <View className="bg-white/20 rounded-lg px-2.5 py-1 flex-row items-center gap-1.5">
+              <View className="w-1.5 h-1.5 rounded-full bg-white" />
+              <Text className="text-[10.5px] font-bold text-white">
+                {PO_STATUS_LABELS[PO_NEXT_STATUS[statusId]] ??
+                  `Status ${PO_NEXT_STATUS[statusId]}`}
+              </Text>
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 }
@@ -359,11 +400,13 @@ function StyledInput({
   onChangeText,
   placeholder,
   multiline,
+  keyboardType,
 }: {
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  keyboardType?: "default" | "numeric" | "decimal-pad";
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -373,6 +416,7 @@ function StyledInput({
       placeholder={placeholder}
       placeholderTextColor="#9ca3af"
       multiline={multiline}
+      keyboardType={keyboardType}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       className={`rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border bg-white ${focused ? "border-emerald-500" : "border-gray-200"} ${multiline ? "min-h-[80px]" : ""}`}
@@ -630,8 +674,9 @@ async function insertPORemark(
 // ─── Supply Modal (role_id 8) ─────────────────────────────────────────────────
 
 /**
- * Supply processes POs at status 12 (Reception) → 13 (Create)
- * and status 13 (Create) → 14 (ORS Processing).
+ * Supply processes POs through two steps:
+ *   status 12 (PO Creation)   → 13 (PO Allocation): Log receipt & begin PO document
+ *   status 13 (PO Allocation) → 14 (ORS Creation):  Assign PO # and forward to Budget
  */
 function SupplyModal({
   visible,
@@ -666,9 +711,17 @@ function SupplyModal({
     : null;
 
   const getConfirmLabel = () => {
-    if (currentStatusId === 12) return "Receive & Forward to Create";
-    if (currentStatusId === 13) return "Mark as ORS Processing";
+    if (currentStatusId === 12) return "Log Receipt & Start PO Creation";
+    if (currentStatusId === 13) return "Allocate PO # & Forward to Budget";
     return "Advance PO";
+  };
+
+  const getStepDescription = () => {
+    if (currentStatusId === 12)
+      return "Confirm receipt of the Abstract of Awards from BAC. Log the PO and begin document creation.";
+    if (currentStatusId === 13)
+      return "Assign a Purchase Order number, finalise the PO document, then forward to Budget for ORS preparation.";
+    return "";
   };
 
   const handleAdvance = async () => {
@@ -722,28 +775,20 @@ function SupplyModal({
             >
               {header && <POSummaryCard header={header} />}
 
-              {/* Step indicator */}
-              <View className="bg-white rounded-2xl border border-gray-200 p-4 mb-4 flex-row items-center gap-3">
-                <View
-                  className="w-9 h-9 rounded-full items-center justify-center"
-                  style={{ backgroundColor: meta.accentColor + "18" }}
-                >
+              {/* Step description */}
+              {getStepDescription() ? (
+                <View className="flex-row items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 mb-4">
                   <MaterialIcons
-                    name="arrow-forward"
-                    size={18}
-                    color={meta.accentColor}
+                    name="info-outline"
+                    size={16}
+                    color="#065f46"
+                    style={{ marginTop: 1 }}
                   />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-[10.5px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">
-                    Advancing from → to
-                  </Text>
-                  <Text className="text-[13px] font-bold text-gray-700">
-                    {currentLabel}
-                    {nextLabel ? ` → ${nextLabel}` : ""}
+                  <Text className="flex-1 text-[12px] text-emerald-800 leading-5">
+                    {getStepDescription()}
                   </Text>
                 </View>
-              </View>
+              ) : null}
 
               <SectionLabel>Processing Details</SectionLabel>
               <Field label="Status Flag">
@@ -756,7 +801,11 @@ function SupplyModal({
                 <StyledInput
                   value={remarks}
                   onChangeText={setRemarks}
-                  placeholder="e.g. PO received and logged. Forwarding for creation."
+                  placeholder={
+                    currentStatusId === 12
+                      ? "e.g. PO received from BAC. Proceeding with creation."
+                      : "e.g. PO-2026-001 assigned. Forwarding to Budget for ORS."
+                  }
                   multiline
                 />
               </Field>
@@ -783,11 +832,232 @@ function SupplyModal({
   );
 }
 
+// ─── Budget Modal (role_id 4) ─────────────────────────────────────────────────
+
+/**
+ * Budget processes POs at status 14 (ORS Creation) → 15 (ORS Processing).
+ *
+ * Steps performed by Budget (from swimlane Phase 2):
+ *   Step 15: Receive PO from Supply and confirm budget allocation
+ *   Step 16: Prepare ORS — fill in ORS number, date, and amount
+ *   Step 17: Assign ORS number and return for recording
+ *   Step 18: Budget officer signature and final ORS approval
+ *
+ * The modal writes ors_no, ors_date, ors_amount, and funds_available
+ * directly to the purchase_orders row, then advances status to 15.
+ */
+function BudgetModal({
+  visible,
+  record,
+  onClose,
+  onProcessed,
+}: Omit<ProcessPOModalProps, "roleId">) {
+  const meta = ROLE_META[4];
+  const { currentUser } = useAuth();
+  const { header, loading } = usePOFetch(visible, record, onClose);
+
+  const [orsNo, setOrsNo] = useState("");
+  const [orsDate, setOrsDate] = useState("");
+  const [orsAmount, setOrsAmount] = useState("");
+  const [fundsAvailable, setFundsAvailable] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setOrsNo("");
+      setOrsDate(new Date().toISOString().slice(0, 10));
+      setOrsAmount("");
+      setFundsAvailable("");
+      setRemarks("");
+      setStatusFlag(null);
+    }
+  }, [visible]);
+
+  // Pre-fill from existing PO data when loaded
+  useEffect(() => {
+    if (!header) return;
+    if (header.ors_no) setOrsNo(header.ors_no);
+    if (header.ors_date) setOrsDate(header.ors_date);
+    if (header.ors_amount) setOrsAmount(String(header.ors_amount));
+    if (header.funds_available) setFundsAvailable(header.funds_available);
+  }, [header]);
+
+  if (!record) return null;
+
+  const nextStatusId = PO_NEXT_STATUS[14]; // → 15
+  const isValid = orsNo.trim().length > 0 && orsDate.trim().length > 0;
+
+  const handleProcess = async () => {
+    if (!record || !isValid) return;
+    setSaving(true);
+    try {
+      const parsedAmount = parseFloat(orsAmount.replace(/,/g, "")) || null;
+
+      // Write ORS details to the PO header row
+      await updatePO(record.id, {
+        ors_no: orsNo.trim(),
+        ors_date: orsDate.trim(),
+        ors_amount: parsedAmount,
+        funds_available: fundsAvailable.trim() || null,
+        status_id: nextStatusId,
+      });
+
+      // Record the remark / Budget officer signature note
+      const remarkText = [
+        `ORS ${orsNo.trim()} prepared and signed.`,
+        fundsAvailable.trim()
+          ? `Funds available: ${fundsAvailable.trim()}.`
+          : "",
+        remarks.trim(),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      if (remarkText && currentUser?.id) {
+        await insertPORemark(
+          record.id,
+          header?.pr_id ?? null,
+          currentUser.id,
+          remarkText,
+        );
+      }
+
+      onProcessed(record.id, nextStatusId);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not process ORS.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <KeyboardAvoidingView
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ModalHeader
+            meta={meta}
+            poNo={record.poNo}
+            statusId={14}
+            onClose={onClose}
+          />
+          {loading ? (
+            <LoadingBody color={meta.accentColor} />
+          ) : (
+            <ScrollView
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {header && <POSummaryCard header={header} />}
+
+              {/* Workflow hint */}
+              <View className="flex-row items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-4">
+                <MaterialIcons
+                  name="account-balance"
+                  size={16}
+                  color="#92400e"
+                  style={{ marginTop: 1 }}
+                />
+                <Text className="flex-1 text-[12px] text-amber-800 leading-5">
+                  Prepare the Obligation Request and Status (ORS). Assign an ORS
+                  number, confirm funds availability, and sign off to forward to
+                  Accounting.
+                </Text>
+              </View>
+
+              <SectionLabel>ORS Details</SectionLabel>
+
+              <Field label="ORS Number" required>
+                <StyledInput
+                  value={orsNo}
+                  onChangeText={setOrsNo}
+                  placeholder="e.g. ORS-2026-0042"
+                />
+              </Field>
+
+              <Field label="ORS Date" required>
+                <StyledInput
+                  value={orsDate}
+                  onChangeText={setOrsDate}
+                  placeholder="YYYY-MM-DD"
+                />
+              </Field>
+
+              <Field label="ORS Amount">
+                <StyledInput
+                  value={orsAmount}
+                  onChangeText={setOrsAmount}
+                  placeholder="e.g. 150000.00"
+                  keyboardType="decimal-pad"
+                />
+              </Field>
+
+              <Field label="Funds Available / Allotment Reference">
+                <StyledInput
+                  value={fundsAvailable}
+                  onChangeText={setFundsAvailable}
+                  placeholder="e.g. Available under MFO 2 — ARBDSP"
+                />
+              </Field>
+
+              <SectionLabel>Budget Officer Sign-off</SectionLabel>
+
+              <Field label="Status Flag">
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
+                />
+              </Field>
+
+              <Field label="Sign-off Notes">
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder="e.g. ORS signed and approved. Forwarding to Accounting."
+                  multiline
+                />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleProcess}
+            confirmLabel="Sign ORS & Forward to Accounting"
+            confirmingLabel="Processing…"
+            disabled={!isValid || loading}
+            saving={saving}
+            color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
+    </>
+  );
+}
+
 // ─── Admin Modal (role_id 1) ──────────────────────────────────────────────────
 
 /**
  * Admin can force-advance a PO to any target status, or return it.
- * A free-form target status input is provided for flexibility.
+ * A free-form target status selector is provided for full flexibility.
  */
 function AdminModal({
   visible,
@@ -950,6 +1220,7 @@ export default function ProcessPOModal({
   ...rest
 }: ProcessPOModalProps) {
   if (roleId === 1) return <AdminModal {...rest} />;
+  if (roleId === 4) return <BudgetModal {...rest} />;
   if (roleId === 8) return <SupplyModal {...rest} />;
   return null;
 }

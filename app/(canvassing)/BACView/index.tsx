@@ -667,14 +667,12 @@ export default function BACView({
                 hitSlop={10}
                 className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
               >
-                <Text className="text-white text-[20px] leading-none font-light">
-                  ←
-                </Text>
+                <MaterialIcons name="arrow-back" size={18} color="#ffffff" />
               </TouchableOpacity>
             )}
             <View>
               <Text className="text-[9.5px] font-semibold tracking-widest uppercase text-white/40">
-                DAR · Procurement › Canvassing
+                DAR · Procurement · Canvassing
               </Text>
               <Text className="text-[15px] font-extrabold text-white">
                 Canvassing · BAC
@@ -682,9 +680,12 @@ export default function BACView({
             </View>
           </View>
           <View className="bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
-            <Text className="text-[10.5px] font-bold text-amber-800">
-              ⏱ 7-day window
-            </Text>
+            <View className="flex-row items-center gap-1">
+              <MaterialIcons name="schedule" size={14} color="#92400e" />
+              <Text className="text-[10.5px] font-bold text-amber-800">
+                7-day window
+              </Text>
+            </View>
           </View>
         </View>
         <StageStrip current={stage} completed={done} onNavigate={goToStage} />
@@ -1045,7 +1046,7 @@ export default function BACView({
               onPrev={goToStage}
               onNext={goToStage}
               canSubmit={!isViewingCompleted}
-              submitLabel="Released → Collect Canvass"
+              submitLabel="Released · Collect Canvass"
               onSubmit={handleStep8}
             />
           </View>
@@ -1218,7 +1219,7 @@ export default function BACView({
                           hitSlop={8}
                           className="p-1.5 rounded-lg border border-gray-200"
                         >
-                          <Text className="text-[12px] text-red-500">✕</Text>
+                          <MaterialIcons name="close" size={16} color="#ef4444" />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1380,7 +1381,7 @@ export default function BACView({
               onPrev={goToStage}
               onNext={goToStage}
               canSubmit={!isViewingCompleted}
-              submitLabel="Encoded → BAC Resolution"
+              submitLabel="Encoded · BAC Resolution"
               onSubmit={handleStep9}
             />
           </View>
@@ -1450,12 +1451,13 @@ export default function BACView({
                             : "bg-gray-100 border-gray-200"
                         }`}
                       >
-                        <Text
-                          className="text-[12px] font-bold"
-                          style={{ color: m.signed ? "#fff" : "#6b7280" }}
-                        >
-                          {m.signed ? "✓" : m.name[0]}
-                        </Text>
+                        {m.signed ? (
+                          <MaterialIcons name="check" size={16} color="#ffffff" />
+                        ) : (
+                          <Text className="text-[12px] font-bold text-gray-500">
+                            {m.name[0]}
+                          </Text>
+                        )}
                       </View>
                       <View>
                         <Text
@@ -1472,9 +1474,12 @@ export default function BACView({
                     </View>
                     {m.signed ? (
                       <View className="items-end">
-                        <Text className="text-[11.5px] font-semibold text-emerald-600">
-                          ✅ Signed
-                        </Text>
+                        <View className="flex-row items-center gap-1">
+                          <MaterialIcons name="verified" size={14} color="#10b981" />
+                          <Text className="text-[11.5px] font-semibold text-emerald-600">
+                            Signed
+                          </Text>
+                        </View>
                         <Text className="text-[10px] text-gray-400">
                           at {m.signedAt}
                         </Text>
@@ -1503,9 +1508,12 @@ export default function BACView({
                         }
                         className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white"
                       >
-                        <Text className="text-[12px] font-semibold text-gray-500">
-                          ✍️ Sign
-                        </Text>
+                        <View className="flex-row items-center gap-1.5">
+                          <MaterialIcons name="edit" size={14} color="#6b7280" />
+                          <Text className="text-[12px] font-semibold text-gray-500">
+                            Sign
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1554,7 +1562,7 @@ export default function BACView({
               onPrev={goToStage}
               onNext={goToStage}
               canSubmit={!isViewingCompleted && allSigned && !!resNo && !!mode}
-              submitLabel="Resolve & Complete BAC Workflow →"
+              submitLabel="Resolve & Complete BAC Workflow"
               onSubmit={handleStep7}
             />
           </View>

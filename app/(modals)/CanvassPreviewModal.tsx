@@ -108,7 +108,7 @@ export default function CanvassPreviewModal({
                 marginBottom: 2,
               }}
             >
-              DAR · Procurement › Canvassing
+              DAR · Procurement · Canvassing
             </Text>
             <Text style={{ fontSize: 17, fontWeight: "800", color: "#ffffff" }}>
               Request for Quotation

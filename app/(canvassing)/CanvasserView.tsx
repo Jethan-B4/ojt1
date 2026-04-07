@@ -685,7 +685,7 @@ export default function CanvasserView({
       setSubmitted(true);
       setActiveTab("progress");
       Alert.alert(
-        "✅ Submitted",
+        "Submitted",
         "Your quotations have been submitted to BAC.",
       );
     } catch (e: any) {
@@ -925,7 +925,7 @@ export default function CanvasserView({
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-[12px] font-bold text-gray-700">
                   {returnedCount === totalCount
-                    ? "All forms returned ✓"
+                    ? "All forms returned"
                     : `${returnedCount} of ${totalCount} returned`}
                 </Text>
                 <Text className="text-[11px] text-gray-400">
@@ -1006,7 +1006,7 @@ export default function CanvasserView({
                         <Text
                           className={`text-[9.5px] font-bold ${returned ? "text-emerald-700" : "text-amber-700"}`}
                         >
-                          {returned ? "Submitted ✓" : "Pending"}
+                          {returned ? "Submitted" : "Pending"}
                         </Text>
                       </View>
                     </View>

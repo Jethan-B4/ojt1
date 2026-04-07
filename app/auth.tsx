@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -80,11 +81,14 @@ function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: ()
           {/* Header */}
           <View style={devStyles.header}>
             <View>
-              <Text style={devStyles.headerEyebrow}>⚠ DEV ONLY</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <MaterialIcons name="warning-amber" size={14} color="#f59e0b" />
+                <Text style={devStyles.headerEyebrow}>DEV ONLY</Text>
+              </View>
               <Text style={devStyles.headerTitle}>User Accounts</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={12} style={devStyles.closeBtn}>
-              <Text style={devStyles.closeBtnText}>✕</Text>
+              <MaterialIcons name="close" size={18} color="#9ca3af" />
             </TouchableOpacity>
           </View>
 

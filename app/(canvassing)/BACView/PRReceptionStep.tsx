@@ -280,7 +280,7 @@ export default function PRReceptionStep({
             detail={
               hasFlag
                 ? isBlocking
-                  ? "⚠ Blocking"
+                  ? "Blocking"
                   : STATUS_FLAGS[flag!]?.label
                 : undefined
             }
@@ -378,7 +378,7 @@ export default function PRReceptionStep({
               <MaterialIcons name="send" size={15} color="#fff" />
             )}
             <Text className="text-[14px] font-bold text-white">
-              {saving ? "Saving…" : "Acknowledge → Release Canvass"}
+              {saving ? "Saving…" : "Acknowledge and Release Canvass"}
             </Text>
           </TouchableOpacity>
         ) : (

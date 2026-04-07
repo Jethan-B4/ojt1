@@ -5,9 +5,10 @@
  * Columns mirror the Supabase schema exactly (snake_case).
  *
  * PO lifecycle status_id values (from public.status table):
- *   12 → PO (Reception)  ← default starting status on insert
- *   13 → PO (Create)
- *   14 → ORS Processing
+ *   12 → PO (Creation)      ← default starting status on insert (Supply logs receipt)
+ *   13 → PO (Allocation)    ← Supply assigns PO # and prepares document
+ *   14 → ORS (Creation)     ← Budget prepares ORS, assigns ORS number
+ *   15 → ORS (Processing)   ← Budget officer signs; forwards to Accounting
  */
 
 import { supabase } from "./client";
@@ -153,7 +154,7 @@ export async function updatePO(
 /**
  * Insert a new PO header + items (used by CreatePOModal).
  * Returns the full inserted row (including server-generated id).
- * Always starts at status_id 12 ("PO Reception") unless explicitly overridden.
+ * Always starts at status_id 12 ("PO Creation") unless explicitly overridden.
  */
 export async function insertPurchaseOrder(
   po: POInsertPayload,
@@ -186,8 +187,9 @@ export async function fetchPOStatuses(): Promise<
   const { data, error } = await supabase
     .from("status")
     .select("id, status_name")
-    // PO lifecycle status IDs start at 12
+    // PO lifecycle status IDs: 12 (PO Creation) → 15 (ORS Processing)
     .gte("id", 12)
+    .lte("id", 15)
     .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as { id: number; status_name: string }[];

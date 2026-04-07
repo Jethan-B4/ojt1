@@ -304,9 +304,7 @@ function PRPickerModal({
               hitSlop={10}
               className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
             >
-              <Text className="text-white text-[20px] leading-none font-light">
-                ×
-              </Text>
+              <MaterialIcons name="close" size={18} color="#ffffff" />
             </TouchableOpacity>
           </View>
           <View className="flex-row items-center bg-white/10 rounded-[10px] px-3 gap-2">
@@ -789,9 +787,7 @@ export default function EditPOModal({
                 hitSlop={10}
                 className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
               >
-                <Text className="text-white text-[20px] leading-none font-light">
-                  ×
-                </Text>
+                <MaterialIcons name="close" size={18} color="#ffffff" />
               </TouchableOpacity>
             </View>
 

@@ -268,9 +268,12 @@ function AbstractTable({
                           {price > 0 ? fmt(price) : "—"}
                         </Text>
                         {isWin && (
-                          <Text className="text-[9px] font-bold text-emerald-600 mt-0.5">
-                            ✓
-                          </Text>
+                          <MaterialIcons
+                            name="check"
+                            size={14}
+                            color="#10b981"
+                            style={{ marginTop: 2 }}
+                          />
                         )}
                       </TouchableOpacity>
                     );
@@ -504,7 +507,7 @@ export default function AAAView({
       });
 
       Alert.alert(
-        "✅ Canvassing Complete",
+        "Canvassing Complete",
         "Abstract of Awards recorded. Forward to Supply Section.",
       );
     } catch (e: any) {
@@ -692,7 +695,7 @@ export default function AAAView({
           onPrev={() => onBack?.()}
           onNext={() => {}}
           canSubmit={!isSubmitted && !!aaaNo.trim()}
-          submitLabel="Finalize & Forward to Supply →"
+          submitLabel="Finalize & Forward to Supply"
           onSubmit={handleSubmit}
         />
       </ScrollView>

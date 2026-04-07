@@ -493,16 +493,29 @@ function PRLogCard({
                 : `${remarks.length} remark${remarks.length !== 1 ? "s" : ""}`}
             </Text>
             {remarks.length > 0 && (
-              <Text
+              <View
                 style={{
-                  fontSize: 11,
-                  color: "#064E3B",
-                  fontWeight: "600",
                   marginLeft: "auto",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 2,
                 }}
               >
-                {expanded ? "Hide trail" : "View trail →"}
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: "#064E3B",
+                    fontWeight: "600",
+                  }}
+                >
+                  {expanded ? "Hide trail" : "View trail"}
+                </Text>
+                <MaterialIcons
+                  name={expanded ? "keyboard-arrow-up" : "chevron-right"}
+                  size={14}
+                  color="#064E3B"
+                />
+              </View>
             )}
           </View>
         )}

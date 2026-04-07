@@ -696,7 +696,7 @@ export default function EndUserView({
                           }`}
                         >
                           {isReturned
-                            ? "Returned ✓"
+                            ? "Returned"
                             : isReleased
                               ? "Out for canvass"
                               : "Pending"}

@@ -9,6 +9,7 @@
  *   <CalendarModal visible={open} onClose={() => setOpen(false)} />
  */
 
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useMemo, useState } from "react";
 import {
   Modal, Pressable, ScrollView, Text, TouchableOpacity, View,
@@ -93,7 +94,7 @@ export function CalendarModal({
             <View className="flex-row items-center justify-between mb-1">
               <TouchableOpacity onPress={prevMonth} hitSlop={12}
                 className="w-8 h-8 rounded-full bg-white/15 items-center justify-center">
-                <Text className="text-white text-[16px] font-bold">‹</Text>
+                <MaterialIcons name="chevron-left" size={20} color="#ffffff" />
               </TouchableOpacity>
 
               <View className="items-center">
@@ -105,7 +106,7 @@ export function CalendarModal({
 
               <TouchableOpacity onPress={nextMonth} hitSlop={12}
                 className="w-8 h-8 rounded-full bg-white/15 items-center justify-center">
-                <Text className="text-white text-[16px] font-bold">›</Text>
+                <MaterialIcons name="chevron-right" size={20} color="#ffffff" />
               </TouchableOpacity>
             </View>
 

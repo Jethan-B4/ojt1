@@ -10,13 +10,15 @@
  *   - Pull-to-refresh, saving overlay, empty state
  *
  * PO status lifecycle (public.status table):
- *   12 = PO (Reception)   ← every new PO starts here
- *   13 = PO (Create)
- *   14 = ORS Processing
+ *   12 = PO (Creation)    ← every new PO starts here (Supply logs receipt)
+ *   13 = PO (Allocation)  ← Supply assigns PO # and prepares document
+ *   14 = ORS (Creation)   ← Budget prepares ORS
+ *   15 = ORS (Processing) ← Budget officer signs and forwards to Accounting
  *
  * Role permissions:
  *   role_id 1  = Admin   — sees all, can process (override), can edit
- *   role_id 8  = Supply  — sees all, can create, can process 12→13, can edit ≤ 13
+ *   role_id 4  = Budget  — sees all, can process 14→15 (ORS), can edit ORS
+ *   role_id 8  = Supply  — sees all, can create, can process 12→13→14, can edit ≤ 13
  *   All others           — view only
  */
 
@@ -82,10 +84,11 @@ type SortBy = "date_created" | "date_modified";
 
 /**
  * Visual config keyed by status_id — mirrors public.status table.
- * PO lifecycle starts at 12 (PO Reception).
- *   12 = PO (Reception)
- *   13 = PO (Create)
- *   14 = ORS Processing
+ * PO lifecycle starts at 12 (PO Creation).
+ *   12 = PO (Creation)    — Supply receives Abstract and begins PO document
+ *   13 = PO (Allocation)  — Supply assigns PO # and forwards to Budget
+ *   14 = ORS (Creation)   — Budget prepares ORS and assigns ORS number
+ *   15 = ORS (Processing) — Budget officer signs; forwards to Accounting
  */
 const PO_STATUS_CFG: Record<
   number,
@@ -95,14 +98,25 @@ const PO_STATUS_CFG: Record<
     bg: "#f0fdfa",
     text: "#0f766e",
     dot: "#0d9488",
-    label: "PO (Reception)",
+    label: "PO (Creation)",
   },
-  13: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", label: "PO (Create)" },
+  13: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "PO (Allocation)",
+  },
   14: {
     bg: "#fff7ed",
     text: "#9a3412",
     dot: "#f97316",
-    label: "ORS Processing",
+    label: "ORS (Creation)",
+  },
+  15: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    label: "ORS (Processing)",
   },
 };
 
@@ -117,7 +131,7 @@ function poCfgFor(id: number) {
   );
 }
 
-// ORS inline panel is shown when PO reaches ORS Processing (status_id 14)
+// ORS inline panel is shown when PO reaches ORS (Creation) status (status_id 14)
 const ORS_INLINE_STATUS = 14;
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
@@ -189,7 +203,7 @@ const SearchBar: React.FC<{
 }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
-      <Text className="text-gray-400 text-sm">🔍</Text>
+      <MaterialIcons name="search" size={16} color="#9ca3af" />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -200,7 +214,7 @@ const SearchBar: React.FC<{
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChange("")} hitSlop={8}>
-          <Text className="text-gray-400 text-sm">✕</Text>
+          <MaterialIcons name="close" size={16} color="#9ca3af" />
         </TouchableOpacity>
       )}
     </View>
@@ -225,9 +239,7 @@ const SearchBar: React.FC<{
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
         style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
       >
-        <Text className="text-white text-[18px] leading-none font-light">
-          +
-        </Text>
+        <MaterialIcons name="add" size={18} color="#ffffff" />
         <Text className="text-white text-[13px] font-bold">Create</Text>
       </Pressable>
     )}
@@ -763,9 +775,7 @@ const RecordCard: React.FC<{
           activeOpacity={0.8}
           className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
         >
-          <Text className="text-white text-[11px] font-bold tracking-widest">
-            •••
-          </Text>
+          <MaterialIcons name="more-horiz" size={20} color="#ffffff" />
         </TouchableOpacity>
       </View>
     </View>
@@ -776,7 +786,7 @@ const RecordCard: React.FC<{
 
 const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   <View className="flex-1 items-center justify-center py-24 px-8">
-    <Text className="text-5xl mb-4">🧾</Text>
+    <MaterialIcons name="receipt-long" size={44} color="#d1d5db" />
     <Text className="text-[16px] font-bold text-gray-600 mb-2 text-center">
       {label}
     </Text>
@@ -800,7 +810,7 @@ const Pagination: React.FC<{
     </Text>
     <View className="flex-row items-center gap-1.5">
       {[
-        { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
+        { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
         ...Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(
           (p) => ({
             label: String(p),
@@ -810,7 +820,7 @@ const Pagination: React.FC<{
           }),
         ),
         {
-          label: "›",
+          label: "next",
           page: Math.min(totalPages, page + 1),
           disabled: page === totalPages,
         },
@@ -828,17 +838,43 @@ const Pagination: React.FC<{
                 : "bg-white border-gray-200"
           }`}
         >
-          <Text
-            className={`text-[12px] font-bold ${
-              (btn as any).active
-                ? "text-white"
-                : btn.disabled
-                  ? "text-gray-300"
-                  : "text-gray-500"
-            }`}
-          >
-            {btn.label}
-          </Text>
+          {btn.label === "prev" ? (
+            <MaterialIcons
+              name="chevron-left"
+              size={18}
+              color={
+                (btn as any).active
+                  ? "#ffffff"
+                  : btn.disabled
+                    ? "#d1d5db"
+                    : "#6b7280"
+              }
+            />
+          ) : btn.label === "next" ? (
+            <MaterialIcons
+              name="chevron-right"
+              size={18}
+              color={
+                (btn as any).active
+                  ? "#ffffff"
+                  : btn.disabled
+                    ? "#d1d5db"
+                    : "#6b7280"
+              }
+            />
+          ) : (
+            <Text
+              className={`text-[12px] font-bold ${
+                (btn as any).active
+                  ? "text-white"
+                  : btn.disabled
+                    ? "text-gray-300"
+                    : "text-gray-500"
+              }`}
+            >
+              {btn.label}
+            </Text>
+          )}
         </TouchableOpacity>
       ))}
     </View>
@@ -906,6 +942,13 @@ export default function POModule() {
 
   // Budget (4) and Admin (1) can edit ORS entries in the inline panel
   const canEditOrs = roleId === 1 || roleId === 4;
+
+  // Supply (8) can edit POs at status ≤ 13; Admin (1) can always edit;
+  // Budget (4) can edit ORS fields on POs at status 14
+  const canEditPO = (statusId: number) =>
+    roleId === 1 ||
+    (roleId === 8 && statusId <= 13) ||
+    (roleId === 4 && statusId === 14);
 
   // ── One-time lookups ───────────────────────────────────────────────────────
 
@@ -1185,11 +1228,7 @@ export default function POModule() {
       <MoreSheet
         visible={moreVisible}
         record={moreRecord}
-        canEdit={
-          moreRecord
-            ? (roleId === 8 && moreRecord.statusId <= 13) || roleId === 1
-            : false
-        }
+        canEdit={moreRecord ? canEditPO(moreRecord.statusId) : false}
         onClose={() => {
           setMoreVisible(false);
           setMoreRecord(null);

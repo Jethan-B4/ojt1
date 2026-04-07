@@ -11,6 +11,7 @@
  */
 
 import type { PRItemRow, PRRow } from "@/lib/supabase/index";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import React, {
@@ -318,7 +319,9 @@ function PickerSheet({
                 >
                   {opt}
                 </Text>
-                {active && <Text className="text-emerald-600">✓</Text>}
+                {active && (
+                  <MaterialIcons name="check" size={18} color="#059669" />
+                )}
               </TouchableOpacity>
             );
           })}
@@ -443,7 +446,7 @@ function SelectTrigger({
         >
           {value || placeholder}
         </Text>
-        <Text className="text-gray-400 text-xs ml-2">▾</Text>
+        <MaterialIcons name="keyboard-arrow-down" size={18} color="#9ca3af" />
       </TouchableOpacity>
       {open && (
         <PickerSheet
@@ -487,9 +490,7 @@ function ItemRow({
           hitSlop={8}
           className="w-7 h-7 rounded-full bg-red-50 items-center justify-center border border-red-100"
         >
-          <Text className="text-red-400 text-[12px] font-bold leading-none">
-            ✕
-          </Text>
+          <MaterialIcons name="close" size={14} color="#f87171" />
         </TouchableOpacity>
       </View>
       <View className="h-px bg-gray-100 mx-3.5" />
@@ -629,7 +630,9 @@ function HighValueSection({
           className="flex-row items-start gap-3 rounded-2xl p-3.5 mb-4 border-l-4"
           style={{ backgroundColor: "#ECFDF5", borderLeftColor: CLR.brand500 }}
         >
-          <Text className="text-base mt-0.5">⚠️</Text>
+          <View className="w-7 h-7 rounded-full bg-emerald-100 items-center justify-center mt-0.5">
+            <MaterialIcons name="warning-amber" size={16} color="#047857" />
+          </View>
           <View className="flex-1">
             <Text className="text-[12.5px] font-bold text-emerald-900">
               Total crossed ₱10,000
@@ -645,7 +648,9 @@ function HighValueSection({
         className="flex-row items-center gap-3 rounded-2xl p-4 mb-4 border"
         style={{ backgroundColor: CLR.hv50, borderColor: "#047857" }}
       >
-        <Text className="text-2xl">🏛️</Text>
+        <View className="w-10 h-10 rounded-2xl items-center justify-center bg-emerald-100">
+          <MaterialIcons name="account-balance" size={18} color="#047857" />
+        </View>
         <View className="flex-1">
           <Text className="text-[13px] font-bold" style={{ color: CLR.hv700 }}>
             High-Value Procurement Unlocked
@@ -675,72 +680,6 @@ function HighValueSection({
         />
       </Field>
     </Animated.View>
-  );
-}
-
-// ─── NextFlow ─────────────────────────────────────────────────────────────────
-
-function NextFlow({ isHighValue }: { isHighValue: boolean }) {
-  const steps = isHighValue
-    ? ["PR + Proposal", "Div. Head", "BAC (APP)", "Budget", "PARPO"]
-    : ["You Submit PR", "Div. Head", "BAC", "Budget", "PARPO"];
-  return (
-    <View
-      className="rounded-2xl px-4 py-4 mt-5 border"
-      style={{
-        backgroundColor: isHighValue ? "#ECFDF5" : "#ECFDF5",
-        borderColor: isHighValue ? "#047857" : "#047857",
-      }}
-    >
-      <Text
-        className="text-[10px] font-bold uppercase tracking-widest mb-3"
-        style={{ color: isHighValue ? CLR.hv700 : CLR.brand700 }}
-      >
-        What happens after you submit?
-      </Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View className="flex-row items-center gap-1.5">
-          {steps.map((step, i) => (
-            <React.Fragment key={step}>
-              <View
-                className="px-3 py-1.5 rounded-full border"
-                style={
-                  i === 0
-                    ? {
-                        backgroundColor: isHighValue ? CLR.hv900 : CLR.brand900,
-                        borderColor: "transparent",
-                      }
-                    : {
-                        backgroundColor: "rgba(255,255,255,0.7)",
-                        borderColor: isHighValue
-                          ? "rgba(16,185,129,0.35)"
-                          : "rgba(16,185,129,0.35)",
-                      }
-                }
-              >
-                <Text
-                  className="text-[11px] font-semibold"
-                  style={{
-                    color:
-                      i === 0 ? "#fff" : isHighValue ? CLR.hv700 : CLR.brand900,
-                  }}
-                >
-                  {step}
-                </Text>
-              </View>
-              {i < steps.length - 1 && (
-                <Text
-                  className="text-[12px]"
-                  style={{ color: isHighValue ? CLR.brand500 : CLR.brand500 }}
-                >
-                  →
-                </Text>
-              )}
-            </React.Fragment>
-          ))}
-        </View>
-      </ScrollView>
-    </View>
   );
 }
 
@@ -782,9 +721,7 @@ function ModalHeader({
           hitSlop={10}
           className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
         >
-          <Text className="text-white text-[20px] leading-none font-light">
-            ×
-          </Text>
+          <MaterialIcons name="close" size={18} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
@@ -1272,7 +1209,6 @@ export function CreatePRModal({
                 </Field>
               </View>
             </View>
-            <NextFlow isHighValue={isHighValue} />
           </ScrollView>
         )}
 

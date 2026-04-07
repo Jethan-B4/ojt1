@@ -8,6 +8,7 @@
  * - Print + Download PDF actions on the PDF tab
  */
 
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -353,11 +354,7 @@ function DetailsView({
                           : "#e5e7eb",
                     }}>
                     {done && (
-                      <Text
-                        className="text-white"
-                        style={{ fontSize: 9, fontWeight: "900" }}>
-                        ✓
-                      </Text>
+                      <MaterialIcons name="check" size={12} color="#ffffff" />
                     )}
                     {current && (
                       <View className="w-2 h-2 rounded-full bg-white" />

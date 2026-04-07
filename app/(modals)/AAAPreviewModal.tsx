@@ -93,7 +93,7 @@ export default function AAAPreviewModal({
               textTransform: "uppercase", letterSpacing: 1.2,
               marginBottom: 2,
             }}>
-              DAR · Procurement › Canvassing
+              DAR · Procurement · Canvassing
             </Text>
             <Text style={{ fontSize: 17, fontWeight: "800", color: "#ffffff" }}>
               Abstract of Price Quotations

@@ -607,11 +607,14 @@ function SectionHeader({
       </View>
       {onViewAll && (
         <TouchableOpacity onPress={onViewAll} hitSlop={8}>
-          <Text
-            style={{ fontSize: 11.5, fontWeight: "600", color: CLR.brand700 }}
-          >
-            View all →
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+            <Text
+              style={{ fontSize: 11.5, fontWeight: "600", color: CLR.brand700 }}
+            >
+              View all
+            </Text>
+            <MaterialIcons name="chevron-right" size={16} color={CLR.brand700} />
+          </View>
         </TouchableOpacity>
       )}
     </View>
