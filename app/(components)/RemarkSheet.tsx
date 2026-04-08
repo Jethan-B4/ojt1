@@ -173,15 +173,15 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
   const [saving, setSaving] = useState(false);
 
   const handleView = useCallback(async () => {
+    // Avoid Linking.canOpenURL — deprecated/unreliable on Android 11+ without
+    // manifest <queries> declarations. Just attempt openURL and catch.
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (!supported) {
-        Alert.alert("Cannot open", "No app available to open this file.");
-        return;
-      }
       await Linking.openURL(url);
     } catch (e: any) {
-      Alert.alert("Open failed", e?.message ?? "Could not open file.");
+      Alert.alert(
+        "Open failed",
+        e?.message ?? "No app available to open this file.",
+      );
     }
   }, [url]);
 
@@ -196,7 +196,23 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
         );
         return;
       }
-      const { uri } = await FileSystem.downloadAsync(url, baseDir + filename);
+
+      // Sanitize filename: replace spaces and URI-unsafe characters so the
+      // local path is a valid file:// URI. Preserve the extension intact.
+      const safeFilename = filename.trim().replace(/[^a-zA-Z0-9._\-]/g, "_");
+      const destUri = baseDir + safeFilename;
+
+      const { uri } = await FileSystem.downloadAsync(url, destUri);
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        Alert.alert(
+          "Sharing unavailable",
+          "File saved to cache but sharing is not supported on this device.",
+        );
+        return;
+      }
+
       await Sharing.shareAsync(uri, {
         mimeType: guessMime(filename),
         dialogTitle: `Save ${filename}`,
@@ -261,7 +277,7 @@ const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
           className={`flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg ${saving ? "bg-gray-400" : "bg-emerald-600"}`}
         >
           {saving ? (
-            <ActivityIndicator size={10} color="#fff" />
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
             <MaterialIcons name="download" size={11} color="#fff" />
           )}

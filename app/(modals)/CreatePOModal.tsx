@@ -35,6 +35,8 @@ import POPreviewPanel, {
   usePOPreviewActions,
   type POPreviewData,
 } from "../(components)/POPreviewPanel";
+import CalendarModal from "../(modals)/CalendarModal";
+import { supabase } from "../../lib/supabase/client";
 import {
   insertPurchaseOrder,
   type POItemRow,
@@ -78,6 +80,26 @@ const fmt = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+/** Convert a JS Date to the long Philippine locale format used in PO documents. */
+function formatDate(d: Date): string {
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/** Fetch all division names from the divisions table, sorted alphabetically. */
+async function fetchDivisionNames(): Promise<string[]> {
+  const { data } = await supabase
+    .from("divisions")
+    .select("division_name")
+    .order("division_name");
+  return (data ?? [])
+    .map((r: any) => r.division_name as string)
+    .filter(Boolean);
+}
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
@@ -129,6 +151,122 @@ function StyledInput(
       }`}
       style={[mono ? { fontFamily: MONO } : {}, style ?? {}]}
     />
+  );
+}
+
+/**
+ * DatePickerButton — tappable field that opens the app's CalendarModal.
+ * Displays the current value as formatted text; calls onChange with the
+ * long Philippine locale string (e.g. "January 15, 2025") on selection.
+ */
+function DatePickerButton({
+  value,
+  onChange,
+  placeholder = "Select date…",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setOpen(true)}
+        activeOpacity={0.8}
+        className="bg-gray-50 rounded-[10px] border border-gray-200 px-3 py-2.5 flex-row items-center justify-between"
+        style={{ minHeight: 42 }}
+      >
+        <Text
+          className="text-sm flex-1 mr-2"
+          style={{ color: value ? "#111827" : "#9ca3af" }}
+          numberOfLines={1}
+        >
+          {value || placeholder}
+        </Text>
+        <MaterialIcons name="calendar-today" size={15} color="#064E3B" />
+      </TouchableOpacity>
+      <CalendarModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        onSelectDate={(date) => {
+          onChange(formatDate(date));
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * SectionSuggestInput — TextInput for Office / Section with division name chips.
+ * Chips are fetched from the divisions table and filtered as the user types.
+ * Tapping a chip instantly fills the field.
+ */
+function SectionSuggestInput({
+  value,
+  onChangeText,
+  divisions,
+}: {
+  value: string;
+  onChangeText: (v: string) => void;
+  divisions: string[];
+}) {
+  const [focused, setFocused] = useState(false);
+  const filtered = divisions.filter(
+    (d) => !value.trim() || d.toLowerCase().includes(value.toLowerCase()),
+  );
+
+  return (
+    <View>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder="e.g. Finance Division"
+        placeholderTextColor="#9ca3af"
+        className={`bg-gray-50 rounded-[10px] border px-3 py-2.5 text-sm text-gray-900 ${
+          focused ? "border-[#064E3B]" : "border-gray-200"
+        }`}
+      />
+      {divisions.length > 0 && filtered.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          contentContainerStyle={{ gap: 5, paddingVertical: 5 }}
+        >
+          {filtered.slice(0, 10).map((d) => {
+            const selected = value === d;
+            return (
+              <TouchableOpacity
+                key={d}
+                onPress={() => {
+                  onChangeText(d);
+                  setFocused(false);
+                }}
+                activeOpacity={0.75}
+                className="rounded-full px-2.5 py-1"
+                style={{
+                  backgroundColor: selected ? "#064E3B" : "#f3f4f6",
+                  borderWidth: 1,
+                  borderColor: selected ? "#064E3B" : "#e5e7eb",
+                }}
+              >
+                <Text
+                  className="text-[10.5px] font-semibold"
+                  style={{ color: selected ? "#ffffff" : "#374151" }}
+                  numberOfLines={1}
+                >
+                  {d}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -288,7 +426,9 @@ function PRPickerModal({
               hitSlop={10}
               className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
             >
-              <MaterialIcons name="close" size={18} color="#ffffff" />
+              <Text className="text-white text-[20px] leading-none font-light">
+                ×
+              </Text>
             </TouchableOpacity>
           </View>
           <View className="flex-row items-center bg-white/10 rounded-[10px] px-3 gap-2">
@@ -545,6 +685,14 @@ export default function CreatePOModal({
   // ── UI state ────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Division names for Office / Section suggestions (loaded once on mount)
+  const [divisions, setDivisions] = useState<string[]>([]);
+  useEffect(() => {
+    fetchDivisionNames()
+      .then(setDivisions)
+      .catch(() => {});
+  }, []);
 
   const totalAmount = items.reduce(
     (s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0),
@@ -873,7 +1021,9 @@ export default function CreatePOModal({
                 hitSlop={10}
                 className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
               >
-                <MaterialIcons name="close" size={18} color="#ffffff" />
+                <Text className="text-white text-[20px] leading-none font-light">
+                  ×
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -967,20 +1117,18 @@ export default function CreatePOModal({
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Date</FieldLabel>
-                      <StyledInput
+                      <DatePickerButton
                         value={date}
-                        onChangeText={setDate}
-                        placeholder="January 1, 2025"
-                        placeholderTextColor="#9ca3af"
+                        onChange={setDate}
+                        placeholder="Select PO date…"
                       />
                     </View>
                     <View className="flex-1">
                       <FieldLabel>Office / Section</FieldLabel>
-                      <StyledInput
+                      <SectionSuggestInput
                         value={officeSection}
                         onChangeText={setOfficeSection}
-                        placeholder="e.g. Finance Division"
-                        placeholderTextColor="#9ca3af"
+                        divisions={divisions}
                       />
                     </View>
                   </View>
@@ -1059,11 +1207,10 @@ export default function CreatePOModal({
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Date of Delivery</FieldLabel>
-                      <StyledInput
+                      <DatePickerButton
                         value={dateOfDelivery}
-                        onChangeText={setDateOfDelivery}
-                        placeholder="February 15, 2025"
-                        placeholderTextColor="#9ca3af"
+                        onChange={setDateOfDelivery}
+                        placeholder="Select delivery date…"
                       />
                     </View>
                     <View className="flex-1">
@@ -1105,11 +1252,10 @@ export default function CreatePOModal({
                   <View className="flex-row gap-2.5 mb-3.5">
                     <View className="flex-1">
                       <FieldLabel>Date of ORS</FieldLabel>
-                      <StyledInput
+                      <DatePickerButton
                         value={orsDate}
-                        onChangeText={setOrsDate}
-                        placeholder="January 10, 2025"
-                        placeholderTextColor="#9ca3af"
+                        onChange={setOrsDate}
+                        placeholder="Select ORS date…"
                       />
                     </View>
                     <View className="flex-1">

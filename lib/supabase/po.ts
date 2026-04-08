@@ -9,8 +9,18 @@
  *   13 → PO (Allocation)    ← Supply assigns PO # and prepares document
  *   14 → ORS (Creation)     ← Budget prepares ORS, assigns ORS number
  *   15 → ORS (Processing)   ← Budget officer signs; forwards to Accounting
+ *
+ * 🔔 Notifications are fired (fire-and-forget) after every mutating operation:
+ *    insertPurchaseOrder  → notifyPOCreated
+ *    updatePO             → notifyPOEdited
+ *    updatePOStatus       → notifyPOStatusChanged  (resolves label from public.status)
  */
 
+import {
+  notifyPOCreated,
+  notifyPOEdited,
+  notifyPOStatusChanged,
+} from "@/lib/supabase/notifications";
 import { supabase } from "./client";
 
 // ─── Row types ────────────────────────────────────────────────────────────────
@@ -108,27 +118,76 @@ export async function fetchPOWithItemsById(
   return { header: header as PORow, items: (items ?? []) as POItemRow[] };
 }
 
-/** Advance (or revert) the status_id of a PO. */
+// ─── Status label helper ──────────────────────────────────────────────────────
+
+/**
+ * Resolve a status_id to its human-readable label.
+ * Falls back to "Status <id>" if the row is not found.
+ * Used internally to build notification bodies.
+ */
+async function resolveStatusLabel(statusId: number): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("status")
+      .select("status_name")
+      .eq("id", statusId)
+      .maybeSingle();
+    return (data as any)?.status_name ?? `Status ${statusId}`;
+  } catch {
+    return `Status ${statusId}`;
+  }
+}
+
+// ─── Mutations ────────────────────────────────────────────────────────────────
+
+/**
+ * Advance (or revert) the status_id of a PO.
+ * 🔔 Fires notifyPOStatusChanged after a successful update.
+ */
 export async function updatePOStatus(
   poId: string,
   statusId: number,
 ): Promise<void> {
+  // Fetch the PO's po_no for the notification body before mutating.
+  const { data: poRow } = await supabase
+    .from("purchase_orders")
+    .select("po_no")
+    .eq("id", poId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("purchase_orders")
     .update({ status_id: statusId, updated_at: new Date().toISOString() })
     .eq("id", poId);
   if (error) throw error;
+
+  // Resolve label and fire notification (non-blocking).
+  resolveStatusLabel(statusId).then((label) => {
+    notifyPOStatusChanged((poRow as any)?.po_no ?? null, label);
+  });
 }
 
 /**
  * Full header + items update (used by EditPOModal).
  * Patches the header row then delete-and-reinserts items when provided.
+ * 🔔 Fires notifyPOEdited after a successful update.
  */
 export async function updatePO(
   poId: string,
   patch: POPatchPayload,
   items?: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<void> {
+  // Grab po_no for notification (prefer patch value, fall back to DB).
+  let poNo: string | null = patch.po_no ?? null;
+  if (!poNo) {
+    const { data } = await supabase
+      .from("purchase_orders")
+      .select("po_no")
+      .eq("id", poId)
+      .maybeSingle();
+    poNo = (data as any)?.po_no ?? null;
+  }
+
   const { error: hErr } = await supabase
     .from("purchase_orders")
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -149,12 +208,16 @@ export async function updatePO(
       if (insErr) throw insErr;
     }
   }
+
+  // Fire notification after all DB operations succeed.
+  notifyPOEdited(poNo);
 }
 
 /**
  * Insert a new PO header + items (used by CreatePOModal).
  * Returns the full inserted row (including server-generated id).
  * Always starts at status_id 12 ("PO Creation") unless explicitly overridden.
+ * 🔔 Fires notifyPOCreated after a successful insert.
  */
 export async function insertPurchaseOrder(
   po: POInsertPayload,
@@ -177,8 +240,13 @@ export async function insertPurchaseOrder(
     if (iErr) throw iErr;
   }
 
+  // Fire notification after everything succeeds.
+  notifyPOCreated(inserted.po_no);
+
   return inserted;
 }
+
+// ─── Lookups ──────────────────────────────────────────────────────────────────
 
 /** Fetch PO-lifecycle status rows from public.status for label lookups. */
 export async function fetchPOStatuses(): Promise<

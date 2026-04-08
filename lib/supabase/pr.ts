@@ -1,4 +1,39 @@
+/**
+ * lib/supabase/pr.ts — Purchase Request data layer
+ *
+ * 🔔 Notifications are fired (fire-and-forget) after every mutating operation:
+ *    insertPurchaseRequest  → notifyPRCreated
+ *    updatePurchaseRequest  → notifyPREdited
+ *    updatePRStatus         → notifyPRStatusChanged  (resolves label from public.status)
+ */
+
+import {
+  notifyPRCreated,
+  notifyPREdited,
+  notifyPRStatusChanged,
+} from "@/lib/supabase/notifications";
 import { supabase } from "./client";
+
+// ─── Status label helper ──────────────────────────────────────────────────────
+
+/**
+ * Resolve a status_id to its human-readable label from public.status.
+ * Falls back to "Status <id>" on any error.
+ */
+async function resolveStatusLabel(statusId: number): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("status")
+      .select("status_name")
+      .eq("id", statusId)
+      .maybeSingle();
+    return (data as any)?.status_name ?? `Status ${statusId}`;
+  } catch {
+    return `Status ${statusId}`;
+  }
+}
+
+// ─── Queries (unchanged) ──────────────────────────────────────────────────────
 
 export async function fetchPRStatuses() {
   const { data, error } = await supabase
@@ -88,14 +123,6 @@ export async function insertRemark(
   if (error) throw error;
 }
 
-export async function updatePRStatus(prId: string | number, statusId: number) {
-  const { error } = await supabase
-    .from("purchase_requests")
-    .update({ status_id: statusId, updated_at: new Date().toISOString() })
-    .eq("id", prId);
-  if (error) throw error;
-}
-
 export async function fetchPRIdByNo(prNo: string) {
   const { data, error } = await supabase
     .from("purchase_requests")
@@ -132,6 +159,39 @@ export async function fetchPRWithItemsById(prId: string) {
   return { header, items };
 }
 
+// ─── Mutations ────────────────────────────────────────────────────────────────
+
+/**
+ * Update a PR's status_id (forward, approve, return, etc.).
+ * 🔔 Fires notifyPRStatusChanged after a successful update.
+ *
+ * @param prId     purchase_requests.id (UUID)
+ * @param statusId New status_id from public.status
+ */
+export async function updatePRStatus(prId: string | number, statusId: number) {
+  // Prefetch pr_no so the notification body is human-readable.
+  const { data: prRow } = await supabase
+    .from("purchase_requests")
+    .select("pr_no")
+    .eq("id", prId)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("purchase_requests")
+    .update({ status_id: statusId, updated_at: new Date().toISOString() })
+    .eq("id", prId);
+  if (error) throw error;
+
+  // Resolve label and fire notification (non-blocking).
+  resolveStatusLabel(statusId).then((label) => {
+    notifyPRStatusChanged((prRow as any)?.pr_no ?? null, label);
+  });
+}
+
+/**
+ * Insert a new Purchase Request header + items.
+ * 🔔 Fires notifyPRCreated after a successful insert.
+ */
 export async function insertPurchaseRequest(
   pr: Record<string, any>,
   items: Record<string, any>[],
@@ -165,6 +225,7 @@ export async function insertPurchaseRequest(
     .select()
     .single();
   if (error) throw error;
+
   const parentId = (data as any).id ?? (data as any).pr_id;
   if (items.length > 0) {
     const { error: itemsError } = await supabase
@@ -172,28 +233,21 @@ export async function insertPurchaseRequest(
       .insert(items.map((item) => ({ ...item, pr_id: parentId })));
     if (itemsError) throw itemsError;
   }
-  return data;
-}
 
-export async function insertProposalForPR(
-  prId: string,
-  proposalNo: string,
-  divisionId?: number,
-) {
-  if (!proposalNo) return;
-  const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
-  if (typeof divisionId === "number") payload.division_id = divisionId;
-  const { error } = await supabase.from("proposals").insert(payload);
-  if (error) throw error;
+  // Fire notification after everything succeeds.
+  notifyPRCreated((data as any).pr_no ?? null);
+
+  return data;
 }
 
 /**
  * Update editable PR header fields + replace all line items.
  * Stamps updated_at so "Last Processed" sort reflects the edit.
+ * 🔔 Fires notifyPREdited after a successful update.
  *
- * @param prId     - The purchase_requests.id
- * @param patch    - Editable header fields (office_section, purpose, total_cost, etc.)
- * @param items    - Full replacement item list (delete-then-insert)
+ * @param prId  purchase_requests.id (UUID)
+ * @param patch Editable header fields
+ * @param items Full replacement item list (delete-then-insert)
  */
 export async function updatePurchaseRequest(
   prId: string,
@@ -224,6 +278,13 @@ export async function updatePurchaseRequest(
 ): Promise<void> {
   const now = new Date().toISOString();
 
+  // Prefetch pr_no for the notification body.
+  const { data: prRow } = await supabase
+    .from("purchase_requests")
+    .select("pr_no")
+    .eq("id", prId)
+    .maybeSingle();
+
   // 1. Update header
   const { error: headerErr } = await supabase
     .from("purchase_requests")
@@ -246,6 +307,21 @@ export async function updatePurchaseRequest(
       if (insErr) throw insErr;
     }
   }
+
+  // Fire notification after all DB operations succeed.
+  notifyPREdited((prRow as any)?.pr_no ?? null);
+}
+
+export async function insertProposalForPR(
+  prId: string,
+  proposalNo: string,
+  divisionId?: number,
+) {
+  if (!proposalNo) return;
+  const payload: Record<string, any> = { pr_id: prId, proposal_no: proposalNo };
+  if (typeof divisionId === "number") payload.division_id = divisionId;
+  const { error } = await supabase.from("proposals").insert(payload);
+  if (error) throw error;
 }
 
 export async function cancelPurchaseRequest(

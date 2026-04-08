@@ -27,34 +27,35 @@
  */
 
 import {
-  deleteOrsEntry,
-  fetchOrsEntries,
-  generateOrsNumber,
-  insertOrsEntry,
-  updateOrsEntry,
-  type DivisionBudgetRow,
-  type OrsEntryRow,
+    deleteOrsEntry,
+    fetchOrsEntries,
+    generateOrsNumber,
+    insertOrsEntry,
+    updateOrsEntry,
+    type DivisionBudgetRow,
+    type OrsEntryRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  type TextInputProps,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    type TextInputProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ORSPreviewPanel, {
-  buildORSHtml,
-  type ORSPreviewData,
+    buildORSHtml,
+    type ORSPreviewData,
 } from "../(components)/ORSPreviewPanel";
+import CalendarModal from "../(modals)/CalendarModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,52 @@ const fmt2 = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function DatePickerButton({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setOpen(true)}
+        className="flex-row items-center justify-between bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5"
+      >
+        <Text
+          className={`text-[13px] flex-1 ${value ? "text-gray-800" : "text-gray-400"}`}
+        >
+          {value || placeholder || "Select date…"}
+        </Text>
+        <MaterialIcons name="calendar-month" size={18} color="#9ca3af" />
+      </TouchableOpacity>
+
+      <CalendarModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        onSelectDate={(d) => {
+          onChange(formatDate(d));
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
 
 // ─── Status meta ──────────────────────────────────────────────────────────────
 
@@ -412,10 +459,10 @@ export function OrsModal({
                 </View>
                 <View className="flex-1">
                   <FieldLabel>Date</FieldLabel>
-                  <StyledInput
+                  <DatePickerButton
                     value={form.date_created}
-                    onChangeText={set("date_created")}
-                    placeholder="January 1, 2026"
+                    onChange={set("date_created")}
+                    placeholder="Select date…"
                   />
                 </View>
               </View>

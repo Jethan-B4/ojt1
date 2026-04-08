@@ -18,6 +18,36 @@ import { Btn, Card, Divider } from "./ui";
 import { fmt, prTotal } from "./utils";
 
 /**
+ * StepHeader — title block shown at the top of each step view.
+ */
+export const StepHeader = ({
+  stage,
+  title,
+  desc,
+}: {
+  stage: CanvassStage;
+  title: string;
+  desc?: string;
+}) => {
+  const meta = STAGE_META[stage];
+  return (
+    <View className="flex-row items-center gap-3 mb-4">
+      <View className="w-10 h-10 rounded-2xl bg-[#064E3B] items-center justify-center">
+        <MaterialIcons name={meta.icon as any} size={20} color="#fff" />
+      </View>
+      <View className="flex-1">
+        <Text className="text-[16px] font-extrabold text-gray-900">
+          {title}
+        </Text>
+        {desc ? (
+          <Text className="text-[12px] text-gray-500 mt-0.5">{desc}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+};
+
+/**
  * CompletedBanner — shown when viewing an already-submitted step.
  */
 export const CompletedBanner = ({

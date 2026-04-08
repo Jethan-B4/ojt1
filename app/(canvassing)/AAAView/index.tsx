@@ -137,10 +137,6 @@ function AbstractTable({
     }
   };
 
-  // Column widths (flex values)
-  const FLEX = { item: 0.4, qty: 0.4, unit: 0.7, desc: 2 };
-  const supplierFlex = 1;
-
   return (
     <Card>
       <View className="px-3 pt-3 pb-3">
@@ -394,14 +390,14 @@ export default function AAAView({
         if (prId) {
           const { header: h, items } = await fetchPRWithItemsById(prId);
           setOffice(h.office_section ?? pr.officeSection);
-          setDate(
+          setDate((prev) =>
             h.created_at
               ? new Date(h.created_at).toLocaleDateString("en-PH", {
                   month: "long",
                   day: "numeric",
                   year: "numeric",
                 })
-              : date,
+              : prev,
           );
           setLiveItems(
             items.map((i: any) => ({
@@ -439,7 +435,7 @@ export default function AAAView({
         setLoading(false);
       }
     })();
-  }, [sessionId, pr.prNo]);
+  }, [sessionId, pr.prNo, pr.officeSection, loadEntries]);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const suppliers = useMemo(

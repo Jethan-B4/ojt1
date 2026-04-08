@@ -19,25 +19,26 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { supabase } from "../../lib/supabase/client";
 import {
-  fetchPOWithItemsById,
-  updatePO,
-  updatePOStatus,
-  type PORow,
+    fetchPOWithItemsById,
+    updatePO,
+    updatePOStatus,
+    type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
+import CalendarModal from "./CalendarModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,58 @@ const PO_NEXT_STATUS: Record<number, number> = {
   13: 14,
   14: 15,
 };
+
+function formatDate(date: Date) {
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function normalizeDateString(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (!Number.isNaN(d.getTime())) return formatDate(d);
+  return dateStr;
+}
+
+function DatePickerButton({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setOpen(true)}
+        className="flex-row items-center justify-between bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5"
+      >
+        <Text
+          className={`text-[13px] flex-1 ${value ? "text-gray-800" : "text-gray-400"}`}
+        >
+          {value || placeholder || "Select date…"}
+        </Text>
+        <MaterialIcons name="calendar-month" size={18} color="#9ca3af" />
+      </TouchableOpacity>
+
+      <CalendarModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        onSelectDate={(d) => {
+          onChange(formatDate(d));
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
 
 /**
  * Status IDs that Admin (role_id 1) can process.
@@ -868,7 +921,7 @@ function BudgetModal({
   useEffect(() => {
     if (visible) {
       setOrsNo("");
-      setOrsDate(new Date().toISOString().slice(0, 10));
+      setOrsDate(formatDate(new Date()));
       setOrsAmount("");
       setFundsAvailable("");
       setRemarks("");
@@ -880,7 +933,7 @@ function BudgetModal({
   useEffect(() => {
     if (!header) return;
     if (header.ors_no) setOrsNo(header.ors_no);
-    if (header.ors_date) setOrsDate(header.ors_date);
+    if (header.ors_date) setOrsDate(normalizeDateString(header.ors_date));
     if (header.ors_amount) setOrsAmount(String(header.ors_amount));
     if (header.funds_available) setFundsAvailable(header.funds_available);
   }, [header]);
@@ -989,10 +1042,10 @@ function BudgetModal({
               </Field>
 
               <Field label="ORS Date" required>
-                <StyledInput
+                <DatePickerButton
                   value={orsDate}
-                  onChangeText={setOrsDate}
-                  placeholder="YYYY-MM-DD"
+                  onChange={setOrsDate}
+                  placeholder="Select ORS date…"
                 />
               </Field>
 

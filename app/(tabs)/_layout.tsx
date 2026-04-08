@@ -6,10 +6,12 @@ import {
   DrawerItemList,
 } from "@react-navigation/drawer";
 import { Image } from "expo-image";
-import React, { useState } from "react";
+import * as Notifications from "expo-notifications";
+import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import "../global-typography";
 
+import { bootstrapNotifications } from "@/lib/supabase/notifications";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
 import BudgetScreen from "./budget";
@@ -24,6 +26,53 @@ import UserManagementScreen from "./UserManagement";
 export default function TabLayout() {
   const { handleSignOut } = useAuth();
   const Drawer = createDrawerNavigator();
+
+  // ── Notification bootstrap ──────────────────────────────────────────────────
+  // Run once after mount: request permission + create the Android channel.
+  // Attach a tap listener so future screens can deep-link from notifications.
+  const notifListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
+
+  useEffect(() => {
+    // 1. Request permission + create Android channel
+    bootstrapNotifications().then((granted) => {
+      if (!granted) {
+        console.warn(
+          "[Notifications] Permission not granted — local notifications will be suppressed.",
+        );
+      }
+    });
+
+    // 2. Log notifications received while app is foregrounded (optional).
+    notifListener.current = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log("[Notification received]", notification.request.content);
+      },
+    );
+
+    // 3. Handle taps on notifications (foreground or background).
+    //    Extend this handler to navigate to the relevant screen.
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        const data = response.notification.request.content.data as Record<
+          string,
+          any
+        >;
+        console.log("[Notification tapped]", data);
+        // Example deep-link pattern (wire up navigation ref if needed):
+        // if (data.type === "pr_created" || data.type === "pr_status_changed") {
+        //   navigationRef.navigate("Procurement");
+        // } else if (data.type === "po_created" || data.type === "po_status_changed") {
+        //   navigationRef.navigate("Budget");
+        // }
+      });
+
+    return () => {
+      notifListener.current?.remove();
+      responseListener.current?.remove();
+    };
+  }, []);
+
   return (
     <Drawer.Navigator
       initialRouteName="Dashboard"
@@ -130,6 +179,7 @@ function BrandHeader({ navigation }: { navigation: any }) {
       <View
         style={{
           backgroundColor: "#064E3B",
+          paddingTop: 30,
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
@@ -293,12 +343,6 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
               >
                 {currentUser.fullname}
               </Text>
-              {/* <Text
-                style={{ fontSize: 11, color: "#A7F3D0", marginTop: 1 }}
-                numberOfLines={1}
-              >
-                {currentUser.role_name ?? currentUser.username}
-              </Text> */}
             </View>
           </View>
 
@@ -379,22 +423,6 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
           </View>
         </View>
       )}
-
-      {/* ── UI toggles ── */}
-      {/* <View style={{ marginHorizontal: 12, marginTop: 4, marginBottom: 8, padding: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "#047857" }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }}>
-            Status Bar
-          </Text>
-          <Switch
-            value={statusBarVisible}
-            onValueChange={setStatusBarVisible}
-            ios_backgroundColor="#065f46"
-            trackColor={{ false: "#065f46", true: "#10B981" }}
-            thumbColor={statusBarVisible ? "#ffffff" : "#ffffff"}
-          />
-        </View>
-      </View> */}
 
       {/* ── Logout button ── */}
       <TouchableOpacity
