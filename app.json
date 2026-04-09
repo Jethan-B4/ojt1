@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "DAR Procurement System",
-    "slug": "dar-procurement-system",
+    "slug": "ojt1",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/dar.png",
-    "scheme": "dar-procurement-system",
+    "scheme": "ojt1",
     "userInterfaceStyle": "automatic",
     // "newArchEnabled": true,
     "ios": {
