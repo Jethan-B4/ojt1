@@ -61,16 +61,16 @@ import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
 import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
 import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
 import { useAuth } from "../../AuthContext";
+import StageRemarkBox from "../StageRemarkBox";
 import PRReceptionStep from "./PRReceptionStep";
 import RFQReviewModal from "./RFQReviewModal";
-import StageRemarkBox from "../StageRemarkBox";
 
 /* Import modularized components */
 import {
   AssignmentList,
   CompletedBanner,
   StageStrip,
-  StepNav
+  StepNav,
 } from "./components";
 import { CANVASS_ROLE_IDS, PROC_MODES, STAGE_ORDER } from "./constants";
 import { Banner, Card, Divider, Field, Input, PickerField } from "./ui";
@@ -136,6 +136,7 @@ export default function BACView({
   const [usersLoading, setUsersLoading] = useState(true);
   const [supps, setSupps] = useState<SupplierQ[]>([mkSupplier(1)]);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
+  const [prId, setPrId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [bacNo, setBacNo] = useState("");
   const [resNo, setResNo] = useState("");
@@ -217,11 +218,9 @@ export default function BACView({
       .catch(() => {})
       .finally(() => setAssignmentsLoading(false));
 
-    setEntriesLoading(true);
     fetchQuotesForSession(sessionId)
       .then(setCanvassEntries)
-      .catch(() => {})
-      .finally(() => setEntriesLoading(false));
+      .catch(() => {});
   }, [sessionId]);
 
   // ── Realtime: refresh entries + assignments when canvassers submit ──────────
@@ -277,6 +276,7 @@ export default function BACView({
       try {
         const prId = await fetchPRIdByNo(pr.prNo);
         if (!prId) return;
+        setPrId(prId);
         const session = await ensureCanvassSession(prId);
         setSessionId(session.id);
         const dbStage = (session.stage as CanvassStage) || "pr_received";
@@ -334,40 +334,6 @@ export default function BACView({
       } catch {}
     })();
   }, [pr.prNo]);
-
-  useEffect(() => {
-    if (stage !== "collect_canvass") return;
-    if (!sessionId) return;
-    if (selectedReturnId) return;
-    const returned = assignments.filter((a) => a.status === "returned");
-    if (returned.length === 0) return;
-
-    const hasPrices = supps.some(
-      (s) => s.name.trim() && Object.keys(s.prices).length > 0,
-    );
-    if (hasPrices) return;
-
-    let bestId: string | null = null;
-    let bestTotal = Number.POSITIVE_INFINITY;
-    returned.forEach((a) => {
-      const ent = entriesForAssignment(a.id);
-      const total = ent.reduce((sum, e) => sum + (e.total_price || 0), 0);
-      if (ent.length > 0 && total < bestTotal) {
-        bestTotal = total;
-        bestId = a.id;
-      }
-    });
-    if (!bestId) return;
-    applyReturnAsBase(bestId).catch(() => {});
-  }, [
-    stage,
-    sessionId,
-    selectedReturnId,
-    assignments,
-    supps,
-    entriesForAssignment,
-    applyReturnAsBase,
-  ]);
 
   // ── Step Handlers ──────────────────────────────────────────────────────────
 
@@ -606,7 +572,10 @@ export default function BACView({
   }, []);
 
   const buildCollectedRFQData = React.useCallback(
-    (a: CanvasserAssignmentRow, entries: CanvassEntryRow[]): CanvassPreviewData => {
+    (
+      a: CanvasserAssignmentRow,
+      entries: CanvassEntryRow[],
+    ): CanvassPreviewData => {
       const user = a.canvasser_id ? userById[a.canvasser_id] : undefined;
       const canvasserName = user?.username ?? "—";
       return {
@@ -663,6 +632,40 @@ export default function BACView({
     },
     [sessionId, entriesForAssignment, rebuildSuppsFromQuotes],
   );
+
+  useEffect(() => {
+    if (stage !== "collect_canvass") return;
+    if (!sessionId) return;
+    if (selectedReturnId) return;
+    const returned = assignments.filter((a) => a.status === "returned");
+    if (returned.length === 0) return;
+
+    const hasPrices = supps.some(
+      (s) => s.name.trim() && Object.keys(s.prices).length > 0,
+    );
+    if (hasPrices) return;
+
+    let bestId: string | null = null;
+    let bestTotal = Number.POSITIVE_INFINITY;
+    returned.forEach((a) => {
+      const ent = entriesForAssignment(a.id);
+      const total = ent.reduce((sum, e) => sum + (e.total_price || 0), 0);
+      if (ent.length > 0 && total < bestTotal) {
+        bestTotal = total;
+        bestId = a.id;
+      }
+    });
+    if (!bestId) return;
+    applyReturnAsBase(bestId).catch(() => {});
+  }, [
+    stage,
+    sessionId,
+    selectedReturnId,
+    assignments,
+    supps,
+    entriesForAssignment,
+    applyReturnAsBase,
+  ]);
 
   const buildPreviewData = (): CanvassPreviewData => {
     const deadlineDate = new Date();
@@ -793,7 +796,7 @@ export default function BACView({
           unitCost: i.unit_price,
         })),
       );
-      setEntries(quotes);
+      setCanvassEntries(quotes as any);
       setAssignments(asgns as any);
     } catch {
     } finally {
@@ -1190,7 +1193,7 @@ export default function BACView({
               />
             )}
 
-            {currentUser?.id && (
+            {currentUser?.id && prId && (
               <View className="px-4 mb-3">
                 <StageRemarkBox
                   prId={prId}
@@ -1264,18 +1267,26 @@ export default function BACView({
             })()}
 
             {(() => {
-              const returned = assignments.filter((a) => a.status === "returned");
+              const returned = assignments.filter(
+                (a) => a.status === "returned",
+              );
               if (returned.length === 0) return null;
               return (
                 <Card>
                   <View className="px-4 pt-3 pb-2">
                     <Divider label="Collected RFQs" />
                     {returned.map((a) => {
-                      const user = a.canvasser_id ? userById[a.canvasser_id] : undefined;
-                      const divName = user?.division_name ?? `Division ${a.division_id}`;
+                      const user = a.canvasser_id
+                        ? userById[a.canvasser_id]
+                        : undefined;
+                      const divName =
+                        user?.division_name ?? `Division ${a.division_id}`;
                       const canvasserName = user?.username ?? "—";
                       const ent = entriesForAssignment(a.id);
-                      const totalQuoted = ent.reduce((s, e) => s + (e.total_price || 0), 0);
+                      const totalQuoted = ent.reduce(
+                        (s, e) => s + (e.total_price || 0),
+                        0,
+                      );
                       const expanded = expandedRFQs.has(a.id);
                       const active = selectedReturnId === a.id;
                       return (
@@ -1299,7 +1310,9 @@ export default function BACView({
                               <View
                                 className="w-8 h-8 rounded-xl items-center justify-center"
                                 style={{
-                                  backgroundColor: active ? "#064E3B" : "#ecfdf5",
+                                  backgroundColor: active
+                                    ? "#064E3B"
+                                    : "#ecfdf5",
                                 }}
                               >
                                 <MaterialIcons
@@ -1315,7 +1328,10 @@ export default function BACView({
                                 >
                                   {divName}
                                 </Text>
-                                <Text className="text-[10.5px] text-gray-400" numberOfLines={1}>
+                                <Text
+                                  className="text-[10.5px] text-gray-400"
+                                  numberOfLines={1}
+                                >
                                   {canvasserName}
                                 </Text>
                               </View>
@@ -1329,7 +1345,11 @@ export default function BACView({
                                   {ent.length} item{ent.length !== 1 ? "s" : ""}
                                 </Text>
                                 <MaterialIcons
-                                  name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                                  name={
+                                    expanded
+                                      ? "keyboard-arrow-up"
+                                      : "keyboard-arrow-down"
+                                  }
                                   size={16}
                                   color="#9ca3af"
                                 />
@@ -1340,11 +1360,17 @@ export default function BACView({
                           <View className="px-3 pb-3 pt-2">
                             <View className="flex-row items-center gap-2">
                               <TouchableOpacity
-                                onPress={() => setCollectedRFQ(buildCollectedRFQData(a, ent))}
+                                onPress={() =>
+                                  setCollectedRFQ(buildCollectedRFQData(a, ent))
+                                }
                                 activeOpacity={0.85}
                                 className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white"
                               >
-                                <MaterialIcons name="description" size={14} color="#065f46" />
+                                <MaterialIcons
+                                  name="description"
+                                  size={14}
+                                  color="#065f46"
+                                />
                                 <Text className="text-[11.5px] font-bold text-gray-700">
                                   View RFQ
                                 </Text>
@@ -1354,7 +1380,11 @@ export default function BACView({
                                 activeOpacity={0.85}
                                 className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-[#064E3B]"
                               >
-                                <MaterialIcons name="done" size={14} color="#ffffff" />
+                                <MaterialIcons
+                                  name="done"
+                                  size={14}
+                                  color="#ffffff"
+                                />
                                 <Text className="text-[11.5px] font-bold text-white">
                                   Use as Base
                                 </Text>
@@ -1388,7 +1418,10 @@ export default function BACView({
                                   <View
                                     key={`${a.id}-${e.id}-${i}`}
                                     className={`px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                                    style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
+                                    style={{
+                                      borderWidth: 1,
+                                      borderColor: "#f3f4f6",
+                                    }}
                                   >
                                     <View className="flex-row items-center">
                                       <View className="flex-[3] pr-2">
@@ -1435,7 +1468,9 @@ export default function BACView({
                   {selectedReturnId && (
                     <TouchableOpacity
                       onPress={() => {
-                        const a = assignments.find((x) => x.id === selectedReturnId);
+                        const a = assignments.find(
+                          (x) => x.id === selectedReturnId,
+                        );
                         if (!a) return;
                         const ent = entriesForAssignment(a.id);
                         setCollectedRFQ(buildCollectedRFQData(a, ent));
@@ -1443,7 +1478,11 @@ export default function BACView({
                       activeOpacity={0.85}
                       className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white"
                     >
-                      <MaterialIcons name="description" size={14} color="#065f46" />
+                      <MaterialIcons
+                        name="description"
+                        size={14}
+                        color="#065f46"
+                      />
                       <Text className="text-[11.5px] font-bold text-gray-700">
                         View Selected RFQ
                       </Text>
@@ -1468,7 +1507,11 @@ export default function BACView({
                           hitSlop={8}
                           className="p-1.5 rounded-lg border border-gray-200"
                         >
-                          <MaterialIcons name="close" size={16} color="#ef4444" />
+                          <MaterialIcons
+                            name="close"
+                            size={16}
+                            color="#ef4444"
+                          />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1624,7 +1667,7 @@ export default function BACView({
               </TouchableOpacity>
             </View>
 
-            {currentUser?.id && (
+            {currentUser?.id && prId && (
               <View className="px-4 mb-3">
                 <StageRemarkBox
                   prId={prId}
@@ -1712,7 +1755,11 @@ export default function BACView({
                         }`}
                       >
                         {m.signed ? (
-                          <MaterialIcons name="check" size={16} color="#ffffff" />
+                          <MaterialIcons
+                            name="check"
+                            size={16}
+                            color="#ffffff"
+                          />
                         ) : (
                           <Text className="text-[12px] font-bold text-gray-500">
                             {m.name[0]}
@@ -1735,7 +1782,11 @@ export default function BACView({
                     {m.signed ? (
                       <View className="items-end">
                         <View className="flex-row items-center gap-1">
-                          <MaterialIcons name="verified" size={14} color="#10b981" />
+                          <MaterialIcons
+                            name="verified"
+                            size={14}
+                            color="#10b981"
+                          />
                           <Text className="text-[11.5px] font-semibold text-emerald-600">
                             Signed
                           </Text>
@@ -1769,7 +1820,11 @@ export default function BACView({
                         className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white"
                       >
                         <View className="flex-row items-center gap-1.5">
-                          <MaterialIcons name="edit" size={14} color="#6b7280" />
+                          <MaterialIcons
+                            name="edit"
+                            size={14}
+                            color="#6b7280"
+                          />
                           <Text className="text-[12px] font-semibold text-gray-500">
                             Sign
                           </Text>
@@ -1816,7 +1871,7 @@ export default function BACView({
               </View>
             )}
 
-            {currentUser?.id && (
+            {currentUser?.id && prId && (
               <View className="px-4 mb-3">
                 <StageRemarkBox
                   prId={prId}
