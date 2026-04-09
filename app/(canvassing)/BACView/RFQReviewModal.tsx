@@ -82,19 +82,12 @@ function computeWinners(
       (e) => e.item_no === item.id && e.unit_price > 0,
     );
 
-    // For each entry, find the division via the canvasser who submitted it.
-    // We match by supplier_name: the canvasser submitted under that supplier name,
-    // and we look for an assignment whose canvasser's username matches, or fall
-    // back to the first returned assignment when no exact match is found.
     const allQuotes = itemEntries.map((e) => {
+      const assignmentId = (e as any).assignment_id as string | null | undefined;
       const matchedAssignment =
-        assignments.find((a) => {
-          if (a.status !== "returned") return false;
-          if (!a.canvasser_id) return false;
-          const u = userById[a.canvasser_id];
-          // Canvasser's fullname often used as supplier_name default
-          return u?.username === e.supplier_name;
-        }) ?? assignments.find((a) => a.status === "returned");
+        (assignmentId
+          ? assignments.find((a) => a.id === assignmentId)
+          : null) ?? assignments.find((a) => a.status === "returned");
 
       const user = matchedAssignment?.canvasser_id
         ? userById[matchedAssignment.canvasser_id]
@@ -492,13 +485,17 @@ export default function RFQReviewModal({
   /** Build per-canvasser submissions from returned assignments */
   const submissions = useMemo<CanvasserSubmission[]>(() => {
     const returned = assignments.filter((a) => a.status === "returned");
+    const hasAssignmentId = entries.some(
+      (e: any) => e.assignment_id !== undefined,
+    );
     return returned.map((a) => {
       const user = a.canvasser_id ? userById[a.canvasser_id] : undefined;
-      // Entries for this canvasser — match by item_no presence and supplier_name
-      // Since entries are stored per-session (not per-assignment), we show all
-      const relevantEntries = entries.filter((e) =>
-        liveItems.some((i) => i.id === e.item_no),
-      );
+      const relevantEntries = hasAssignmentId
+        ? entries.filter(
+            (e: any) =>
+              e.assignment_id === a.id && liveItems.some((i) => i.id === e.item_no),
+          )
+        : entries.filter((e) => liveItems.some((i) => i.id === e.item_no));
       const total = relevantEntries.reduce((s, e) => s + e.total_price, 0);
       return {
         assignment: a,

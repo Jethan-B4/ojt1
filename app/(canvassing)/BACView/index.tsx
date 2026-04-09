@@ -21,11 +21,12 @@ import {
   ensureCanvassSession,
   fetchAssignmentsForSession,
   fetchQuotesForSession,
+  fetchQuotesForSubmission,
   fetchUsersByRole,
   insertAssignmentReleased,
   insertAssignmentsForDivisions,
   markAssignmentReturned,
-  replaceSupplierQuotesForSession,
+  replaceSupplierQuotesForSubmission,
   updateAssignmentReleased,
   updateCanvassSessionMeta,
   updateCanvassStage,
@@ -62,6 +63,7 @@ import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
 import { useAuth } from "../../AuthContext";
 import PRReceptionStep from "./PRReceptionStep";
 import RFQReviewModal from "./RFQReviewModal";
+import StageRemarkBox from "../StageRemarkBox";
 
 /* Import modularized components */
 import {
@@ -144,8 +146,12 @@ export default function BACView({
   const [assignments, setAssignments] = useState<CanvasserAssignmentRow[]>([]);
   const [canvassEntries, setCanvassEntries] = useState<CanvassEntryRow[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
-  const [entriesLoading, setEntriesLoading] = useState(false);
   const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
+  const [expandedRFQs, setExpandedRFQs] = useState<Set<string>>(new Set());
+  const [collectedRFQ, setCollectedRFQ] = useState<CanvassPreviewData | null>(
+    null,
+  );
   const [prExpanded, setPrExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
@@ -290,12 +296,10 @@ export default function BACView({
         }));
         setLiveItems(mappedItems);
 
-        // ── Prefill supplier quotation form from existing DB entries ───────────
-        // When the BAC navigates back to edit an already-submitted step, the
-        // supps inputs must be pre-populated from the saved quotes.  Without
-        // this, the form starts blank and re-submitting would wipe the DB entries
-        // with an empty list (or the old insert path would create duplicates).
-        const existingQuotes = await fetchQuotesForSession(session.id);
+        const allQuotes = await fetchQuotesForSession(session.id);
+        if (allQuotes.length > 0) setCanvassEntries(allQuotes);
+
+        const existingQuotes = await fetchQuotesForSubmission(session.id, null);
         if (existingQuotes.length > 0) {
           // Group entries by supplier_name to reconstruct each SupplierQ block
           const supplierMap = new Map<string, SupplierQ>();
@@ -320,11 +324,50 @@ export default function BACView({
           if (supplierMap.size > 0) {
             setSupps(Array.from(supplierMap.values()));
           }
-          setCanvassEntries(existingQuotes);
         }
+
+        const prefill = (session as any).aaa_prefill_assignment_id as
+          | string
+          | null
+          | undefined;
+        if (prefill) setSelectedReturnId(prefill);
       } catch {}
     })();
   }, [pr.prNo]);
+
+  useEffect(() => {
+    if (stage !== "collect_canvass") return;
+    if (!sessionId) return;
+    if (selectedReturnId) return;
+    const returned = assignments.filter((a) => a.status === "returned");
+    if (returned.length === 0) return;
+
+    const hasPrices = supps.some(
+      (s) => s.name.trim() && Object.keys(s.prices).length > 0,
+    );
+    if (hasPrices) return;
+
+    let bestId: string | null = null;
+    let bestTotal = Number.POSITIVE_INFINITY;
+    returned.forEach((a) => {
+      const ent = entriesForAssignment(a.id);
+      const total = ent.reduce((sum, e) => sum + (e.total_price || 0), 0);
+      if (ent.length > 0 && total < bestTotal) {
+        bestTotal = total;
+        bestId = a.id;
+      }
+    });
+    if (!bestId) return;
+    applyReturnAsBase(bestId).catch(() => {});
+  }, [
+    stage,
+    sessionId,
+    selectedReturnId,
+    assignments,
+    supps,
+    entriesForAssignment,
+    applyReturnAsBase,
+  ]);
 
   // ── Step Handlers ──────────────────────────────────────────────────────────
 
@@ -404,7 +447,7 @@ export default function BACView({
       });
       // Always use replace (delete-then-insert) so that re-encoding or editing
       // never accumulates duplicate rows in canvass_entries.
-      await replaceSupplierQuotesForSession(sessionId, quotes);
+      await replaceSupplierQuotesForSubmission(sessionId, null, quotes);
       await updatePRStatus(prId, 9);
       await updateCanvassStage(sessionId, "bac_resolution");
       fetchQuotesForSession(sessionId)
@@ -513,6 +556,113 @@ export default function BACView({
   );
 
   const allSigned = members.every((m) => m.signed);
+  const userById = React.useMemo(
+    () => Object.fromEntries(canvassUsers.map((u) => [u.id, u])),
+    [canvassUsers],
+  );
+
+  const hasAssignmentId = React.useMemo(
+    () => canvassEntries.some((e: any) => e.assignment_id !== undefined),
+    [canvassEntries],
+  );
+
+  const prItemIdSet = React.useMemo(
+    () => new Set(liveItems.map((i) => i.id)),
+    [liveItems],
+  );
+
+  const entriesForAssignment = React.useCallback(
+    (assignmentId: string) => {
+      const filtered = canvassEntries.filter((e) => prItemIdSet.has(e.item_no));
+      if (!hasAssignmentId) return filtered;
+      return filtered.filter((e: any) => e.assignment_id === assignmentId);
+    },
+    [canvassEntries, prItemIdSet, hasAssignmentId],
+  );
+
+  const rebuildSuppsFromQuotes = React.useCallback((quotes: any[]) => {
+    if (!quotes.length) return [mkSupplier(1)];
+    const supplierMap = new Map<string, SupplierQ>();
+    let nextId = 1;
+    quotes.forEach((e) => {
+      const name = e.supplier_name || `Supplier ${nextId}`;
+      if (!supplierMap.has(name)) {
+        supplierMap.set(name, {
+          id: nextId++,
+          name,
+          address: "",
+          contact: "",
+          tin: "",
+          days: "",
+          prices: {},
+          remarks: "",
+        });
+      }
+      const sp = supplierMap.get(name)!;
+      sp.prices[parseInt(String(e.item_no))] = String(e.unit_price);
+    });
+    const list = Array.from(supplierMap.values());
+    return list.length ? list : [mkSupplier(1)];
+  }, []);
+
+  const buildCollectedRFQData = React.useCallback(
+    (a: CanvasserAssignmentRow, entries: CanvassEntryRow[]): CanvassPreviewData => {
+      const user = a.canvasser_id ? userById[a.canvasser_id] : undefined;
+      const canvasserName = user?.username ?? "—";
+      return {
+        prNo: pr.prNo,
+        quotationNo: bacNo || "—",
+        date: new Date().toLocaleDateString("en-PH"),
+        deadline: "—",
+        bacChairperson:
+          members.find((m) => m.designation.includes("Chairperson"))?.name ||
+          "BAC Chairperson",
+        officeSection: pr.officeSection,
+        purpose: pr.purpose,
+        items: liveItems.map((item, i) => {
+          const entry = entries.find((e) => e.item_no === item.id);
+          return {
+            itemNo: i + 1,
+            description: item.desc,
+            qty: item.qty,
+            unit: item.unit,
+            unitPrice: entry ? Number(entry.unit_price).toFixed(2) : "",
+          };
+        }),
+        canvasserNames: canvasserName ? [canvasserName] : [],
+      };
+    },
+    [pr, bacNo, members, liveItems, userById],
+  );
+
+  const applyReturnAsBase = React.useCallback(
+    async (assignmentId: string) => {
+      if (!sessionId) return;
+      const src = entriesForAssignment(assignmentId);
+      const payload = src
+        .map((e) => ({
+          item_no: e.item_no,
+          description: e.description,
+          unit: e.unit,
+          quantity: e.quantity,
+          supplier_name: e.supplier_name,
+          unit_price: e.unit_price,
+          total_price: e.total_price,
+          is_winning: e.is_winning ?? null,
+        }))
+        .filter((e) => (Number(e.unit_price) || 0) > 0);
+
+      await updateCanvassSessionMeta(sessionId, {
+        aaa_prefill_assignment_id: assignmentId,
+      });
+      setSelectedReturnId(assignmentId);
+      await replaceSupplierQuotesForSubmission(sessionId, null, payload);
+      const encoded = await fetchQuotesForSubmission(sessionId, null);
+      setSupps(rebuildSuppsFromQuotes(encoded));
+      setCanvassEntries(await fetchQuotesForSession(sessionId));
+    },
+    [sessionId, entriesForAssignment, rebuildSuppsFromQuotes],
+  );
 
   const buildPreviewData = (): CanvassPreviewData => {
     const deadlineDate = new Date();
@@ -1040,6 +1190,17 @@ export default function BACView({
               />
             )}
 
+            {currentUser?.id && (
+              <View className="px-4 mb-3">
+                <StageRemarkBox
+                  prId={prId}
+                  userId={String(currentUser.id)}
+                  stageKey="release_canvass"
+                  stageLabel="Release Canvass"
+                />
+              </View>
+            )}
+
             <StepNav
               stage={stage}
               done={done}
@@ -1103,104 +1264,192 @@ export default function BACView({
             })()}
 
             {(() => {
-              const prItemIds = liveItems.map((i) => i.id);
-              const filteredEntries = canvassEntries.filter((e) =>
-                prItemIds.includes(e.item_no),
-              );
-              return filteredEntries.length > 0 ? (
+              const returned = assignments.filter((a) => a.status === "returned");
+              if (returned.length === 0) return null;
+              return (
                 <Card>
                   <View className="px-4 pt-3 pb-2">
-                    <View className="flex-row items-center gap-2 mb-1">
-                      <Divider label="Submitted Quotations" />
-                      <View className="bg-emerald-100 px-2 py-0.5 rounded-full mb-2.5 ml-1">
-                        <Text className="text-[10px] font-bold text-emerald-700">
-                          {filteredEntries.length} entr
-                          {filteredEntries.length === 1 ? "y" : "ies"}
-                        </Text>
-                      </View>
-                    </View>
-                    <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
-                      <Text className="flex-[3] text-[9px] font-bold uppercase tracking-wide text-white/70">
-                        Item / Supplier
-                      </Text>
-                      <Text className="w-16 text-[9px] font-bold uppercase tracking-wide text-white/70 text-center">
-                        Qty
-                      </Text>
-                      <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">
-                        Unit Price
-                      </Text>
-                      <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">
-                        Total
-                      </Text>
-                    </View>
-                    {entriesLoading ? (
-                      <View className="items-center py-4">
-                        <Text className="text-[12px] text-gray-400">
-                          Loading…
-                        </Text>
-                      </View>
-                    ) : (
-                      filteredEntries.map((e, i) => (
+                    <Divider label="Collected RFQs" />
+                    {returned.map((a) => {
+                      const user = a.canvasser_id ? userById[a.canvasser_id] : undefined;
+                      const divName = user?.division_name ?? `Division ${a.division_id}`;
+                      const canvasserName = user?.username ?? "—";
+                      const ent = entriesForAssignment(a.id);
+                      const totalQuoted = ent.reduce((s, e) => s + (e.total_price || 0), 0);
+                      const expanded = expandedRFQs.has(a.id);
+                      const active = selectedReturnId === a.id;
+                      return (
                         <View
-                          key={e.id}
-                          className={`px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                          style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
+                          key={a.id}
+                          className="bg-white rounded-2xl border border-gray-200 mb-3 overflow-hidden"
                         >
-                          <View className="flex-row items-center">
-                            <View className="flex-[3] pr-2">
-                              <Text
-                                className="text-[11.5px] font-semibold text-gray-800"
-                                numberOfLines={1}
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              setExpandedRFQs((prev) => {
+                                const n = new Set(prev);
+                                if (n.has(a.id)) n.delete(a.id);
+                                else n.add(a.id);
+                                return n;
+                              })
+                            }
+                            className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50"
+                          >
+                            <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                              <View
+                                className="w-8 h-8 rounded-xl items-center justify-center"
+                                style={{
+                                  backgroundColor: active ? "#064E3B" : "#ecfdf5",
+                                }}
                               >
-                                {e.description}
-                              </Text>
-                              <Text
-                                className="text-[10.5px] text-gray-400 mt-0.5"
-                                numberOfLines={1}
-                              >
-                                {e.supplier_name}
-                              </Text>
+                                <MaterialIcons
+                                  name="assignment-turned-in"
+                                  size={16}
+                                  color={active ? "#ffffff" : "#065f46"}
+                                />
+                              </View>
+                              <View className="flex-1">
+                                <Text
+                                  className="text-[12.5px] font-bold text-gray-900"
+                                  numberOfLines={1}
+                                >
+                                  {divName}
+                                </Text>
+                                <Text className="text-[10.5px] text-gray-400" numberOfLines={1}>
+                                  {canvasserName}
+                                </Text>
+                              </View>
                             </View>
-                            <Text className="w-16 text-[11px] text-gray-500 text-center">
-                              {e.quantity} {e.unit}
-                            </Text>
-                            <Text className="w-20 text-[11.5px] font-semibold text-gray-700 text-right">
-                              ₱{fmt(e.unit_price)}
-                            </Text>
-                            <Text className="w-20 text-[11.5px] font-bold text-[#064E3B] text-right">
-                              ₱{fmt(e.total_price)}
-                            </Text>
+                            <View className="items-end">
+                              <Text className="text-[11px] font-extrabold text-[#064E3B]">
+                                ₱{fmt(totalQuoted)}
+                              </Text>
+                              <View className="flex-row items-center gap-1">
+                                <Text className="text-[10px] text-gray-400">
+                                  {ent.length} item{ent.length !== 1 ? "s" : ""}
+                                </Text>
+                                <MaterialIcons
+                                  name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                                  size={16}
+                                  color="#9ca3af"
+                                />
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+
+                          <View className="px-3 pb-3 pt-2">
+                            <View className="flex-row items-center gap-2">
+                              <TouchableOpacity
+                                onPress={() => setCollectedRFQ(buildCollectedRFQData(a, ent))}
+                                activeOpacity={0.85}
+                                className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                              >
+                                <MaterialIcons name="description" size={14} color="#065f46" />
+                                <Text className="text-[11.5px] font-bold text-gray-700">
+                                  View RFQ
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => applyReturnAsBase(a.id)}
+                                activeOpacity={0.85}
+                                className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-[#064E3B]"
+                              >
+                                <MaterialIcons name="done" size={14} color="#ffffff" />
+                                <Text className="text-[11.5px] font-bold text-white">
+                                  Use as Base
+                                </Text>
+                              </TouchableOpacity>
+                              {active && (
+                                <View className="ml-auto bg-emerald-100 px-2 py-0.5 rounded-full">
+                                  <Text className="text-[10px] font-bold text-emerald-700">
+                                    Selected
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+
+                            {expanded && (
+                              <View className="mt-2">
+                                <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
+                                  <Text className="flex-[3] text-[9px] font-bold uppercase tracking-wide text-white/70">
+                                    Item / Supplier
+                                  </Text>
+                                  <Text className="w-16 text-[9px] font-bold uppercase tracking-wide text-white/70 text-center">
+                                    Qty
+                                  </Text>
+                                  <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">
+                                    Unit Price
+                                  </Text>
+                                  <Text className="w-20 text-[9px] font-bold uppercase tracking-wide text-white/70 text-right">
+                                    Total
+                                  </Text>
+                                </View>
+                                {ent.map((e, i) => (
+                                  <View
+                                    key={`${a.id}-${e.id}-${i}`}
+                                    className={`px-3 py-2 rounded-xl ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                                    style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
+                                  >
+                                    <View className="flex-row items-center">
+                                      <View className="flex-[3] pr-2">
+                                        <Text
+                                          className="text-[11.5px] font-semibold text-gray-800"
+                                          numberOfLines={1}
+                                        >
+                                          {e.description}
+                                        </Text>
+                                        <Text
+                                          className="text-[10.5px] text-gray-400 mt-0.5"
+                                          numberOfLines={1}
+                                        >
+                                          {e.supplier_name}
+                                        </Text>
+                                      </View>
+                                      <Text className="w-16 text-[11px] text-gray-500 text-center">
+                                        {e.quantity} {e.unit}
+                                      </Text>
+                                      <Text className="w-20 text-[11.5px] font-semibold text-gray-700 text-right">
+                                        ₱{fmt(e.unit_price)}
+                                      </Text>
+                                      <Text className="w-20 text-[11.5px] font-bold text-[#064E3B] text-right">
+                                        ₱{fmt(e.total_price)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
                           </View>
                         </View>
-                      ))
-                    )}
-                    {filteredEntries.length > 0 && (
-                      <View
-                        className="flex-row justify-end mt-1.5 px-3 pt-2"
-                        style={{ borderTopWidth: 1, borderTopColor: "#d1fae5" }}
-                      >
-                        <Text className="text-[11px] font-bold text-gray-500 mr-3">
-                          Grand Total
-                        </Text>
-                        <Text className="text-[12px] font-extrabold text-[#064E3B]">
-                          ₱
-                          {fmt(
-                            filteredEntries.reduce(
-                              (s, e) => s + e.total_price,
-                              0,
-                            ),
-                          )}
-                        </Text>
-                      </View>
-                    )}
+                      );
+                    })}
                   </View>
                 </Card>
-              ) : null;
+              );
             })()}
 
             <Card>
               <View className="px-4 pt-3 pb-3">
-                <Divider label="Supplier Quotations" />
+                <View className="flex-row items-center justify-between gap-3 mb-1">
+                  <Divider label="Supplier Quotations" />
+                  {selectedReturnId && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const a = assignments.find((x) => x.id === selectedReturnId);
+                        if (!a) return;
+                        const ent = entriesForAssignment(a.id);
+                        setCollectedRFQ(buildCollectedRFQData(a, ent));
+                      }}
+                      activeOpacity={0.85}
+                      className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 bg-white"
+                    >
+                      <MaterialIcons name="description" size={14} color="#065f46" />
+                      <Text className="text-[11.5px] font-bold text-gray-700">
+                        View Selected RFQ
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 {supps.map((sp, sIdx) => (
                   <View
                     key={sp.id}
@@ -1374,6 +1623,17 @@ export default function BACView({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {currentUser?.id && (
+              <View className="px-4 mb-3">
+                <StageRemarkBox
+                  prId={prId}
+                  userId={String(currentUser.id)}
+                  stageKey="collect_canvass"
+                  stageLabel="Collect Canvass"
+                />
+              </View>
+            )}
 
             <StepNav
               stage={stage}
@@ -1556,6 +1816,17 @@ export default function BACView({
               </View>
             )}
 
+            {currentUser?.id && (
+              <View className="px-4 mb-3">
+                <StageRemarkBox
+                  prId={prId}
+                  userId={String(currentUser.id)}
+                  stageKey="bac_resolution"
+                  stageLabel="BAC Resolution"
+                />
+              </View>
+            )}
+
             <StepNav
               stage={stage}
               done={done}
@@ -1573,6 +1844,12 @@ export default function BACView({
         visible={previewOpen}
         data={buildPreviewData()}
         onClose={() => setPreviewOpen(false)}
+      />
+
+      <CanvassPreviewModal
+        visible={!!collectedRFQ}
+        data={collectedRFQ ?? buildPreviewData()}
+        onClose={() => setCollectedRFQ(null)}
       />
 
       <BACResolutionPreviewModal
@@ -1597,7 +1874,4 @@ export default function BACView({
       />
     </KeyboardAvoidingView>
   );
-}
-function setEntries(quotes: any[]) {
-  throw new Error("Function not implemented.");
 }

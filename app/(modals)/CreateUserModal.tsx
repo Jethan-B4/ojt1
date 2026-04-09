@@ -11,8 +11,8 @@ import {
   fetchAllRoles,
   type DivisionRow,
   type RoleRow,
-  type UserRow,
-} from "@/lib/supabase";
+} from "@/lib/supabase/index";
+import { DatabaseUser } from "@/types/user";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
@@ -32,7 +32,7 @@ import DropdownPicker from "./DropdownPicker";
 interface CreateUserModalProps {
   visible: boolean;
   onClose: () => void;
-  onCreated: (user: UserRow) => void;
+  onCreated: (user: DatabaseUser) => void;
 }
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
@@ -87,12 +87,13 @@ export default function CreateUserModal({
 
     setSavingLoading(true);
     try {
-      const newUser = await createUser({
+      // Create user in Supabase
+      const newUser: DatabaseUser = await createUser({
         username: userId,
         fullname: username,
         password,
-        division_id: divisionId,
-        role_id: roleId,
+        division_id: divisionId as number,
+        role_id: roleId as number,
         last_login: null,
       });
       onCreated(newUser);

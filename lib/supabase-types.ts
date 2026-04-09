@@ -26,6 +26,8 @@ export interface CanvasserAssignmentRow {
 export interface CanvassEntryRow {
   id: string;
   session_id: string;
+  /** Nullable: when set, ties the row to a specific canvasser assignment return */
+  assignment_id?: string | null;
   item_no: number;
   description: string;
   unit: string;

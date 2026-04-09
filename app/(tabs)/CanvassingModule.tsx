@@ -50,27 +50,6 @@ export default function CanvassingModule({
   // Seed the PR shell with the prNo — each view hydrates items from Supabase.
   const prNoValue = prNo || "";
 
-  if (!prNoValue) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#f9fafb",
-        }}
-      >
-        <Text style={{ fontSize: 16, color: "#6b7280", fontWeight: "600" }}>
-          No PR Selected
-        </Text>
-        <Text style={{ fontSize: 13, color: "#9ca3af", marginTop: 8 }}>
-          Please select a PR from the Procurement view to process its
-          canvassing.
-        </Text>
-      </View>
-    );
-  }
-
   const pr: CanvassingPR = {
     prNo: prNoValue,
     date: "",
@@ -110,6 +89,27 @@ export default function CanvassingModule({
       }
     })();
   }, [roleId, targetStage, pr.prNo]);
+
+  if (!prNoValue) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f9fafb",
+        }}
+      >
+        <Text style={{ fontSize: 16, color: "#6b7280", fontWeight: "600" }}>
+          No PR Selected
+        </Text>
+        <Text style={{ fontSize: 13, color: "#9ca3af", marginTop: 8 }}>
+          Please select a PR from the Procurement view to process its
+          canvassing.
+        </Text>
+      </View>
+    );
+  }
 
   if (roleId === 3 && targetStage === "aaa_preparation") {
     if (!aaaProps) {

@@ -22,9 +22,12 @@ import {
   updateAAAForSession,
 } from "@/lib/supabase/aaa";
 import { fetchBACResolutionForSession } from "@/lib/supabase/bac";
+import type { EnrichedAssignmentRow } from "@/lib/supabase-types";
 import {
+  fetchAssignmentsWithDetails,
   fetchCanvassSessionById,
-  fetchQuotesForSession,
+  fetchQuotesForSubmission,
+  replaceSupplierQuotesForSubmission,
   setItemWinningSupplier,
   updateCanvassSessionMeta,
 } from "@/lib/supabase/canvassing";
@@ -53,6 +56,7 @@ import AAAPreviewModal from "../../(modals)/AAAPreviewModal";
 import { useAuth } from "../../AuthContext";
 import { CompletedBanner, StepHeader, StepNav } from "../BACView/components";
 import { Card, Divider, Field, Input } from "../BACView/ui";
+import StageRemarkBox from "../StageRemarkBox";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -358,19 +362,23 @@ export default function AAAView({
     }),
   );
   const [office, setOffice] = useState(pr.officeSection);
+  const [prId, setPrId] = useState<string | null>(null);
 
   // ── Data state ──────────────────────────────────────────────────────────────
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(
     (pr.items as any) ?? [],
   );
   const [entries, setEntries] = useState<EntryRow[]>([]);
+  const [returns, setReturns] = useState<EnrichedAssignmentRow[]>([]);
+  const [sourceReturnId, setSourceReturnId] = useState<string | null>(null);
+  const [applyingSource, setApplyingSource] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // ── Load all data ────────────────────────────────────────────────────────────
   const loadEntries = useCallback(async () => {
-    const rows = await fetchQuotesForSession(sessionId);
+    const rows = await fetchQuotesForSubmission(sessionId, null);
     setEntries(
       rows.map((r) => ({
         item_no: r.item_no,
@@ -388,6 +396,7 @@ export default function AAAView({
         // PR items
         const prId = await fetchPRIdByNo(pr.prNo);
         if (prId) {
+          setPrId(prId);
           const { header: h, items } = await fetchPRWithItemsById(prId);
           setOffice(h.office_section ?? pr.officeSection);
           setDate((prev) =>
@@ -414,6 +423,9 @@ export default function AAAView({
         // Session meta
         const sess = await fetchCanvassSessionById(sessionId);
         if (sess?.bac_no) setBacNo(sess.bac_no);
+        setSourceReturnId((sess as any)?.aaa_prefill_assignment_id ?? null);
+        const asgn = await fetchAssignmentsWithDetails(sessionId);
+        setReturns(asgn.filter((a) => a.status === "returned"));
 
         // Resolution
         const res = await fetchBACResolutionForSession(sessionId);
@@ -436,6 +448,39 @@ export default function AAAView({
       }
     })();
   }, [sessionId, pr.prNo, pr.officeSection, loadEntries]);
+
+  const applySource = useCallback(
+    async (assignmentId: string) => {
+      setApplyingSource(true);
+      try {
+        const src = await fetchQuotesForSubmission(sessionId, assignmentId);
+        const payload = src
+          .map((e: any) => ({
+            item_no: e.item_no,
+            description: e.description,
+            unit: e.unit,
+            quantity: e.quantity,
+            supplier_name: e.supplier_name,
+            unit_price: e.unit_price,
+            total_price: e.total_price,
+            is_winning: e.is_winning ?? null,
+          }))
+          .filter((e: any) => (Number(e.unit_price) || 0) > 0);
+
+        await updateCanvassSessionMeta(sessionId, {
+          aaa_prefill_assignment_id: assignmentId,
+        });
+        await replaceSupplierQuotesForSubmission(sessionId, null, payload);
+        setSourceReturnId(assignmentId);
+        await loadEntries();
+      } catch (e: any) {
+        Alert.alert("Error", e?.message ?? "Could not apply selected RFQ.");
+      } finally {
+        setApplyingSource(false);
+      }
+    },
+    [sessionId, loadEntries],
+  );
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const suppliers = useMemo(
@@ -652,6 +697,77 @@ export default function AAAView({
             </Field>
           </View>
         </Card>
+
+        {currentUser?.role_id === 3 && returns.length > 0 && (
+          <Card>
+            <View className="px-4 pt-3 pb-3">
+              <Divider label="RFQ Source" />
+              <Text className="text-[11.5px] text-gray-500 mb-2">
+                Choose which returned RFQ to use as the basis for the abstract.
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                {returns.map((r) => {
+                  const active = sourceReturnId === r.id;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      activeOpacity={0.85}
+                      onPress={() => setSourceReturnId(r.id)}
+                      className={`px-3 py-2 rounded-xl border ${
+                        active
+                          ? "bg-emerald-50 border-emerald-200"
+                          : "bg-white border-gray-200"
+                      }`}
+                    >
+                      <Text
+                        className={`text-[11.5px] font-bold ${
+                          active ? "text-emerald-800" : "text-gray-700"
+                        }`}
+                      >
+                        {r.division_name ?? `Division ${r.division_id}`}
+                      </Text>
+                      <Text className="text-[10px] text-gray-400">
+                        {r.canvasser_name ?? "—"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <View className="flex-row justify-end mt-2">
+                <TouchableOpacity
+                  disabled={!sourceReturnId || applyingSource}
+                  onPress={() => sourceReturnId && applySource(sourceReturnId)}
+                  activeOpacity={0.85}
+                  className={`flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl ${
+                    !sourceReturnId || applyingSource
+                      ? "bg-gray-300"
+                      : "bg-[#064E3B]"
+                  }`}
+                >
+                  <MaterialIcons name="done" size={16} color="#ffffff" />
+                  <Text className="text-[12px] font-bold text-white">
+                    {applyingSource ? "Applying…" : "Apply"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Card>
+        )}
+
+        {prId && currentUser?.id && (
+          <View className="mb-3">
+            <StageRemarkBox
+              prId={prId}
+              userId={String(currentUser.id)}
+              stageKey="aaa_preparation"
+              stageLabel="AAA Preparation"
+            />
+          </View>
+        )}
 
         {/* ── Abstract table ── */}
         <AbstractTable

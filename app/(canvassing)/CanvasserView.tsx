@@ -32,7 +32,8 @@ import {
   fetchQuotesForSession,
   fetchUsersByRole,
   markAssignmentReturned,
-  replaceSupplierQuotesForSession,
+  fetchQuotesForSubmission,
+  replaceSupplierQuotesForSubmission,
   updateCanvassStage,
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
@@ -572,7 +573,7 @@ export default function CanvasserView({
           unitCost: i.unit_price,
         })),
       );
-      const existing = await fetchQuotesForSession(session.id);
+      const existing = await fetchQuotesForSubmission(session.id, mine?.id ?? null);
       if (existing.length > 0) {
         const byItem: Record<number, { supplier: string; price: string }> = {};
         existing.forEach((e) => {
@@ -675,7 +676,10 @@ export default function CanvasserView({
         return;
       }
 
-      await replaceSupplierQuotesForSession(sessionId, rows);
+      const myAssignmentId =
+        assignments.find((a) => a.division_id === currentUser?.division_id)?.id ??
+        null;
+      await replaceSupplierQuotesForSubmission(sessionId, myAssignmentId, rows);
       if (currentUser?.division_id)
         await markAssignmentReturned(sessionId, currentUser.division_id);
       try {
@@ -691,7 +695,7 @@ export default function CanvasserView({
     } catch (e: any) {
       Alert.alert("Submit failed", e?.message ?? "Could not submit canvass");
     }
-  }, [sessionId, liveItems, quotes, currentUser]);
+  }, [sessionId, liveItems, quotes, currentUser, assignments]);
 
   // ── Build RFQ preview data ────────────────────────────────────────────────────
   const buildPreviewData = useCallback((): CanvassPreviewData => {

@@ -10,11 +10,11 @@ import {
   fetchAllRoles,
   fetchAllUsers,
   type RoleRow,
-  type UserRow,
-} from "@/lib/supabase";
+} from "@/lib/supabase/index";
+import type { DatabaseUser } from "@/types/user";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -31,13 +31,27 @@ import EditUserModal from "../(modals)/EditUserModal";
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
-interface ProcessedUser extends UserRow {
-  initials: string;
-}
+type UserRow = Omit<
+  Pick<
+    DatabaseUser,
+    | "username"
+    | "fullname"
+    | "division_id"
+    | "role_id"
+    | "last_login"
+    | "division_name"
+    | "role_name"
+  >,
+  never
+> & {
+  created_at: string | null;
+};
+
+type UIUser = UserRow & { initials: string };
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
-function fmtDate(iso?: string): string {
+function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-PH", {
     month: "short",
@@ -46,7 +60,7 @@ function fmtDate(iso?: string): string {
   });
 }
 
-function fmtTime(iso?: string): string {
+function fmtTime(iso?: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString("en-PH", {
     hour: "2-digit",
@@ -127,7 +141,7 @@ function UserTableRow({
   onEdit,
   onDelete,
 }: {
-  user: ProcessedUser;
+  user: UIUser;
   isEven: boolean;
   roles: RoleRow[];
   onPress?: () => void;
@@ -298,15 +312,15 @@ function UserTableRow({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function UserManagementScreen({ navigation }: any) {
-  const [users, setUsers] = useState<ProcessedUser[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<ProcessedUser[]>([]);
+export default function UserManagementScreen() {
+  const [users, setUsers] = useState<UIUser[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<UIUser[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedUser, setSelectedUser] = useState<ProcessedUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UIUser | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
@@ -327,9 +341,16 @@ export default function UserManagementScreen({ navigation }: any) {
     setError(null);
     try {
       const rows = await fetchAllUsers();
-      const processed = rows.map((u) => ({
-        ...u,
-        initials: getInitials(u.fullname),
+      const processed: UIUser[] = (rows as any[]).map((u) => ({
+        username: String(u.username),
+        fullname: String(u.fullname),
+        division_id: typeof u.division_id === "number" ? u.division_id : null,
+        role_id: Number(u.role_id),
+        created_at: u.created_at ?? null,
+        last_login: u.last_login ?? null,
+        division_name: u.division_name ?? null,
+        role_name: u.role_name ?? null,
+        initials: getInitials(String(u.fullname)),
       }));
       setUsers(processed);
       setFilteredUsers(processed);
@@ -361,7 +382,7 @@ export default function UserManagementScreen({ navigation }: any) {
         u.fullname.toLowerCase().includes(q) ||
         u.username.toLowerCase().includes(q) ||
         u.division_name?.toLowerCase().includes(q) ||
-        u.role_name?.toLowerCase().includes(q)
+        u.role_name?.toLowerCase().includes(q),
     );
     setFilteredUsers(filtered);
   }, [searchQuery, users]);
@@ -672,9 +693,21 @@ export default function UserManagementScreen({ navigation }: any) {
         visible={isCreateModalVisible}
         onClose={() => setIsCreateModalVisible(false)}
         onCreated={(user) => {
-          setUsers([
-            ...users,
-            { ...user, initials: getInitials(user.fullname) },
+          const u: any = user;
+          setUsers((prev) => [
+            ...prev,
+            {
+              username: String(u.username),
+              fullname: String(u.fullname),
+              division_id:
+                typeof u.division_id === "number" ? u.division_id : null,
+              role_id: Number(u.role_id),
+              created_at: u.created_at ?? null,
+              last_login: u.last_login ?? null,
+              division_name: u.division_name ?? null,
+              role_name: u.role_name ?? null,
+              initials: getInitials(String(u.fullname)),
+            },
           ]);
           setIsCreateModalVisible(false);
           loadUsers(true);
@@ -689,7 +722,27 @@ export default function UserManagementScreen({ navigation }: any) {
           setSelectedUser(null);
         }}
         onUpdated={(user) => {
-          setUsers(users.map((u) => (u.username === user.username ? user : u)));
+          const updated: any = user;
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.username === String(updated.username)
+                ? {
+                    username: String(updated.username),
+                    fullname: String(updated.fullname),
+                    division_id:
+                      typeof updated.division_id === "number"
+                        ? updated.division_id
+                        : null,
+                    role_id: Number(updated.role_id),
+                    created_at: updated.created_at ?? u.created_at,
+                    last_login: updated.last_login ?? u.last_login,
+                    division_name: updated.division_name ?? u.division_name,
+                    role_name: updated.role_name ?? u.role_name,
+                    initials: getInitials(String(updated.fullname)),
+                  }
+                : u,
+            ),
+          );
           setIsEditModalVisible(false);
           setSelectedUser(null);
           loadUsers(true);
@@ -704,7 +757,7 @@ export default function UserManagementScreen({ navigation }: any) {
           setSelectedUser(null);
         }}
         onDeleted={(userId) => {
-          setUsers(users.filter((u) => u.username !== userId));
+          setUsers((prev) => prev.filter((u) => u.username !== userId));
           setIsDeleteModalVisible(false);
           setSelectedUser(null);
           loadUsers(true);

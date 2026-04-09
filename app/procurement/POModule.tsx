@@ -459,19 +459,23 @@ const StatusPill: React.FC<{
 interface MoreSheetProps {
   visible: boolean;
   record: PORecord | null;
+  roleId: number;
   canEdit: boolean;
   onClose: () => void;
   onRemarks: () => void;
   onEdit: () => void;
+  onOverride: () => void;
 }
 
 const MoreSheet: React.FC<MoreSheetProps> = ({
   visible,
   record,
+  roleId,
   canEdit,
   onClose,
   onRemarks,
   onEdit,
+  onOverride,
 }) => {
   if (!record) return null;
   const cfg = poCfgFor(record.statusId);
@@ -508,6 +512,22 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
             onPress: () => {
               onClose();
               onEdit();
+            },
+          },
+        ] as Action[])
+      : []),
+    // Admin-only: Override Status action
+    ...(roleId === 1
+      ? ([
+          {
+            icon: "admin-panel-settings",
+            label: "Override Status",
+            sublabel: "Force this PO to any lifecycle status",
+            color: "#1d4ed8",
+            bg: "#eff6ff",
+            onPress: () => {
+              onClose();
+              onOverride();
             },
           },
         ] as Action[])
@@ -633,6 +653,7 @@ const RecordCard: React.FC<{
 }> = ({
   record,
   isEven,
+  roleId,
   statuses,
   latestFlag,
   canProcess,
@@ -750,8 +771,17 @@ const RecordCard: React.FC<{
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
 
-        {/* Process — primary action; locked when role cannot advance this status */}
-        {canProcess ? (
+        {/* Process / Override — admin always sees "Override"; others see Process or Locked */}
+        {roleId === 1 ? (
+          <TouchableOpacity
+            onPress={() => onProcess(record)}
+            activeOpacity={0.8}
+            className="flex-1 bg-indigo-600 rounded-xl py-2 items-center flex-row justify-center gap-1"
+          >
+            <MaterialIcons name="admin-panel-settings" size={13} color="#fff" />
+            <Text className="text-white text-[12px] font-bold">Override</Text>
+          </TouchableOpacity>
+        ) : canProcess ? (
           <TouchableOpacity
             onPress={() => onProcess(record)}
             activeOpacity={0.8}
@@ -906,7 +936,6 @@ export default function POModule() {
   >({});
 
   const [refreshing, setRefreshing] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   // ── Modal state ────────────────────────────────────────────────────────────
 
@@ -1154,6 +1183,7 @@ export default function POModule() {
                       id: r.id,
                       poNo: r.poNo,
                       statusId: r.statusId,
+                      prNo: r.prNo,
                     });
                     setProcessVisible(true);
                   }}
@@ -1224,10 +1254,11 @@ export default function POModule() {
         onProcessed={handlePOProcessed}
       />
 
-      {/* MoreSheet — Remarks + Edit (role-gated) */}
+      {/* MoreSheet — Remarks + Edit (role-gated) + Admin Override */}
       <MoreSheet
         visible={moreVisible}
         record={moreRecord}
+        roleId={roleId}
         canEdit={moreRecord ? canEditPO(moreRecord.statusId) : false}
         onClose={() => {
           setMoreVisible(false);
@@ -1251,6 +1282,17 @@ export default function POModule() {
             setEditVisible(true);
           }
         }}
+        onOverride={() => {
+          if (moreRecord) {
+            setProcessRecord({
+              id: moreRecord.id,
+              poNo: moreRecord.poNo,
+              statusId: moreRecord.statusId,
+              prNo: moreRecord.prNo,
+            });
+            setProcessVisible(true);
+          }
+        }}
       />
 
       {/* PORemarkSheet — unified PO + linked PR remarks */}
@@ -1264,7 +1306,7 @@ export default function POModule() {
         }}
       />
 
-      {/* Saving overlay */}
+      {/* Saving overlay
       {saving && (
         <View className="absolute inset-0 bg-black/20 items-center justify-center">
           <View className="bg-white rounded-2xl px-6 py-4">
@@ -1273,7 +1315,7 @@ export default function POModule() {
             </Text>
           </View>
         </View>
-      )}
+      )} */}
     </View>
   );
 }

@@ -26,6 +26,7 @@ import POPreviewPanel, {
   type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import {
+  fetchPOStatuses,
   fetchPOWithItemsById,
   type POItemRow,
   type PORow,
@@ -41,46 +42,39 @@ const fmt = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-/** Phase 2 steps in order — used to render the progress timeline. */
-const PHASE2_STEPS: {
-  id: number;
-  step: number;
-  label: string;
-  actor: string;
-}[] = [
-  { id: 1, step: 11, label: "AAA Signing", actor: "BAC" },
-  { id: 2, step: 12, label: "Fwd. to Supply", actor: "BAC" },
-  { id: 3, step: 13, label: "PO # Assignment", actor: "Supply" },
-  { id: 4, step: 14, label: "PO Preparation", actor: "Supply" },
-  { id: 5, step: 15, label: "Budget Allocation", actor: "Budget" },
-  { id: 6, step: 16, label: "ORS Preparation", actor: "Budget" },
-  { id: 7, step: 17, label: "ORS # Assignment", actor: "Budget" },
-  { id: 8, step: 18, label: "Budget Approval", actor: "Budget" },
-  { id: 9, step: 19, label: "Accounting Review", actor: "Accounting" },
-  { id: 10, step: 20, label: "PARPO Signature", actor: "PARPO" },
-  { id: 11, step: 21, label: "PO Approved", actor: "Supply" },
-  { id: 12, step: 22, label: "Served to Supplier", actor: "Supply" },
-  { id: 13, step: 23, label: "COA Submission", actor: "Supply" },
-];
-
 // Status colours (mirrors POModule's PO_STATUS_CFG)
 const PO_STATUS_CFG: Record<
   number,
-  { bg: string; text: string; dot: string; hex: string }
+  { bg: string; text: string; dot: string; hex: string; label: string }
 > = {
-  1: { bg: "#fdf4ff", text: "#86198f", dot: "#c026d3", hex: "#c026d3" },
-  2: { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6", hex: "#3b82f6" },
-  3: { bg: "#fefce8", text: "#854d0e", dot: "#eab308", hex: "#eab308" },
-  4: { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", hex: "#22c55e" },
-  5: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", hex: "#f97316" },
-  6: { bg: "#fefce8", text: "#713f12", dot: "#ca8a04", hex: "#ca8a04" },
-  7: { bg: "#fff7ed", text: "#7c2d12", dot: "#ea580c", hex: "#ea580c" },
-  8: { bg: "#ecfdf5", text: "#065f46", dot: "#10b981", hex: "#10b981" },
-  9: { bg: "#f0f9ff", text: "#0c4a6e", dot: "#0ea5e9", hex: "#0ea5e9" },
-  10: { bg: "#ecfdf5", text: "#064e3b", dot: "#059669", hex: "#059669" },
-  11: { bg: "#f0fdf4", text: "#14532d", dot: "#16a34a", hex: "#16a34a" },
-  12: { bg: "#f0fdfa", text: "#0f766e", dot: "#0d9488", hex: "#0d9488" },
-  13: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", hex: "#9333ea" },
+  12: {
+    bg: "#f0fdfa",
+    text: "#0f766e",
+    dot: "#0d9488",
+    hex: "#0d9488",
+    label: "PO (Creation)",
+  },
+  13: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    hex: "#9333ea",
+    label: "PO (Allocation)",
+  },
+  14: {
+    bg: "#fff7ed",
+    text: "#9a3412",
+    dot: "#f97316",
+    hex: "#f97316",
+    label: "ORS (Creation)",
+  },
+  15: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    hex: "#3b82f6",
+    label: "ORS (Processing)",
+  },
 };
 const STATUS_FALLBACK = {
   bg: "#f3f4f6",
@@ -88,6 +82,16 @@ const STATUS_FALLBACK = {
   dot: "#9ca3af",
   hex: "#9ca3af",
 };
+
+function poCfgFor(id: number | null | undefined) {
+  if (!id) return { ...STATUS_FALLBACK, label: "—" };
+  return (
+    PO_STATUS_CFG[id] ?? {
+      ...STATUS_FALLBACK,
+      label: `Status ${id}`,
+    }
+  );
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -108,15 +112,21 @@ export default function ViewPOModal({
   const [header, setHeader] = useState<PORow | null>(null);
   const [items, setItems] = useState<POItemRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusNameById, setStatusNameById] = useState<Record<number, string>>(
+    {},
+  );
 
   useEffect(() => {
     if (!visible || !record) return;
     setTab("details");
     setLoading(true);
-    fetchPOWithItemsById(record.id)
-      .then(({ header: h, items: its }) => {
-        setHeader(h);
-        setItems(its);
+    Promise.all([fetchPOWithItemsById(record.id), fetchPOStatuses()])
+      .then(([po, statuses]) => {
+        setHeader(po.header);
+        setItems(po.items);
+        setStatusNameById(
+          Object.fromEntries(statuses.map((s) => [s.id, s.status_name])),
+        );
       })
       .catch((e: any) => {
         Alert.alert("Load failed", e?.message ?? "Failed to load PO");
@@ -124,14 +134,6 @@ export default function ViewPOModal({
       })
       .finally(() => setLoading(false));
   }, [visible, record]);
-
-  if (!record) return null;
-
-  const statusCfg = PO_STATUS_CFG[record.statusId] ?? STATUS_FALLBACK;
-  const currentStep = PHASE2_STEPS.find((s) => s.id === record.statusId);
-  const currentStepIdx = PHASE2_STEPS.findIndex(
-    (s) => s.id === record.statusId,
-  );
 
   // Build camelCase POPreviewData from the fetched PORow
   const previewData: POPreviewData | null = header
@@ -165,12 +167,20 @@ export default function ViewPOModal({
   const html = previewData ? buildPOHtml(previewData) : "";
   const { handlePrint, handleDownload } = usePOPreviewActions(html);
 
+  if (!visible) return null;
+  if (!record) return null;
+
+  const statusId = header?.status_id ?? record.statusId;
+  const statusCfg = poCfgFor(statusId);
+  const statusLabel = statusNameById[statusId] ?? statusCfg.label;
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <View className="flex-1 bg-white">
         {/* ── Header ── */}
         <View className="bg-[#064E3B] px-5 pt-5 pb-0">
@@ -181,7 +191,8 @@ export default function ViewPOModal({
               </Text>
               <Text
                 className="text-[18px] font-black text-white mt-0.5"
-                style={{ fontFamily: MONO }}>
+                style={{ fontFamily: MONO }}
+              >
                 {record.poNo}
               </Text>
               <Text className="text-[11.5px] text-white/60 mt-0.5">
@@ -191,22 +202,22 @@ export default function ViewPOModal({
             <View className="flex-row items-center gap-2">
               <View
                 className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full"
-                style={{ backgroundColor: statusCfg.hex + "33" }}>
+                style={{ backgroundColor: statusCfg.hex + "33" }}
+              >
                 <View
                   className="w-1.5 h-1.5 rounded-full"
                   style={{ backgroundColor: statusCfg.dot }}
                 />
                 <Text className="text-[11px] font-bold text-white">
-                  {currentStep?.label ?? `Status ${record.statusId}`}
+                  {statusLabel}
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={onClose}
                 hitSlop={10}
-                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center">
-                <Text className="text-white text-[20px] leading-none font-light">
-                  ×
-                </Text>
+                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
+              >
+                <MaterialIcons name="close" size={18} color="#ffffff" />
               </TouchableOpacity>
             </View>
           </View>
@@ -218,9 +229,11 @@ export default function ViewPOModal({
                 key={t}
                 onPress={() => setTab(t)}
                 activeOpacity={0.8}
-                className={`flex-1 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}>
+                className={`flex-1 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}
+              >
                 <Text
-                  className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}>
+                  className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}
+                >
                   {t === "details" ? "Details" : "PDF Preview"}
                 </Text>
               </TouchableOpacity>
@@ -253,7 +266,7 @@ export default function ViewPOModal({
             header={header}
             items={items}
             statusCfg={statusCfg}
-            currentStepIdx={currentStepIdx}
+            statusLabel={statusLabel}
           />
         )}
       </View>
@@ -268,23 +281,25 @@ function DetailsView({
   header,
   items,
   statusCfg,
-  currentStepIdx,
+  statusLabel,
 }: {
   record: PORecord;
   header: PORow | null;
   items: POItemRow[];
   statusCfg: { bg: string; text: string; dot: string; hex: string };
-  currentStepIdx: number;
+  statusLabel: string;
 }) {
   return (
     <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ padding: 16, gap: 12 }}>
+      contentContainerStyle={{ padding: 16, gap: 12 }}
+    >
       {/* Summary card */}
       <View
         className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm"
-        style={{ elevation: 2 }}>
+        style={{ elevation: 2 }}
+      >
         <View className="bg-[#064E3B] px-4 py-3">
           <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">
             PO Details
@@ -305,16 +320,17 @@ function DetailsView({
           <InfoRow label="Status">
             <View
               className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: statusCfg.bg }}>
+              style={{ backgroundColor: statusCfg.bg }}
+            >
               <View
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ backgroundColor: statusCfg.dot }}
               />
               <Text
                 className="text-[10.5px] font-bold"
-                style={{ color: statusCfg.text }}>
-                {PHASE2_STEPS.find((s) => s.id === record.statusId)?.label ??
-                  `Status ${record.statusId}`}
+                style={{ color: statusCfg.text }}
+              >
+                {statusLabel}
               </Text>
             </View>
           </InfoRow>
@@ -327,88 +343,11 @@ function DetailsView({
         </View>
       </View>
 
-      {/* Phase 2 step timeline */}
-      <View
-        className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm"
-        style={{ elevation: 2 }}>
-        <View className="bg-[#064E3B] px-4 py-3">
-          <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">
-            Phase 2 Progress
-          </Text>
-        </View>
-        <View className="px-4 py-3 gap-0">
-          {PHASE2_STEPS.map((step, idx) => {
-            const done = idx < currentStepIdx;
-            const current = idx === currentStepIdx;
-            const future = idx > currentStepIdx;
-            return (
-              <View key={step.id} className="flex-row items-start gap-3">
-                <View className="items-center" style={{ width: 20 }}>
-                  <View
-                    className="w-4 h-4 rounded-full items-center justify-center mt-0.5"
-                    style={{
-                      backgroundColor: done
-                        ? "#064E3B"
-                        : current
-                          ? statusCfg.dot
-                          : "#e5e7eb",
-                    }}>
-                    {done && (
-                      <MaterialIcons name="check" size={12} color="#ffffff" />
-                    )}
-                    {current && (
-                      <View className="w-2 h-2 rounded-full bg-white" />
-                    )}
-                  </View>
-                  {idx < PHASE2_STEPS.length - 1 && (
-                    <View
-                      className="w-px flex-1 my-0.5"
-                      style={{
-                        backgroundColor: done ? "#064E3B" : "#e5e7eb",
-                        minHeight: 14,
-                      }}
-                    />
-                  )}
-                </View>
-                <View className="flex-1 pb-2">
-                  <Text
-                    className="text-[12px] font-semibold"
-                    style={{
-                      color: future
-                        ? "#9ca3af"
-                        : current
-                          ? statusCfg.text
-                          : "#374151",
-                    }}>
-                    Step {step.step} · {step.label}
-                  </Text>
-                  <Text
-                    className="text-[10.5px]"
-                    style={{ color: future ? "#d1d5db" : "#9ca3af" }}>
-                    {step.actor}
-                  </Text>
-                </View>
-                {current && (
-                  <View
-                    className="rounded-full px-2 py-0.5 self-start mt-0.5"
-                    style={{ backgroundColor: statusCfg.bg }}>
-                    <Text
-                      className="text-[9.5px] font-bold"
-                      style={{ color: statusCfg.text }}>
-                      Current
-                    </Text>
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      </View>
-
       {/* Line items */}
       <View
         className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm"
-        style={{ elevation: 2 }}>
+        style={{ elevation: 2 }}
+      >
         <View className="bg-[#064E3B] px-4 py-3">
           <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">
             Line Items · {items.length || "—"} item
@@ -425,10 +364,12 @@ function DetailsView({
           items.map((item, i) => (
             <View
               key={i}
-              className={`px-4 py-3 border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+              className={`px-4 py-3 border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+            >
               <Text
                 className="text-[13px] font-semibold text-gray-800 mb-1.5"
-                numberOfLines={2}>
+                numberOfLines={2}
+              >
                 {item.description}
               </Text>
               <View className="flex-row flex-wrap gap-2">
@@ -456,7 +397,8 @@ function DetailsView({
         </Text>
         <Text
           className="text-[20px] font-black text-white"
-          style={{ fontFamily: MONO }}>
+          style={{ fontFamily: MONO }}
+        >
           ₱{fmt(record.totalAmount)}
         </Text>
       </View>
@@ -464,7 +406,8 @@ function DetailsView({
       {/* Remarks placeholder */}
       <View
         className="bg-blue-50 rounded-2xl border border-blue-200 overflow-hidden shadow-sm"
-        style={{ elevation: 2 }}>
+        style={{ elevation: 2 }}
+      >
         <View className="bg-blue-600 px-4 py-3">
           <Text className="text-[10px] font-bold uppercase tracking-widest text-white/90">
             Remarks & Comments
@@ -501,12 +444,14 @@ function InfoRow({
 }) {
   return (
     <View
-      className={`flex-row items-center justify-between py-2.5 ${last ? "" : "border-b border-gray-100"}`}>
+      className={`flex-row items-center justify-between py-2.5 ${last ? "" : "border-b border-gray-100"}`}
+    >
       <Text className="text-[11.5px] font-semibold text-gray-400">{label}</Text>
       {children ?? (
         <Text
           className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
-          style={mono ? { fontFamily: MONO } : undefined}>
+          style={mono ? { fontFamily: MONO } : undefined}
+        >
           {value}
         </Text>
       )}
@@ -525,13 +470,16 @@ function Chip({
 }) {
   return (
     <View
-      className={`flex-row items-center gap-1 px-2 py-0.5 rounded-md ${highlight ? "bg-emerald-100" : "bg-gray-100"}`}>
+      className={`flex-row items-center gap-1 px-2 py-0.5 rounded-md ${highlight ? "bg-emerald-100" : "bg-gray-100"}`}
+    >
       <Text
-        className={`text-[9.5px] font-bold uppercase tracking-wide ${highlight ? "text-emerald-600" : "text-gray-400"}`}>
+        className={`text-[9.5px] font-bold uppercase tracking-wide ${highlight ? "text-emerald-600" : "text-gray-400"}`}
+      >
         {label}
       </Text>
       <Text
-        className={`text-[11.5px] font-semibold ${highlight ? "text-emerald-800" : "text-gray-700"}`}>
+        className={`text-[11.5px] font-semibold ${highlight ? "text-emerald-800" : "text-gray-700"}`}
+      >
         {value}
       </Text>
     </View>

@@ -53,7 +53,7 @@ export interface RemarkSheetRecord {
 
 export interface RemarkEntry {
   id: number;
-  remark: string;
+  remark: string | null;
   status_flag_id: number | null;
   created_at: string;
   user_id: number | null;
@@ -99,10 +99,11 @@ interface ParsedAttachment {
   url: string;
 }
 
-export function parseAttachments(remark: string): {
+export function parseAttachments(remark: string | null | undefined): {
   text: string;
   attachments: ParsedAttachment[];
 } {
+  if (!remark) return { text: "", attachments: [] };
   const attachments: ParsedAttachment[] = [];
 
   const TOKEN_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
@@ -308,7 +309,7 @@ const RemarkTimelineItem: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
     minute: "2-digit",
     hour12: true,
   });
-  const { text, attachments } = parseAttachments(entry.remark);
+  const { text, attachments } = parseAttachments(entry.remark ?? "");
 
   return (
     <View className="flex-row gap-3">

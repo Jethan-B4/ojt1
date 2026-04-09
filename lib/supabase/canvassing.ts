@@ -13,11 +13,7 @@ export async function fetchCanvassSessionById(sessionId: string | number) {
 
 export async function updateCanvassSessionMeta(
   sessionId: string | number,
-  patch: Partial<{
-    deadline: string | null;
-    bac_no: string | null;
-    status: string;
-  }>,
+  patch: Partial<Record<string, any>>,
 ) {
   const sid = String(sessionId);
   const { data, error } = await supabase
@@ -108,19 +104,7 @@ export async function replaceSupplierQuotesForSession(
   sessionId: string,
   quotes: Array<Record<string, any>>,
 ) {
-  const { error: delError } = await supabase
-    .from("canvass_entries")
-    .delete()
-    .eq("session_id", sessionId);
-  if (delError) throw delError;
-  if (quotes.length === 0) return [];
-  const rows = quotes.map((q) => ({ ...q, session_id: sessionId }));
-  const { data, error } = await supabase
-    .from("canvass_entries")
-    .insert(rows)
-    .select();
-  if (error) throw error;
-  return data;
+  return replaceSupplierQuotesForSubmission(sessionId, null, quotes);
 }
 
 export async function setItemWinningSupplier(
@@ -150,6 +134,78 @@ export async function fetchAssignmentsForSession(sessionId: string) {
     .eq("session_id", sessionId);
   if (error) throw error;
   return data;
+}
+
+export async function fetchQuotesForSubmission(
+  sessionId: string,
+  assignmentId: string | null,
+) {
+  const base = supabase
+    .from("canvass_entries")
+    .select("*")
+    .eq("session_id", sessionId);
+
+  try {
+    const { data, error } =
+      assignmentId === null
+        ? await base.is("assignment_id", null)
+        : await base.eq("assignment_id", assignmentId);
+    if (error) throw error;
+    return data ?? [];
+  } catch (e: any) {
+    // Backward compatibility when assignment_id column isn't deployed yet.
+    const msg = String(e?.message ?? "");
+    if (msg.toLowerCase().includes("assignment_id")) {
+      const { data, error } = await supabase
+        .from("canvass_entries")
+        .select("*")
+        .eq("session_id", sessionId);
+      if (error) throw error;
+      return data ?? [];
+    }
+    throw e;
+  }
+}
+
+export async function replaceSupplierQuotesForSubmission(
+  sessionId: string,
+  assignmentId: string | null,
+  quotes: Array<Record<string, any>>,
+) {
+  try {
+    const delQ = supabase.from("canvass_entries").delete().eq("session_id", sessionId);
+    const { error: delError } =
+      assignmentId === null
+        ? await delQ.is("assignment_id", null)
+        : await delQ.eq("assignment_id", assignmentId);
+    if (delError) throw delError;
+
+    if (quotes.length === 0) return [];
+    const rows = quotes.map((q) => ({
+      ...q,
+      session_id: sessionId,
+      assignment_id: assignmentId,
+    }));
+    const { data, error } = await supabase.from("canvass_entries").insert(rows).select();
+    if (error) throw error;
+    return data ?? [];
+  } catch (e: any) {
+    // Backward compatibility when assignment_id column isn't deployed yet.
+    const msg = String(e?.message ?? "");
+    if (msg.toLowerCase().includes("assignment_id")) {
+      const { error: delError } = await supabase
+        .from("canvass_entries")
+        .delete()
+        .eq("session_id", sessionId);
+      if (delError) throw delError;
+      if (quotes.length === 0) return [];
+      const rows = quotes.map((q) => ({ ...q, session_id: sessionId }));
+      const { data, error } = await supabase.from("canvass_entries").insert(rows).select();
+      if (error) throw error;
+      return data ?? [];
+    }
+    throw e;
+  }
 }
 
 export async function insertAssignmentsForDivisions(
