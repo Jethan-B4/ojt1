@@ -30,15 +30,19 @@ import {
   ensureCanvassSession,
   fetchAssignmentsForSession,
   fetchQuotesForSession,
+  fetchQuotesForSubmission,
   fetchUsersByRole,
   markAssignmentReturned,
-  fetchQuotesForSubmission,
   replaceSupplierQuotesForSubmission,
   updateCanvassStage,
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
 import { fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
-import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
+import type {
+  CanvassingPR,
+  CanvassingPRItem,
+  SupplierQ,
+} from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -72,6 +76,17 @@ const prTotal = (items: CanvassingPRItem[]) =>
   items.reduce((s, i) => s + i.qty * i.unitCost, 0);
 
 type Tab = "progress" | "my_rfq";
+
+const mkSupplier = (id: number): SupplierQ => ({
+  id,
+  name: "",
+  address: "",
+  contact: "",
+  tin: "",
+  days: "",
+  prices: {},
+  remarks: "",
+});
 
 // ─── Winner calculation ───────────────────────────────────────────────────────
 
@@ -134,6 +149,50 @@ const Card = ({
     {children}
   </View>
 );
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View className="mb-2.5">
+      <Text className="text-[11px] font-bold text-gray-500 mb-1">
+        {label}
+        {required ? <Text className="text-red-500"> *</Text> : null}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+function Input({
+  value,
+  placeholder,
+  numeric,
+  onChange,
+}: {
+  value: string;
+  placeholder?: string;
+  numeric?: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor="#9ca3af"
+      keyboardType={numeric ? "decimal-pad" : "default"}
+      className="rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-gray-800"
+      style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}
+    />
+  );
+}
 
 // ─── Progress tab: lowest-offer abstract ─────────────────────────────────────
 
@@ -471,9 +530,7 @@ export default function CanvasserView({
   const [assigned, setAssigned] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
-  const [quotes, setQuotes] = useState<
-    Record<number, { supplier: string; price: string }>
-  >({});
+  const [supps, setSupps] = useState<SupplierQ[]>([mkSupplier(1)]);
   const [assignments, setAssignments] = useState<CanvasserAssignmentRow[]>([]);
   const [allEntries, setAllEntries] = useState<CanvassEntryRow[]>([]);
   const [allUsers, setAllUsers] = useState<CanvassUserRow[]>([]);
@@ -527,17 +584,28 @@ export default function CanvasserView({
               a.canvasser_id === (currentUser?.id ?? -1) ||
               a.division_id === (currentUser?.division_id ?? -1),
           )?.id ?? null;
-        const existing = await fetchQuotesForSubmission(session.id, myAssignmentId);
+        const existing = await fetchQuotesForSubmission(
+          session.id,
+          myAssignmentId,
+        );
         if (existing.length > 0) {
-          const byItem: Record<number, { supplier: string; price: string }> =
-            {};
-          existing.forEach((e) => {
-            byItem[parseInt(String(e.item_no))] = {
-              supplier: e.supplier_name ?? "",
-              price: String(e.unit_price ?? ""),
-            };
+          const supplierMap = new Map<string, SupplierQ>();
+          let nextId = 1;
+          (existing as any[]).forEach((e) => {
+            const name = e.supplier_name || `Supplier ${nextId}`;
+            if (!supplierMap.has(name)) {
+              supplierMap.set(name, {
+                ...mkSupplier(nextId++),
+                name,
+                tin: e.tin_no ?? "",
+                days: e.delivery_days ?? "",
+              });
+            }
+            const sp = supplierMap.get(name)!;
+            sp.prices[parseInt(String(e.item_no))] = String(e.unit_price ?? "");
           });
-          setQuotes(byItem);
+          const list = Array.from(supplierMap.values());
+          setSupps(list.length ? list : [mkSupplier(1)]);
           setSubmitted(true);
         }
 
@@ -549,8 +617,10 @@ export default function CanvasserView({
         setAssignments(asgnsAll);
         setAllEntries(entries);
         setAllUsers(users);
-      } catch {}
-      finally { setLoading(false); }
+      } catch {
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
 
@@ -584,20 +654,32 @@ export default function CanvasserView({
           unitCost: i.unit_price,
         })),
       );
-      const existing = await fetchQuotesForSubmission(session.id, mine?.id ?? null);
+      const existing = await fetchQuotesForSubmission(
+        session.id,
+        mine?.id ?? null,
+      );
       if (existing.length > 0) {
-        const byItem: Record<number, { supplier: string; price: string }> = {};
-        existing.forEach((e) => {
-          byItem[parseInt(String(e.item_no))] = {
-            supplier: e.supplier_name ?? "",
-            price: String(e.unit_price ?? ""),
-          };
+        const supplierMap = new Map<string, SupplierQ>();
+        let nextId = 1;
+        (existing as any[]).forEach((e) => {
+          const name = e.supplier_name || `Supplier ${nextId}`;
+          if (!supplierMap.has(name)) {
+            supplierMap.set(name, {
+              ...mkSupplier(nextId++),
+              name,
+              tin: e.tin_no ?? "",
+              days: e.delivery_days ?? "",
+            });
+          }
+          const sp = supplierMap.get(name)!;
+          sp.prices[parseInt(String(e.item_no))] = String(e.unit_price ?? "");
         });
-        setQuotes(byItem);
+        const list = Array.from(supplierMap.values());
+        setSupps(list.length ? list : [mkSupplier(1)]);
         setSubmitted(true);
       } else {
         setSubmitted(false);
-        setQuotes({});
+        setSupps([mkSupplier(1)]);
       }
       const [asgnsAll, entries, users] = await Promise.all([
         fetchAssignmentsForSession(session.id),
@@ -662,21 +744,24 @@ export default function CanvasserView({
   const handleSubmit = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const rows = liveItems
-        .map((it) => {
-          const q = quotes[it.id] ?? { supplier: "", price: "" };
-          const up = parseFloat(q.price || "0") || 0;
-          return {
-            item_no: it.id,
-            description: it.desc,
-            unit: it.unit,
-            quantity: it.qty,
-            supplier_name: q.supplier || "Supplier",
-            unit_price: up,
-            total_price: up * it.qty,
-            is_winning: null as any,
-          };
-        })
+      const rows = supps
+        .flatMap((sp) =>
+          liveItems.map((it) => {
+            const up = parseFloat(sp.prices[it.id] || "0") || 0;
+            return {
+              item_no: it.id,
+              description: it.desc,
+              unit: it.unit,
+              quantity: it.qty,
+              supplier_name: sp.name || `Supplier ${sp.id}`,
+              tin_no: sp.tin || null,
+              delivery_days: sp.days || null,
+              unit_price: up,
+              total_price: up * it.qty,
+              is_winning: null as any,
+            };
+          }),
+        )
         .filter((r) => r.unit_price > 0);
 
       if (rows.length === 0) {
@@ -688,8 +773,8 @@ export default function CanvasserView({
       }
 
       const myAssignmentId =
-        assignments.find((a) => a.division_id === currentUser?.division_id)?.id ??
-        null;
+        assignments.find((a) => a.division_id === currentUser?.division_id)
+          ?.id ?? null;
       await replaceSupplierQuotesForSubmission(sessionId, myAssignmentId, rows);
       if (currentUser?.division_id)
         await markAssignmentReturned(sessionId, currentUser.division_id);
@@ -699,14 +784,11 @@ export default function CanvasserView({
 
       setSubmitted(true);
       setActiveTab("progress");
-      Alert.alert(
-        "Submitted",
-        "Your quotations have been submitted to BAC.",
-      );
+      Alert.alert("Submitted", "Your quotations have been submitted to BAC.");
     } catch (e: any) {
       Alert.alert("Submit failed", e?.message ?? "Could not submit canvass");
     }
-  }, [sessionId, liveItems, quotes, currentUser, assignments]);
+  }, [sessionId, liveItems, supps, currentUser, assignments]);
 
   // ── Build RFQ preview data ────────────────────────────────────────────────────
   const buildPreviewData = useCallback((): CanvassPreviewData => {
@@ -725,19 +807,27 @@ export default function CanvasserView({
       officeSection: pr.officeSection,
       purpose: pr.purpose,
       items: liveItems.map((item, i) => {
-        const q = quotes[item.id];
-        const up = q?.price ? parseFloat(q.price) : undefined;
+        let bestSupplier = "";
+        let bestPrice = 0;
+        supps.forEach((sp) => {
+          const p = parseFloat(sp.prices[item.id] || "0") || 0;
+          if (p > 0 && (bestPrice === null || p < bestPrice)) {
+            bestPrice = p;
+            bestSupplier = sp.name;
+          }
+        });
         return {
           itemNo: i + 1,
-          description: item.desc + (q?.supplier ? ` (${q.supplier})` : ""),
+          description: item.desc + (bestSupplier ? ` (${bestSupplier})` : ""),
           qty: item.qty,
           unit: item.unit,
-          unitPrice: up && up > 0 ? up.toFixed(2) : "",
+          unitPrice:
+            bestPrice !== null && bestPrice > 0 ? bestPrice.toFixed(2) : "",
         };
       }),
       canvasserNames: currentUser?.fullname ? [currentUser.fullname] : [],
     };
-  }, [pr, liveItems, quotes, currentUser]);
+  }, [pr, liveItems, supps, currentUser]);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const userById = useMemo(
@@ -756,14 +846,16 @@ export default function CanvasserView({
   const returnedCount = returnedAssignments.length;
   const totalCount = assignments.length;
 
-  const hasQuoteEntered = liveItems.some((it) => {
-    const p = parseFloat(quotes[it.id]?.price || "0");
-    return p > 0;
-  });
+  const hasQuoteEntered = supps.some((sp) =>
+    liveItems.some((it) => (parseFloat(sp.prices[it.id] || "0") || 0) > 0),
+  );
 
-  const quotedTotal = liveItems.reduce((s, it) => {
-    const up = parseFloat(quotes[it.id]?.price || "0") || 0;
-    return s + up * it.qty;
+  const quotedTotal = supps.reduce((sum, sp) => {
+    const t = liveItems.reduce((s, it) => {
+      const up = parseFloat(sp.prices[it.id] || "0") || 0;
+      return s + up * it.qty;
+    }, 0);
+    return sum + t;
   }, 0);
 
   // ── Render ─────────────────────────────────────────────────────────────────────
@@ -1075,11 +1167,10 @@ export default function CanvasserView({
                   a.canvasser_id === currentUser?.id ||
                   a.division_id === currentUser?.division_id;
                 // Filter entries belonging to this specific assignment
-                const cardEntries = allEntries.filter(
-                  (e) =>
-                    e.assignment_id != null
-                      ? e.assignment_id === a.id
-                      : liveItems.some((li) => li.id === e.item_no),
+                const cardEntries = allEntries.filter((e) =>
+                  e.assignment_id != null
+                    ? e.assignment_id === a.id
+                    : liveItems.some((li) => li.id === e.item_no),
                 );
                 const makePreview = (): CanvassPreviewData => ({
                   prNo: pr.prNo,
@@ -1182,78 +1273,151 @@ export default function CanvasserView({
           <Card>
             <View className="px-4 pt-3 pb-3">
               <Divider label="Enter Supplier Quotations" />
-              {liveItems.map((it, idx) => {
-                const up = parseFloat(quotes[it.id]?.price || "0") || 0;
-                const isLast = idx === liveItems.length - 1;
-                return (
-                  <View
-                    key={it.id}
-                    className="mb-3"
-                    style={
-                      !isLast
-                        ? {
+              {supps.map((sp, sIdx) => (
+                <View
+                  key={sp.id}
+                  className="border border-gray-200 rounded-2xl mb-3 overflow-hidden"
+                >
+                  <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
+                    <Text className="text-[13.5px] font-semibold text-gray-800">
+                      Supplier {sIdx + 1}
+                      {sp.name ? ` · ${sp.name}` : ""}
+                    </Text>
+                    {supps.length > 1 && (
+                      <TouchableOpacity
+                        onPress={() =>
+                          setSupps((s) => s.filter((x) => x.id !== sp.id))
+                        }
+                        hitSlop={8}
+                        className="p-1.5 rounded-lg border border-gray-200"
+                      >
+                        <MaterialIcons name="close" size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View className="p-3 gap-2">
+                    <Field label="Supplier Name" required>
+                      <Input
+                        value={sp.name}
+                        placeholder="Business / trade name"
+                        onChange={(v) =>
+                          setSupps((s) =>
+                            s.map((x) =>
+                              x.id === sp.id ? { ...x, name: v } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <View className="flex-row gap-2.5">
+                      <View className="flex-1">
+                        <Field label="TIN No.">
+                          <Input
+                            value={sp.tin}
+                            placeholder="000-000-000"
+                            onChange={(v) =>
+                              setSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, tin: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                      <View className="flex-1">
+                        <Field label="Delivery (days)">
+                          <Input
+                            value={sp.days}
+                            placeholder="e.g. 7"
+                            numeric
+                            onChange={(v) =>
+                              setSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, days: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                    </View>
+
+                    <Divider label="Unit Prices Quoted (₱)" />
+                    {liveItems.map((item) => {
+                      const price = parseFloat(sp.prices[item.id] || "0") || 0;
+                      return (
+                        <View
+                          key={item.id}
+                          className="flex-row items-center gap-2 py-1.5"
+                          style={{
                             borderBottomWidth: 1,
                             borderBottomColor: "#f3f4f6",
-                            paddingBottom: 12,
-                          }
-                        : undefined
-                    }
-                  >
-                    <View className="mb-2">
-                      <Text
-                        className="text-[12.5px] font-semibold text-gray-800"
-                        numberOfLines={1}
-                      >
-                        {it.desc}
-                      </Text>
-                      <Text className="text-[10.5px] text-gray-400">
-                        {it.qty} {it.unit}
-                        {up > 0 && (
-                          <Text className="font-semibold text-[#064E3B]">
-                            {" "}
-                            · Total: ₱{fmt(up * it.qty)}
+                          }}
+                        >
+                          <Text
+                            className="flex-[2] text-[12px] text-gray-700"
+                            numberOfLines={1}
+                          >
+                            {item.desc}
                           </Text>
-                        )}
-                      </Text>
-                    </View>
-                    <View className="flex-row gap-2">
-                      <TextInput
-                        value={quotes[it.id]?.supplier ?? ""}
-                        onChangeText={(t) =>
-                          setQuotes((q) => ({
-                            ...q,
-                            [it.id]: {
-                              ...(q[it.id] ?? { price: "" }),
-                              supplier: t,
-                            },
-                          }))
-                        }
-                        placeholder="Supplier name"
-                        placeholderTextColor="#9ca3af"
-                        className="flex-1 rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-gray-800"
-                        style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}
-                      />
-                      <TextInput
-                        value={quotes[it.id]?.price ?? ""}
-                        onChangeText={(t) =>
-                          setQuotes((q) => ({
-                            ...q,
-                            [it.id]: {
-                              ...(q[it.id] ?? { supplier: "" }),
-                              price: t,
-                            },
-                          }))
-                        }
-                        placeholder="0.00"
-                        placeholderTextColor="#9ca3af"
-                        keyboardType="decimal-pad"
-                        className="w-28 rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-right text-gray-800"
-                        style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}
-                      />
-                    </View>
+                          <Text className="text-[11.5px] text-gray-400 w-9 text-center">
+                            {item.unit}
+                          </Text>
+                          <Text className="text-[11.5px] text-gray-600 w-7 text-right">
+                            {item.qty}
+                          </Text>
+                          <View className="w-20">
+                            <Input
+                              value={sp.prices[item.id] ?? ""}
+                              numeric
+                              placeholder="0.00"
+                              onChange={(v) =>
+                                setSupps((s) =>
+                                  s.map((x) =>
+                                    x.id === sp.id
+                                      ? {
+                                          ...x,
+                                          prices: { ...x.prices, [item.id]: v },
+                                        }
+                                      : x,
+                                  ),
+                                )
+                              }
+                            />
+                          </View>
+                          <Text
+                            className={`w-20 text-[11.5px] font-semibold text-right ${
+                              price > 0 ? "text-[#064E3B]" : "text-gray-300"
+                            }`}
+                          >
+                            {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                );
-              })}
+                </View>
+              ))}
+
+              <TouchableOpacity
+                onPress={() =>
+                  setSupps((s) => [...s, mkSupplier(s.length + 1)])
+                }
+                activeOpacity={0.8}
+                className="flex-row items-center justify-center gap-2 py-3 rounded-2xl"
+                style={{
+                  borderWidth: 2,
+                  borderStyle: "dashed",
+                  borderColor: "#d1d5db",
+                }}
+              >
+                <Text className="text-[13px] font-semibold text-[#064E3B]">
+                  + Add Supplier Quote
+                </Text>
+              </TouchableOpacity>
 
               {/* Quoted total preview */}
               {hasQuoteEntered && (

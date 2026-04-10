@@ -304,7 +304,7 @@ export default function BACView({
           // Group entries by supplier_name to reconstruct each SupplierQ block
           const supplierMap = new Map<string, SupplierQ>();
           let nextId = 1;
-          existingQuotes.forEach((e) => {
+          existingQuotes.forEach((e: any) => {
             const name = e.supplier_name || `Supplier ${nextId}`;
             if (!supplierMap.has(name)) {
               supplierMap.set(name, {
@@ -312,8 +312,8 @@ export default function BACView({
                 name,
                 address: "",
                 contact: "",
-                tin: "",
-                days: "",
+                tin: e.tin_no ?? "",
+                days: e.delivery_days ?? "",
                 prices: {},
                 remarks: "",
               });
@@ -405,6 +405,8 @@ export default function BACView({
               unit: item.unit,
               quantity: item.qty,
               supplier_name: sp.name || `Supplier ${sp.id}`,
+              tin_no: sp.tin || null,
+              delivery_days: sp.days || null,
               unit_price: up,
               total_price: up * item.qty,
               is_winning: null,
@@ -558,8 +560,8 @@ export default function BACView({
           name,
           address: "",
           contact: "",
-          tin: "",
-          days: "",
+          tin: (e as any).tin_no ?? "",
+          days: (e as any).delivery_days ?? "",
           prices: {},
           remarks: "",
         });
@@ -615,6 +617,8 @@ export default function BACView({
           unit: e.unit,
           quantity: e.quantity,
           supplier_name: e.supplier_name,
+          tin_no: (e as any).tin_no ?? null,
+          delivery_days: (e as any).delivery_days ?? null,
           unit_price: e.unit_price,
           total_price: e.total_price,
           is_winning: e.is_winning ?? null,
