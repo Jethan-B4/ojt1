@@ -65,6 +65,7 @@ const ROLE_LABELS: Record<number, string> = {
   4: "Budget Officer",
   5: "PARPO",
   6: "End User",
+  7: "Canvasser",
   8: "Supply",
 };
 
@@ -420,6 +421,76 @@ function useSupplyData() {
   return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
 }
 
+// ─── Canvasser data hook — all canvassable PRs (status_id >= 6), cross-division ──
+
+function useCanvasserData() {
+  const [rows, setRows] = useState<PRRow[]>([]);
+  const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [allRows, allStatuses] = await Promise.all([
+        fetchPurchaseRequests(),
+        fetchPRStatuses(),
+      ]);
+      // Canvassers only need to act on PRs that are in the canvassing phase (status_id >= 6)
+      setRows(allRows.filter((r) => r.status_id >= 6));
+      setStatuses(allStatuses);
+      setLastRefresh(new Date());
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load data.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const prs = rows.map((r) => rowToSummary(r, statuses));
+  const recent = [...prs]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 8);
+
+  const inCanvass = prs.filter(
+    (p) => p.statusId >= 6 && p.statusId <= 9,
+  ).length;
+  const bacResolution = prs.filter((p) => p.statusId === 10).length;
+  const aaaIssuance = prs.filter((p) => p.statusId === 11).length;
+  const total = prs.length;
+
+  const statCards: StatCard[] = [
+    {
+      label: "Total",
+      value: total,
+      icon: "description",
+      accent: CLR.brand700,
+    },
+    {
+      label: "Canvassing",
+      value: inCanvass,
+      icon: "pending-actions",
+      accent: "#d97706",
+    },
+    {
+      label: "BAC Res.",
+      value: bacResolution,
+      icon: "gavel",
+      accent: "#7c3aed",
+    },
+    {
+      label: "AAA",
+      value: aaaIssuance,
+      icon: "verified",
+      accent: "#16a34a",
+    },
+  ];
+
+  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
+}
+
 function LoadingScreen() {
   return (
     <View
@@ -613,7 +684,11 @@ function SectionHeader({
             >
               View all
             </Text>
-            <MaterialIcons name="chevron-right" size={16} color={CLR.brand700} />
+            <MaterialIcons
+              name="chevron-right"
+              size={16}
+              color={CLR.brand700}
+            />
           </View>
         </TouchableOpacity>
       )}
@@ -977,6 +1052,11 @@ const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
       { label: "Purchase Orders", icon: "receipt-long", nav: "PurchaseOrder" },
       { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
+    7: [
+      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
+      { label: "View PRs", icon: "description", nav: "Procurement" },
+      { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
+    ],
   };
 
 function QuickActionGrid({
@@ -1179,12 +1259,147 @@ function SupplyDashboard({ navigation }: any) {
   );
 }
 
+// ─── Canvasser Dashboard ──────────────────────────────────────────────────────
+// role_id 7 — sees all canvassable PRs (status_id >= 6) across every division.
+
+function CanvasserDashboard({ navigation }: any) {
+  const { currentUser } = useAuth();
+  const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
+    useCanvasserData();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }, [refresh]);
+
+  if (loading && prs.length === 0) return <LoadingScreen />;
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f9fafb" }}
+      contentContainerStyle={{ paddingBottom: 36 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={CLR.brand500}
+        />
+      }
+    >
+      <WelcomeHeader
+        roleLabel="Canvasser · All Divisions"
+        username={currentUser?.fullname ?? "Canvasser"}
+      />
+
+      {error && <ErrorBanner message={error} onRetry={refresh} />}
+      <LastRefreshedBadge time={lastRefresh} />
+
+      {/* ── KPI tiles ── */}
+      <View
+        style={{
+          flexDirection: "row",
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          gap: 6,
+        }}
+      >
+        {statCards.map((card) => (
+          <StatTile key={card.label} card={card} />
+        ))}
+      </View>
+
+      {/* ── Canvassable PRs ── */}
+      <SectionHeader
+        title="Canvassable Purchase Requests"
+        sub={
+          prs.length > 0
+            ? `${prs.length} PRs ready for canvassing across all divisions`
+            : undefined
+        }
+        onViewAll={
+          prs.length > 0
+            ? () => navigation?.navigate?.("Procurement")
+            : undefined
+        }
+      />
+
+      {recent.length === 0 ? (
+        <View
+          style={{
+            marginHorizontal: 12,
+            backgroundColor: "#f9fafb",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            padding: 24,
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <MaterialIcons name="gavel" size={32} color="#d1d5db" />
+          <Text style={{ fontSize: 13, fontWeight: "700", color: "#374151" }}>
+            No Canvassable PRs
+          </Text>
+          <Text
+            style={{ fontSize: 11.5, color: "#9ca3af", textAlign: "center" }}
+          >
+            {
+              "No PRs are currently in the canvassing phase.\nPull down to refresh."
+            }
+          </Text>
+        </View>
+      ) : (
+        <View
+          style={{
+            marginHorizontal: 12,
+            backgroundColor: "#ffffff",
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            overflow: "hidden",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 1,
+          }}
+        >
+          {recent.map((record, i) => (
+            <PRTableRow
+              key={record.id}
+              record={record}
+              isEven={i % 2 === 0}
+              onPress={() =>
+                navigation?.navigate?.("Canvassing", { prNo: record.prNo })
+              }
+            />
+          ))}
+        </View>
+      )}
+
+      {/* ── Quick actions ── */}
+      <SectionHeader title="Quick Actions" />
+      <QuickActionGrid navigation={navigation} roleId={7} />
+    </ScrollView>
+  );
+}
+
 // ─── Dashboard entry point ────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }: any) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 6;
   if (roleId === 1) return <AdminDashboard navigation={navigation} />;
+  if (roleId === 7) return <CanvasserDashboard navigation={navigation} />;
   if (roleId === 8) return <SupplyDashboard navigation={navigation} />;
   if (roleId in ROLE_QUEUE_STATUS)
     return <ProcessorDashboard navigation={navigation} roleId={roleId} />;

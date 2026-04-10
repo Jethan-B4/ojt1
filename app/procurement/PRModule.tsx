@@ -16,10 +16,7 @@ import {
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
-import {
-  CreatePRModal,
-  PRSubmitPayload,
-} from "../(modals)/CreatePRModal";
+import { CreatePRModal, PRSubmitPayload } from "../(modals)/CreatePRModal";
 import EditPRModal, {
   type PREditPayload,
   type PREditRecord,
@@ -31,21 +28,19 @@ import ProcessPRModal, {
 } from "../(modals)/ProcessPRModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-  fetchCanvassablePRs,
-  fetchCanvassablePRsByDivision,
   fetchLatestRemarkByPR,
   fetchPRStatuses,
   fetchPurchaseRequests,
   fetchPurchaseRequestsByDivision,
   insertProposalForPR,
   insertPurchaseRequest,
-  updatePRStatus,
+  updatePRStatus
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SubTab = "pr" | "canvass" | "abstract_of_awards";
+type SubTab = "all" | "pr" | "canvass" | "abstract_of_awards";
 
 type PRRecord = ReturnType<typeof toPRDisplay> & {
   itemDescription: string;
@@ -128,6 +123,7 @@ function statusCfgFor(id: number) {
 }
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
+  { key: "all", label: "All" },
   { key: "pr", label: "Purchase Request" },
   { key: "canvass", label: "Canvass" },
   { key: "abstract_of_awards", label: "Abstract of Awards" },
@@ -687,7 +683,7 @@ export default function PRModule({
   const roleId = currentUser?.role_id ?? 0;
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(
-    initialSubTab ?? "pr",
+    initialSubTab ?? "all",
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
@@ -744,28 +740,32 @@ export default function PRModule({
   const loadPRs = useCallback(async () => {
     try {
       let rows: PRRow[] = [];
-      // role_id 1 (Admin), PROCESS_ROLES (2-5), and role_id 8 (Supply) see all PRs.
+      // role_id 1 (Admin), PROCESS_ROLES (2-5), role_id 7 (Canvasser), and role_id 8 (Supply) see all PRs.
+      // Canvassers see all PRs but only those in the canvassing phase (status_id >= 6) —
+      // enforced by subtab filtering below, not by the fetch.
       const canSeeAll =
-        roleId === 1 || roleId === 8 || PROCESS_ROLES.has(roleId);
-      if (activeSubTab === "pr") {
-        rows = canSeeAll
-          ? await fetchPurchaseRequests()
-          : await fetchPurchaseRequestsByDivision(
-              currentUser?.division_id ?? -1,
-            );
+        roleId === 1 ||
+        roleId === 7 ||
+        roleId === 8 ||
+        PROCESS_ROLES.has(roleId);
+
+      // Fetch the full dataset — subtab filtering is done client-side by status_id ranges.
+      const allRows = canSeeAll
+        ? await fetchPurchaseRequests()
+        : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
+
+      if (activeSubTab === "all") {
+        // All subtab: show everything
+        rows = allRows;
+      } else if (activeSubTab === "pr") {
+        // Purchase Request: status_id 1–5
+        rows = allRows.filter((r) => r.status_id >= 1 && r.status_id <= 5);
       } else if (activeSubTab === "canvass") {
-        rows = canSeeAll
-          ? await fetchCanvassablePRs()
-          : await fetchCanvassablePRsByDivision(currentUser?.division_id ?? -1);
+        // Canvass: status_id 6–10
+        rows = allRows.filter((r) => r.status_id >= 6 && r.status_id <= 10);
       } else if (activeSubTab === "abstract_of_awards") {
-        // Only fetch PRs with status_id = 11 (AAA Issuance)
-        rows = canSeeAll
-          ? (await fetchPurchaseRequests()).filter((r) => r.status_id === 11)
-          : (
-              await fetchPurchaseRequestsByDivision(
-                currentUser?.division_id ?? -1,
-              )
-            ).filter((r) => r.status_id === 11);
+        // Abstract of Awards: status_id = 11
+        rows = allRows.filter((r) => r.status_id === 11);
       } else {
         rows = [];
       }
@@ -906,7 +906,17 @@ export default function PRModule({
 
   return (
     <View className="flex-1 bg-gray-50">
-      <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
+      <SubTabRow
+        active={activeSubTab}
+        onSelect={(tab) => {
+          setActiveSubTab(tab);
+          setPage(1);
+          setStatusFilter(null);
+          setSectionFilter("All");
+          setSearchQuery("");
+          setFilterOpen(false);
+        }}
+      />
       <SearchBar
         value={searchQuery}
         onChange={(t) => {
@@ -1165,7 +1175,11 @@ export default function PRModule({
         </Text>
         <View className="flex-row items-center gap-1.5">
           {[
-            { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
+            {
+              label: "prev",
+              page: Math.max(1, page - 1),
+              disabled: page === 1,
+            },
             ...Array.from(
               { length: Math.min(5, totalPages) },
               (_, i) => i + 1,
