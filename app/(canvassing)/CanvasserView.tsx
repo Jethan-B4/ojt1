@@ -42,6 +42,7 @@ import type { CanvassingPR, CanvassingPRItem } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -467,7 +468,7 @@ export default function CanvasserView({
 
   const [activeTab, setActiveTab] = useState<Tab>("my_rfq");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [assigned, setAssigned] = useState(true);
+  const [assigned, setAssigned] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
   const [quotes, setQuotes] = useState<
@@ -479,10 +480,12 @@ export default function CanvasserView({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataOverride, setPreviewDataOverride] =
     useState<CanvassPreviewData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
+    setLoading(true);
     (async () => {
       try {
         const prId = await fetchPRIdByNo(pr.prNo);
@@ -517,7 +520,14 @@ export default function CanvasserView({
           })),
         );
 
-        const existing = await fetchQuotesForSession(session.id);
+        // Load only this canvasser's own previously-submitted quotes
+        const myAssignmentId =
+          (asgns ?? []).find(
+            (a: any) =>
+              a.canvasser_id === (currentUser?.id ?? -1) ||
+              a.division_id === (currentUser?.division_id ?? -1),
+          )?.id ?? null;
+        const existing = await fetchQuotesForSubmission(session.id, myAssignmentId);
         if (existing.length > 0) {
           const byItem: Record<number, { supplier: string; price: string }> =
             {};
@@ -540,6 +550,7 @@ export default function CanvasserView({
         setAllEntries(entries);
         setAllUsers(users);
       } catch {}
+      finally { setLoading(false); }
     })();
   }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
 
@@ -756,6 +767,15 @@ export default function CanvasserView({
   }, 0);
 
   // ── Render ─────────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <View className="flex-1 bg-gray-50 items-center justify-center gap-3">
+        <ActivityIndicator size="large" color="#064E3B" />
+        <Text className="text-[12px] text-gray-400">Loading canvass data…</Text>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-gray-50"
@@ -1054,8 +1074,12 @@ export default function CanvasserView({
                 const isOwn =
                   a.canvasser_id === currentUser?.id ||
                   a.division_id === currentUser?.division_id;
-                const cardEntries = allEntries.filter((e) =>
-                  liveItems.some((li) => li.id === e.item_no),
+                // Filter entries belonging to this specific assignment
+                const cardEntries = allEntries.filter(
+                  (e) =>
+                    e.assignment_id != null
+                      ? e.assignment_id === a.id
+                      : liveItems.some((li) => li.id === e.item_no),
                 );
                 const makePreview = (): CanvassPreviewData => ({
                   prNo: pr.prNo,

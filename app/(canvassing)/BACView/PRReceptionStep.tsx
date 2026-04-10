@@ -12,6 +12,7 @@ import {
   type StatusFlag,
 } from "@/app/(modals)/ProcessPRModal";
 import { insertRemark } from "@/lib/supabase";
+import { FLAG_TO_ID } from "@/lib/supabase-types";
 import { fetchPRIdByNo } from "@/lib/supabase/pr";
 import type {
   CanvassStage,
@@ -33,15 +34,6 @@ import { MONO } from "./constants";
 import { Banner, Card, Divider, Field, Input } from "./ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const FLAG_TO_ID: Record<StatusFlag, number> = {
-  complete: 2,
-  incomplete_info: 3,
-  wrong_information: 4,
-  needs_revision: 5,
-  on_hold: 6,
-  urgent: 7,
-};
 
 const BLOCKING_FLAGS = new Set<StatusFlag>([
   "incomplete_info",

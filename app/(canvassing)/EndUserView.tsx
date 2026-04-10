@@ -16,10 +16,13 @@
  *   • PR line items collapsible to save vertical space
  */
 
-import type { CanvassEntryRow, EnrichedAssignmentRow } from "@/lib/supabase";
+import type {
+  CanvassEntryRow,
+  EnrichedAssignmentRow,
+} from "@/lib/supabase-types";
 import {
-  ensureCanvassSession,
   fetchAssignmentsWithDetails,
+  fetchCanvassSessionForPR,
   fetchQuotesForSession,
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
@@ -247,24 +250,31 @@ export default function EndUserView({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ── Initial load — all FK IDs resolved in one pass ─────────────────────────
+  // ── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
         const prId = await fetchPRIdByNo(pr.prNo);
         if (!prId) return;
 
-        // Fetch session (bac_no, deadline, stage) + PR items + assignments in parallel
-        const session = await ensureCanvassSession(prId);
-        setSessionId(session.id);
-        if (session.stage) setCurrentStage(session.stage as CanvassStage);
-        setBacNo(session.bac_no ?? null);
-        setDeadline(session.deadline ?? null);
+        // Read-only: never create a session on the end-user side.
+        const sessionRow = await fetchCanvassSessionForPR(prId);
+        if (!sessionRow) {
+          // PR has not entered canvassing yet.
+          setLoading(false);
+          return;
+        }
+
+        const sid = String(sessionRow.id);
+        setSessionId(sid);
+        if (sessionRow.stage) setCurrentStage(sessionRow.stage as CanvassStage);
+        setBacNo(sessionRow.bac_no ?? null);
+        setDeadline(sessionRow.deadline ?? null);
 
         const [{ items }, asgns, quotes] = await Promise.all([
-          fetchPRWithItemsById(prId), // real items from DB
-          fetchAssignmentsWithDetails(session.id), // joined division_name + canvasser fullname
-          fetchQuotesForSession(session.id),
+          fetchPRWithItemsById(prId),
+          fetchAssignmentsWithDetails(sid),
+          fetchQuotesForSession(sid),
         ]);
 
         setLiveItems(
@@ -476,16 +486,18 @@ export default function EndUserView({
                   setRefreshing(true);
                   const prId = await fetchPRIdByNo(pr.prNo);
                   if (!prId) return;
-                  const session = await ensureCanvassSession(prId);
-                  setSessionId(session.id);
-                  if (session.stage)
-                    setCurrentStage(session.stage as CanvassStage);
-                  setBacNo(session.bac_no ?? null);
-                  setDeadline(session.deadline ?? null);
+                  const sessionRow = await fetchCanvassSessionForPR(prId);
+                  if (!sessionRow) return;
+                  const sid = String(sessionRow.id);
+                  setSessionId(sid);
+                  if (sessionRow.stage)
+                    setCurrentStage(sessionRow.stage as CanvassStage);
+                  setBacNo(sessionRow.bac_no ?? null);
+                  setDeadline(sessionRow.deadline ?? null);
                   const [{ items }, asgns, quotes] = await Promise.all([
                     fetchPRWithItemsById(prId),
-                    fetchAssignmentsWithDetails(session.id),
-                    fetchQuotesForSession(session.id),
+                    fetchAssignmentsWithDetails(sid),
+                    fetchQuotesForSession(sid),
                   ]);
                   setLiveItems(
                     items.map((i) => ({

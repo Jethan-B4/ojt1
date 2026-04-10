@@ -77,6 +77,22 @@ export async function ensureCanvassSession(
   return created;
 }
 
+/**
+ * Fetch an existing canvass session for a PR — read-only, never creates one.
+ * Returns null if no session exists yet.
+ */
+export async function fetchCanvassSessionForPR(prId: string | number) {
+  const pid = String(prId);
+  const { data, error } = await supabase
+    .from("canvass_sessions")
+    .select("*")
+    .eq("pr_id", pid)
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return data ?? null;
+}
+
 export async function fetchQuotesForSession(sessionId: string) {
   const { data, error } = await supabase
     .from("canvass_entries")
@@ -173,7 +189,10 @@ export async function replaceSupplierQuotesForSubmission(
   quotes: Array<Record<string, any>>,
 ) {
   try {
-    const delQ = supabase.from("canvass_entries").delete().eq("session_id", sessionId);
+    const delQ = supabase
+      .from("canvass_entries")
+      .delete()
+      .eq("session_id", sessionId);
     const { error: delError } =
       assignmentId === null
         ? await delQ.is("assignment_id", null)
@@ -186,7 +205,10 @@ export async function replaceSupplierQuotesForSubmission(
       session_id: sessionId,
       assignment_id: assignmentId,
     }));
-    const { data, error } = await supabase.from("canvass_entries").insert(rows).select();
+    const { data, error } = await supabase
+      .from("canvass_entries")
+      .insert(rows)
+      .select();
     if (error) throw error;
     return data ?? [];
   } catch (e: any) {
@@ -200,7 +222,10 @@ export async function replaceSupplierQuotesForSubmission(
       if (delError) throw delError;
       if (quotes.length === 0) return [];
       const rows = quotes.map((q) => ({ ...q, session_id: sessionId }));
-      const { data, error } = await supabase.from("canvass_entries").insert(rows).select();
+      const { data, error } = await supabase
+        .from("canvass_entries")
+        .insert(rows)
+        .select();
       if (error) throw error;
       return data ?? [];
     }
