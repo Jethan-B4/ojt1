@@ -80,6 +80,8 @@ export interface PORecord {
 
 type SortBy = "date_created" | "date_modified";
 
+type SubTab = "all" | "po" | "ors";
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
@@ -183,6 +185,39 @@ function rowToPORecord(row: PORow): PORecord {
     elapsedTime: elapsed,
   };
 }
+
+const SUB_TABS: { key: SubTab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "po", label: "Purchase Order" },
+  { key: "ors", label: "ORS" },
+];
+
+// ─── SubTabRow ────────────────────────────────────────────────────────────────
+
+const SubTabRow: React.FC<{
+  active: SubTab;
+  onSelect: (s: SubTab) => void;
+}> = ({ active, onSelect }) => (
+  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+    {SUB_TABS.map((sub) => {
+      const on = sub.key === active;
+      return (
+        <TouchableOpacity
+          key={sub.key}
+          onPress={() => onSelect(sub.key)}
+          activeOpacity={0.8}
+          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
+        >
+          <Text
+            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+          >
+            {sub.label}
+          </Text>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
 
 // ─── SearchBar ────────────────────────────────────────────────────────────────
 
@@ -717,11 +752,8 @@ const RecordCard: React.FC<{
           {record.date}
         </Text>
         <View className="flex-1" />
-        <Text
-          className="text-[12.5px] font-bold text-gray-700"
-          style={{ fontFamily: MONO }}
-        >
-          ₱{fmt(record.totalAmount)}
+        <Text className="text-[12.5px] font-bold text-gray-700">
+          ₱<Text style={{ fontFamily: MONO }}>{fmt(record.totalAmount)}</Text>
         </Text>
       </View>
 
@@ -917,6 +949,7 @@ export default function POModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sectionFilter, setSectionFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
@@ -991,9 +1024,28 @@ export default function POModule() {
 
   const loadPOs = useCallback(async () => {
     try {
-      const rows: PORow[] = canSeeAll
+      // Fetch the full dataset once — subtab filtering is done client-side by status_id range.
+      const allRows: PORow[] = canSeeAll
         ? await fetchPurchaseOrders()
         : await fetchPurchaseOrdersByDivision(currentUser?.division_id ?? -1);
+
+      let rows: PORow[];
+      if (activeSubTab === "all") {
+        rows = allRows;
+      } else if (activeSubTab === "po") {
+        // Purchase Order: status_id 12–13 (PO Creation, PO Allocation)
+        rows = allRows.filter(
+          (r) => r.status_id !== null && r.status_id >= 12 && r.status_id <= 13,
+        );
+      } else if (activeSubTab === "ors") {
+        // ORS: status_id 14–15 (ORS Creation, ORS Processing)
+        rows = allRows.filter(
+          (r) => r.status_id !== null && r.status_id >= 14 && r.status_id <= 15,
+        );
+      } else {
+        rows = allRows;
+      }
+
       setRecords(rows.map(rowToPORecord));
 
       // Fetch latest remark for each PO in parallel (non-blocking, for flag badges)
@@ -1007,7 +1059,7 @@ export default function POModule() {
       );
       setLatestRemarks(Object.fromEntries(remarkEntries));
     } catch {}
-  }, [canSeeAll, currentUser?.division_id]);
+  }, [canSeeAll, activeSubTab, currentUser?.division_id]);
 
   useEffect(() => {
     loadPOs();
@@ -1080,6 +1132,19 @@ export default function POModule() {
 
   return (
     <View className="flex-1 bg-gray-50">
+      {/* Subtab navigation */}
+      <SubTabRow
+        active={activeSubTab}
+        onSelect={(tab) => {
+          setActiveSubTab(tab);
+          setPage(1);
+          setStatusFilter(null);
+          setSectionFilter("All");
+          setSearchQuery("");
+          setFilterOpen(false);
+        }}
+      />
+
       {/* Search + filter toggle + create button */}
       <SearchBar
         value={searchQuery}

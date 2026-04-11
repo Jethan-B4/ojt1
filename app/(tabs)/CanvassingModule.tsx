@@ -15,7 +15,7 @@
  * with no params (e.g. during development / demo).
  */
 
-import AAAView from "@/app/(canvassing)/AAAView";
+import AAAView from "@/app/(canvassing)/AAAView/AAAModule";
 import BACView from "@/app/(canvassing)/BACView";
 import CanvasserView from "@/app/(canvassing)/CanvasserView";
 import EndUserView from "@/app/(canvassing)/EndUserView";

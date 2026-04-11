@@ -13,16 +13,22 @@
  *   Lowest price per item is auto-marked as winner.
  *   BAC can tap any price cell to manually override the winner.
  *
+ * New in this revision:
+ *   • PriorStepsSummary card — shows BAC Resolution details + winning canvass
+ *     abstract, collapsed by default, expandable in-place.
+ *   • "Review All RFQs" button — opens RFQReviewModal to browse every
+ *     canvasser's submitted quotation, exactly as available in the Collect step.
+ *
  * On submit: upserts the aaa_documents row and advances PR status to 11.
  */
 
+import type { EnrichedAssignmentRow } from "@/lib/supabase-types";
 import {
   fetchAAAForSession,
   insertAAAForSession,
   updateAAAForSession,
 } from "@/lib/supabase/aaa";
 import { fetchBACResolutionForSession } from "@/lib/supabase/bac";
-import type { EnrichedAssignmentRow } from "@/lib/supabase-types";
 import {
   fetchAssignmentsWithDetails,
   fetchCanvassSessionById,
@@ -54,7 +60,8 @@ import type { AAAPreviewData } from "../../(components)/AAAPreview";
 import { buildAAAPreviewHTML } from "../../(components)/AAAPreview";
 import AAAPreviewModal from "../../(modals)/AAAPreviewModal";
 import { useAuth } from "../../AuthContext";
-import { CompletedBanner, StepHeader, StepNav } from "../BACView/components";
+import { CompletedBanner, StepNav } from "../BACView/components";
+import RFQReviewModal from "../BACView/RFQReviewModal";
 import { Card, Divider, Field, Input } from "../BACView/ui";
 import StageRemarkBox from "../StageRemarkBox";
 
@@ -86,6 +93,294 @@ const fmt = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+// ─── PriorStepsSummary ────────────────────────────────────────────────────────
+/**
+ * Collapsible card shown at the top of the AAA step.
+ * Displays:
+ *   • BAC Resolution details (resolution no., mode, prepared date)
+ *   • Per-item winning supplier + price derived from canvass_entries
+ *   • "Review All RFQs" button that opens RFQReviewModal
+ */
+function PriorStepsSummary({
+  resolution,
+  items,
+  entries,
+  onOpenRFQReview,
+}: {
+  resolution: {
+    resolution_no: string;
+    mode: string | null;
+    resolved_at: string | null;
+    notes: string | null;
+  } | null;
+  items: CanvassingPRItem[];
+  entries: EntryRow[];
+  onOpenRFQReview: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Derive winning entry per item (DB flag first, then lowest price)
+  const winningRows = useMemo(() => {
+    return items.map((item) => {
+      const byItem = entries.filter(
+        (e) => e.item_no === item.id && e.unit_price > 0,
+      );
+      const dbWinner = byItem.find((e) => e.is_winning === true);
+      const winner =
+        dbWinner ??
+        (byItem.length > 0
+          ? byItem.reduce((b, e) => (e.unit_price < b.unit_price ? e : b))
+          : null);
+      return {
+        item,
+        winner,
+        allSuppliers: [...new Set(byItem.map((e) => e.supplier_name))],
+      };
+    });
+  }, [items, entries]);
+
+  const grandTotal = useMemo(
+    () =>
+      winningRows.reduce(
+        (sum, r) => sum + (r.winner ? r.winner.unit_price * r.item.qty : 0),
+        0,
+      ),
+    [winningRows],
+  );
+
+  const hasData = !!resolution || entries.length > 0;
+
+  return (
+    <Card>
+      {/* ── Collapsed header ── */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setExpanded((v) => !v)}
+        className="flex-row items-center gap-3 px-4 py-3"
+      >
+        <View className="w-8 h-8 rounded-xl bg-emerald-100 items-center justify-center">
+          <MaterialIcons name="history-edu" size={17} color="#065f46" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-[13px] font-bold text-gray-900">
+            Prior Steps Summary
+          </Text>
+          <Text className="text-[11px] text-gray-400 mt-0.5">
+            {resolution
+              ? `Resolution ${resolution.resolution_no} · ${resolution.mode ?? "—"}`
+              : "BAC Resolution & winning canvass"}
+          </Text>
+        </View>
+        <View className="flex-row items-center gap-2">
+          {hasData && (
+            <View className="bg-emerald-100 px-2 py-0.5 rounded-full">
+              <Text className="text-[9.5px] font-bold text-emerald-700">
+                Ready
+              </Text>
+            </View>
+          )}
+          <MaterialIcons
+            name={expanded ? "expand-less" : "expand-more"}
+            size={20}
+            color="#9ca3af"
+          />
+        </View>
+      </TouchableOpacity>
+
+      {/* ── Expanded body ── */}
+      {expanded && (
+        <View
+          style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}
+          className="px-4 pt-3 pb-4"
+        >
+          {/* BAC Resolution block */}
+          <Divider label="BAC Resolution" />
+          {resolution ? (
+            <View className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden mb-3">
+              {/* Header row */}
+              <View className="bg-[#064E3B] px-3 py-2 flex-row items-center gap-2">
+                <MaterialIcons name="gavel" size={13} color="#a7f3d0" />
+                <Text className="text-[10px] font-bold uppercase tracking-widest text-white/70">
+                  Resolution on File
+                </Text>
+              </View>
+              <View className="px-3 py-2.5 gap-1.5">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-[11px] text-gray-500">
+                    Resolution No.
+                  </Text>
+                  <Text
+                    className="text-[12.5px] font-extrabold text-[#064E3B]"
+                    style={{ fontFamily: MONO_FONT }}
+                  >
+                    {resolution.resolution_no}
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-[11px] text-gray-500">Mode</Text>
+                  <Text className="text-[12px] font-semibold text-gray-800">
+                    {resolution.mode ?? "—"}
+                  </Text>
+                </View>
+                {resolution.resolved_at && (
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[11px] text-gray-500">Resolved</Text>
+                    <Text
+                      className="text-[11.5px] text-gray-600"
+                      style={{ fontFamily: MONO_FONT }}
+                    >
+                      {new Date(resolution.resolved_at).toLocaleDateString(
+                        "en-PH",
+                        { month: "short", day: "numeric", year: "numeric" },
+                      )}
+                    </Text>
+                  </View>
+                )}
+                {resolution.notes ? (
+                  <View className="mt-1 bg-amber-50 rounded-xl px-2.5 py-2 border border-amber-100">
+                    <Text className="text-[10.5px] text-amber-800 leading-[15px]">
+                      {resolution.notes}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <View className="bg-gray-50 rounded-2xl border border-dashed border-gray-200 items-center py-4 mb-3">
+              <MaterialIcons name="pending" size={22} color="#d1d5db" />
+              <Text className="text-[11.5px] text-gray-400 mt-1">
+                No BAC resolution found
+              </Text>
+            </View>
+          )}
+
+          {/* Winning canvass abstract */}
+          <Divider label="Winning Canvass" />
+          {winningRows.some((r) => r.winner) ? (
+            <View className="rounded-2xl border border-gray-100 overflow-hidden mb-3">
+              {/* Column headers */}
+              <View className="flex-row bg-[#064E3B] px-2.5 py-1.5">
+                {[
+                  { label: "Item", flex: 2 },
+                  { label: "Qty", flex: 0.7 },
+                  { label: "Winner", flex: 1.5 },
+                  { label: "Unit Price", flex: 1.2 },
+                  { label: "Total", flex: 1.2 },
+                ].map(({ label, flex }) => (
+                  <Text
+                    key={label}
+                    className="text-[8.5px] font-bold uppercase tracking-wide text-white/70"
+                    style={{ flex, textAlign: flex === 2 ? "left" : "right" }}
+                  >
+                    {label}
+                  </Text>
+                ))}
+              </View>
+
+              {winningRows.map(({ item, winner }, i) => (
+                <View
+                  key={item.id}
+                  className={`flex-row items-center px-2.5 py-2 ${
+                    i % 2 === 0 ? "bg-white" : "bg-gray-50"
+                  }`}
+                  style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6" }}
+                >
+                  <Text
+                    className="text-[10.5px] text-gray-700 leading-[14px]"
+                    style={{ flex: 2 }}
+                    numberOfLines={2}
+                  >
+                    {item.desc}
+                  </Text>
+                  <Text
+                    className="text-[10px] text-gray-500 text-right"
+                    style={{ flex: 0.7, fontFamily: MONO_FONT }}
+                  >
+                    {item.qty}
+                  </Text>
+                  {winner ? (
+                    <>
+                      <View className="items-end" style={{ flex: 1.5 }}>
+                        <View className="bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                          <Text
+                            className="text-[9px] font-bold text-emerald-800"
+                            numberOfLines={1}
+                          >
+                            {winner.supplier_name}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text
+                        className="text-[10.5px] font-semibold text-emerald-700 text-right"
+                        style={{ flex: 1.2, fontFamily: MONO_FONT }}
+                      >
+                        ₱{fmt(winner.unit_price)}
+                      </Text>
+                      <Text
+                        className="text-[10.5px] font-bold text-[#064E3B] text-right"
+                        style={{ flex: 1.2, fontFamily: MONO_FONT }}
+                      >
+                        ₱{fmt(winner.unit_price * item.qty)}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text
+                      className="text-[10px] text-gray-400 text-right"
+                      style={{ flex: 3.9 }}
+                    >
+                      No quotes yet
+                    </Text>
+                  )}
+                </View>
+              ))}
+
+              {/* Grand total row */}
+              <View
+                className="flex-row justify-between items-center px-2.5 py-2 bg-emerald-50"
+                style={{ borderTopWidth: 2, borderTopColor: "#bbf7d0" }}
+              >
+                <Text className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">
+                  Total Winning Offer
+                </Text>
+                <Text
+                  className="text-[13px] font-extrabold text-[#064E3B]"
+                  style={{ fontFamily: MONO_FONT }}
+                >
+                  ₱{fmt(grandTotal)}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View className="bg-gray-50 rounded-2xl border border-dashed border-gray-200 items-center py-4 mb-3">
+              <MaterialIcons
+                name="format-list-bulleted"
+                size={22}
+                color="#d1d5db"
+              />
+              <Text className="text-[11.5px] text-gray-400 mt-1">
+                No quotations on file yet
+              </Text>
+            </View>
+          )}
+
+          {/* Review All RFQs button */}
+          <TouchableOpacity
+            onPress={onOpenRFQReview}
+            activeOpacity={0.82}
+            className="flex-row items-center justify-center gap-2 bg-white border border-[#064E3B] rounded-2xl py-2.5"
+          >
+            <MaterialIcons name="assignment" size={16} color="#064E3B" />
+            <Text className="text-[13px] font-bold text-[#064E3B]">
+              Review All Submitted RFQs
+            </Text>
+            <MaterialIcons name="chevron-right" size={16} color="#064E3B" />
+          </TouchableOpacity>
+        </View>
+      )}
+    </Card>
+  );
+}
 
 // ─── Abstract table (native, read-only + winner toggle) ───────────────────────
 
@@ -119,7 +414,6 @@ function AbstractTable({
       ?.unit_price ?? 0;
 
   const winnerFor = (itemId: number): string => {
-    // Prefer DB-flagged winner; fall back to lowest price
     const dbWinner = entries.find(
       (e) => e.item_no === itemId && e.is_winning === true,
     );
@@ -146,7 +440,6 @@ function AbstractTable({
       <View className="px-3 pt-3 pb-3">
         <Divider label="Abstract of Price Quotations" />
 
-        {/* Scrollable horizontal table */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View>
             {/* "NAME OF DEALERS" spanning header */}
@@ -370,11 +663,25 @@ export default function AAAView({
   );
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [returns, setReturns] = useState<EnrichedAssignmentRow[]>([]);
+  const [allAssignments, setAllAssignments] = useState<EnrichedAssignmentRow[]>(
+    [],
+  );
   const [sourceReturnId, setSourceReturnId] = useState<string | null>(null);
   const [applyingSource, setApplyingSource] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // ── Prior steps data ─────────────────────────────────────────────────────────
+  const [bacResolution, setBacResolution] = useState<{
+    resolution_no: string;
+    mode: string | null;
+    resolved_at: string | null;
+    notes: string | null;
+  } | null>(null);
+
+  // ── RFQ review modal ─────────────────────────────────────────────────────────
+  const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
 
   // ── Load all data ────────────────────────────────────────────────────────────
   const loadEntries = useCallback(async () => {
@@ -394,10 +701,10 @@ export default function AAAView({
       setLoading(true);
       try {
         // PR items
-        const prId = await fetchPRIdByNo(pr.prNo);
-        if (prId) {
-          setPrId(prId);
-          const { header: h, items } = await fetchPRWithItemsById(prId);
+        const resolvedPrId = await fetchPRIdByNo(pr.prNo);
+        if (resolvedPrId) {
+          setPrId(resolvedPrId);
+          const { header: h, items } = await fetchPRWithItemsById(resolvedPrId);
           setOffice(h.office_section ?? pr.officeSection);
           setDate((prev) =>
             h.created_at
@@ -424,12 +731,23 @@ export default function AAAView({
         const sess = await fetchCanvassSessionById(sessionId);
         if (sess?.bac_no) setBacNo(sess.bac_no);
         setSourceReturnId((sess as any)?.aaa_prefill_assignment_id ?? null);
+
+        // Assignments — store all, expose "returned" subset separately
         const asgn = await fetchAssignmentsWithDetails(sessionId);
+        setAllAssignments(asgn);
         setReturns(asgn.filter((a) => a.status === "returned"));
 
-        // Resolution
+        // Resolution — hydrate both the display No. and the full record
         const res = await fetchBACResolutionForSession(sessionId);
         if (res?.resolution_no) setResolutionNo(res.resolution_no);
+        if (res) {
+          setBacResolution({
+            resolution_no: res.resolution_no,
+            mode: res.mode ?? null,
+            resolved_at: res.resolved_at ?? null,
+            notes: res.notes ?? null,
+          });
+        }
 
         // Existing AAA doc
         const aaa = await fetchAAAForSession(sessionId);
@@ -513,8 +831,8 @@ export default function AAAView({
   const handleSubmit = useCallback(async () => {
     if (!sessionId || !aaaNo.trim()) return;
     try {
-      const prId = await fetchPRIdByNo(pr.prNo);
-      if (!prId) throw new Error("PR not found");
+      const resolvedPrId = await fetchPRIdByNo(pr.prNo);
+      if (!resolvedPrId) throw new Error("PR not found");
 
       const existingAAA = await fetchAAAForSession(sessionId);
       if (existingAAA) {
@@ -536,7 +854,7 @@ export default function AAAView({
       }
 
       await updateCanvassSessionMeta(sessionId, { status: "closed" });
-      await updatePRStatus(prId, 12);
+      await updatePRStatus(resolvedPrId, 12);
 
       setIsSubmitted(true);
 
@@ -590,6 +908,37 @@ export default function AAAView({
     }),
   });
 
+  // ── RFQReviewModal props — adapt EnrichedAssignmentRow → CanvasserAssignmentRow shape ──
+  // The modal expects the raw DB row shape; EnrichedAssignmentRow is a superset.
+  const rfqModalAssignments = useMemo(
+    () =>
+      allAssignments.map((a) => ({
+        id: a.id,
+        session_id: a.session_id,
+        division_id: a.division_id,
+        canvasser_id: a.canvasser_id ?? null,
+        released_at: a.released_at ?? null,
+        returned_at: a.returned_at ?? null,
+        status: a.status,
+      })),
+    [allAssignments],
+  );
+
+  // Synthesise CanvassUserRow list from EnrichedAssignmentRow for the modal
+  const rfqModalUsers = useMemo(
+    () =>
+      allAssignments
+        .filter((a) => a.canvasser_id != null)
+        .map((a) => ({
+          id: a.canvasser_id!,
+          username: a.canvasser_name ?? "—",
+          role_id: 7,
+          division_id: a.division_id,
+          division_name: a.division_name ?? null,
+        })),
+    [allAssignments],
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -616,10 +965,12 @@ export default function AAAView({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <StepHeader
-          stage="aaa_preparation"
-          title="Abstract of Price Quotations"
-          desc="Prepare the AAA and finalize the canvassing process."
+        {/* ── Prior Steps Summary (new) ── */}
+        <PriorStepsSummary
+          resolution={bacResolution}
+          items={liveItems}
+          entries={entries}
+          onOpenRFQReview={() => setRfqReviewOpen(true)}
         />
 
         {/* ── Reference block (top-right on printed form) ── */}
@@ -821,6 +1172,19 @@ export default function AAAView({
         date={date}
         office={office}
         onClose={() => setPreviewOpen(false)}
+      />
+
+      {/* ── RFQ Review modal (wired from Prior Steps Summary) ── */}
+      <RFQReviewModal
+        visible={rfqReviewOpen}
+        onClose={() => setRfqReviewOpen(false)}
+        pr={{ ...pr, items: liveItems }}
+        liveItems={liveItems}
+        entries={entries as any}
+        assignments={rfqModalAssignments as any}
+        users={rfqModalUsers as any}
+        bacNo={bacNo}
+        chairperson="BAC Chairperson"
       />
     </KeyboardAvoidingView>
   );

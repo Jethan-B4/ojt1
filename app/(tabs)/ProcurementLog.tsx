@@ -446,10 +446,12 @@ function PRLogCard({
                 fontSize: 12.5,
                 fontWeight: "700",
                 color: "#374151",
-                fontFamily: MONO,
               }}
             >
-              ₱{Number(pr.total_cost).toLocaleString("en-PH")}
+              ₱
+              <Text style={{ fontFamily: MONO }}>
+                {Number(pr.total_cost).toLocaleString("en-PH")}
+              </Text>
             </Text>
             <Text style={{ fontSize: 10, color: "#9ca3af" }}>
               Created: {fmtDate(pr.created_at)}

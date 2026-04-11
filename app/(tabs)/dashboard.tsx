@@ -9,12 +9,22 @@
  *   role_id 3  → ProcessorDashboard  — BAC: queue of status_id 2 PRs
  *   role_id 4  → ProcessorDashboard  — Budget: queue of status_id 3 PRs
  *   role_id 5  → ProcessorDashboard  — PARPO: queue of status_id 4 PRs
- *   role_id 6+ → EndUserDashboard    — own division's PRs only
+ *   role_id 6  → EndUserDashboard    — own division's PRs only
+ *   role_id 7  → CanvasserDashboard  — all canvassable PRs (status_id >= 6), cross-division
+ *   role_id 8  → SupplyDashboard     — all PRs system-wide, PO-readiness oriented
+ *
+ * Real-time:
+ *   Every data hook subscribes to Supabase Realtime on the purchase_requests table.
+ *   On INSERT / UPDATE / DELETE the hook re-fetches (debounced 300 ms) so the
+ *   dashboard stays live without user interaction.  The subscription is scoped
+ *   per role — division-scoped hooks filter on division_id server-side so only
+ *   relevant changes trigger a refresh.  Subscriptions are cleaned up when the
+ *   component unmounts.
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -31,7 +41,41 @@ import {
   fetchPurchaseRequests,
   fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase/client";
 import { useAuth } from "../AuthContext";
+
+// ─── Centralised user accessor ────────────────────────────────────────────────
+
+/**
+ * Reads the authenticated user from AuthContext and returns every field the
+ * dashboard needs, each with a safe typed default.
+ *
+ * All values come from the single source-of-truth set by handleSignIn in
+ * AuthContext — which fetches fullname, role_id, division_id, role_name, and
+ * division_name from the DB at sign-in time.
+ *
+ * Using this hook instead of spreading `currentUser?.x` across components
+ * ensures consistent defaults and a single place to add new fields.
+ */
+function useCurrentUser() {
+  const { currentUser, isAuthenticated, handleSignOut } = useAuth();
+  return {
+    isAuthenticated,
+    handleSignOut,
+    // Numeric IDs — 0 / null used as "not yet loaded" sentinels
+    roleId: currentUser?.role_id ?? 0,
+    divisionId: currentUser?.division_id ?? null,
+    // Display strings — resolved from DB joins at sign-in
+    fullname: currentUser?.fullname ?? "",
+    roleName:
+      currentUser?.role_name ??
+      ROLE_LABELS[currentUser?.role_id ?? 0] ??
+      "User",
+    divisionName: currentUser?.division_name ?? "",
+    // Raw row for cases that still need the full object
+    currentUser,
+  };
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -44,16 +88,110 @@ const CLR = {
   brand100: "#A7F3D0",
 } as const;
 
+/**
+ * Visual config keyed by status_id — mirrors the full public.status table.
+ * Labels here are ONLY used as a render-time fallback when the DB fetch hasn't
+ * resolved yet.  The authoritative label always comes from the fetched
+ * PRStatusRow array (status_name column).
+ *
+ *  1  Pending
+ *  2  Processing (Division Head)
+ *  3  Processing (BAC)
+ *  4  Processing (Budget)
+ *  5  Processing (PARPO)
+ *  6  Canvassing (Reception)
+ *  8  Canvassing (Releasing)
+ *  9  Canvassing (Collection)
+ * 10  BAC Resolution
+ * 11  Abstract of Awards
+ * 12  PO (Creation)
+ * 13  PO (Allocation)
+ * 14  ORS (Creation)
+ * 15  ORS (Processing)
+ */
 const STATUS_ID_CFG: Record<
   number,
   { bg: string; text: string; dot: string; label: string }
 > = {
   1: { bg: "#fefce8", text: "#854d0e", dot: "#eab308", label: "Pending" },
-  2: { bg: "#eff6ff", text: "#1e40af", dot: "#3b82f6", label: "Div. Head" },
-  3: { bg: "#f5f3ff", text: "#5b21b6", dot: "#8b5cf6", label: "BAC" },
-  4: { bg: "#fff7ed", text: "#9a3412", dot: "#f97316", label: "Budget" },
-  5: { bg: "#ecfdf5", text: "#065f46", dot: "#10b981", label: "PARPO" },
-  6: { bg: "#f0fdf4", text: "#166534", dot: "#22c55e", label: "Approved" },
+  2: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    label: "Processing (Div. Head)",
+  },
+  3: {
+    bg: "#f5f3ff",
+    text: "#5b21b6",
+    dot: "#8b5cf6",
+    label: "Processing (BAC)",
+  },
+  4: {
+    bg: "#fff7ed",
+    text: "#9a3412",
+    dot: "#f97316",
+    label: "Processing (Budget)",
+  },
+  5: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#10b981",
+    label: "Processing (PARPO)",
+  },
+  6: {
+    bg: "#f0fdf4",
+    text: "#166534",
+    dot: "#22c55e",
+    label: "Canvassing (Reception)",
+  },
+  8: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#16a34a",
+    label: "Canvassing (Releasing)",
+  },
+  9: {
+    bg: "#f0fdfa",
+    text: "#0f766e",
+    dot: "#0d9488",
+    label: "Canvassing (Collection)",
+  },
+  10: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "BAC Resolution",
+  },
+  11: {
+    bg: "#fdf4ff",
+    text: "#86198f",
+    dot: "#c026d3",
+    label: "Abstract of Awards",
+  },
+  12: {
+    bg: "#f0fdfa",
+    text: "#0f766e",
+    dot: "#0d9488",
+    label: "PO (Creation)",
+  },
+  13: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "PO (Allocation)",
+  },
+  14: {
+    bg: "#fff7ed",
+    text: "#9a3412",
+    dot: "#f97316",
+    label: "ORS (Creation)",
+  },
+  15: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    label: "ORS (Processing)",
+  },
 };
 
 const ROLE_QUEUE_STATUS: Record<number, number> = { 2: 1, 3: 2, 4: 3, 5: 4 };
@@ -93,15 +231,20 @@ interface StatCard {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function statusCfgFor(statusId: number) {
-  return (
-    STATUS_ID_CFG[statusId] ?? {
-      bg: "#f9fafb",
-      text: "#6b7280",
-      dot: "#9ca3af",
-      label: `Status ${statusId}`,
-    }
-  );
+/**
+ * Resolve visual config + label for a given status_id.
+ * Priority: DB status_name (from fetched PRStatusRow[]) → hardcoded fallback label → "Status N".
+ * Always pass the fetched `statuses` array when available so labels come from the DB.
+ */
+function statusCfgFor(statusId: number, statuses: PRStatusRow[] = []) {
+  const dbLabel = statuses.find((s) => s.id === statusId)?.status_name;
+  const cfg = STATUS_ID_CFG[statusId] ?? {
+    bg: "#f9fafb",
+    text: "#6b7280",
+    dot: "#9ca3af",
+    label: `Status ${statusId}`,
+  };
+  return { ...cfg, label: dbLabel ?? cfg.label };
 }
 
 function fmtDate(iso?: string): string {
@@ -121,7 +264,9 @@ function rowToSummary(row: PRRow, statuses: PRStatusRow[]): PRSummary {
     purpose: row.purpose,
     section: row.office_section,
     statusId: row.status_id,
-    statusLabel: statusRow?.status_name ?? statusCfgFor(row.status_id).label,
+    // Always prefer the DB status_name; fall back to the visual config label.
+    statusLabel:
+      statusRow?.status_name ?? statusCfgFor(row.status_id, statuses).label,
     date: fmtDate(row.created_at),
     totalCost: Number(row.total_cost),
     isHighValue: row.is_high_value,
@@ -137,6 +282,7 @@ function useAdminData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -155,6 +301,29 @@ function useAdminData() {
       setLoading(false);
     }
   }, []);
+
+  // Real-time subscription — Admin sees all rows, so we listen to every change.
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-dashboard-pr")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "purchase_requests" },
+        () => {
+          // Debounce rapid bursts (e.g. bulk status updates)
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            load();
+          }, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
@@ -196,22 +365,24 @@ function useAdminData() {
     },
   ];
 
-  const statusBreakdown = [1, 2, 3, 4, 5, 6]
-    .map((sid) => ({
-      id: sid,
-      label:
-        statuses.find((s) => s.id === sid)?.status_name ??
-        statusCfgFor(sid).label,
-      count: prs.filter((p) => p.statusId === sid).length,
-      color: statusCfgFor(sid).dot,
+  // Build breakdown from ALL statuses fetched from the DB, not a hardcoded list.
+  // Only include statuses that actually have PRs so the funnel stays clean.
+  const statusBreakdown = statuses
+    .map((s) => ({
+      id: s.id,
+      label: s.status_name,
+      count: prs.filter((p) => p.statusId === s.id).length,
+      color: statusCfgFor(s.id, statuses).dot,
     }))
-    .filter((s) => s.count > 0);
+    .filter((s) => s.count > 0)
+    .sort((a, b) => a.id - b.id);
 
   return {
     prs,
     recent,
     statCards,
     statusBreakdown,
+    statuses,
     loading,
     error,
     refresh: load,
@@ -226,6 +397,7 @@ function useProcessorData(roleId: number) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -244,6 +416,29 @@ function useProcessorData(roleId: number) {
       setLoading(false);
     }
   }, []);
+
+  // Real-time: Processor roles care about any status change that might move a PR
+  // into or out of their queue, so subscribe to all purchase_requests changes.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`processor-dashboard-pr-role${roleId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "purchase_requests" },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            load();
+          }, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [load, roleId]);
 
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const queue = prs.filter((p) => p.statusId === queueStatusId);
@@ -284,6 +479,7 @@ function useProcessorData(roleId: number) {
     queue,
     recentOther,
     statCards,
+    statuses,
     loading,
     error,
     refresh: load,
@@ -298,15 +494,22 @@ function useEndUserData(divisionId: number | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      // Guard: if divisionId is null the user has no division assigned.
+      // Return an empty list rather than silently fetching every PR in the system.
+      if (divisionId == null) {
+        setRows([]);
+        setStatuses([]);
+        setLastRefresh(new Date());
+        return;
+      }
       const [allRows, allStatuses] = await Promise.all([
-        divisionId != null
-          ? fetchPurchaseRequestsByDivision(divisionId)
-          : fetchPurchaseRequests(),
+        fetchPurchaseRequestsByDivision(divisionId),
         fetchPRStatuses(),
       ]);
       setRows(allRows);
@@ -318,6 +521,37 @@ function useEndUserData(divisionId: number | null) {
       setLoading(false);
     }
   }, [divisionId]);
+
+  // Real-time: End Users only see their own division. Filter the subscription
+  // to rows matching their division_id so irrelevant changes are ignored.
+  useEffect(() => {
+    const filter =
+      divisionId != null ? `division_id=eq.${divisionId}` : undefined;
+
+    const channel = supabase
+      .channel(`enduser-dashboard-pr-div${divisionId ?? "all"}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "purchase_requests",
+          ...(filter ? { filter } : {}),
+        },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            load();
+          }, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [load, divisionId]);
 
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
@@ -349,7 +583,16 @@ function useEndUserData(divisionId: number | null) {
     },
   ];
 
-  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
+  return {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh: load,
+    lastRefresh,
+  };
 }
 
 // ─── Supply data hook — all PRs across all divisions ─────────────────────────
@@ -360,6 +603,7 @@ function useSupplyData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -378,6 +622,28 @@ function useSupplyData() {
       setLoading(false);
     }
   }, []);
+
+  // Real-time: Supply sees all PRs system-wide.
+  useEffect(() => {
+    const channel = supabase
+      .channel("supply-dashboard-pr")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "purchase_requests" },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            load();
+          }, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
@@ -418,7 +684,16 @@ function useSupplyData() {
     },
   ];
 
-  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
+  return {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh: load,
+    lastRefresh,
+  };
 }
 
 // ─── Canvasser data hook — all canvassable PRs (status_id >= 6), cross-division ──
@@ -429,6 +704,7 @@ function useCanvasserData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -448,6 +724,31 @@ function useCanvasserData() {
       setLoading(false);
     }
   }, []);
+
+  // Real-time: Canvassers care about PRs transitioning into or through the
+  // canvassing phase (status_id >= 6). We subscribe to all changes and let
+  // the load() re-fetch + filter client-side — Supabase Realtime postgres_changes
+  // filter syntax doesn't support gte, so we listen broadly and filter on load.
+  useEffect(() => {
+    const channel = supabase
+      .channel("canvasser-dashboard-pr")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "purchase_requests" },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            load();
+          }, 300);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const prs = rows.map((r) => rowToSummary(r, statuses));
   const recent = [...prs]
@@ -488,7 +789,16 @@ function useCanvasserData() {
     },
   ];
 
-  return { prs, recent, statCards, loading, error, refresh: load, lastRefresh };
+  return {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh: load,
+    lastRefresh,
+  };
 }
 
 function LoadingScreen() {
@@ -556,19 +866,29 @@ function LastRefreshedBadge({ time }: { time: Date | null }) {
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 4,
+        gap: 5,
         alignSelf: "flex-end",
         paddingHorizontal: 14,
         paddingTop: 4,
         paddingBottom: 2,
       }}
     >
+      {/* Live indicator dot */}
+      <View
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: 3,
+          backgroundColor: "#10b981",
+        }}
+      />
       <MaterialIcons name="update" size={10} color="#9ca3af" />
       <Text style={{ fontSize: 10, color: "#9ca3af" }}>
-        Updated{" "}
+        Live · Updated{" "}
         {time.toLocaleTimeString("en-PH", {
           hour: "2-digit",
           minute: "2-digit",
+          second: "2-digit",
         })}
       </Text>
     </View>
@@ -696,8 +1016,14 @@ function SectionHeader({
   );
 }
 
-function StatusBadge({ statusId }: { statusId: number }) {
-  const cfg = statusCfgFor(statusId);
+function StatusBadge({
+  statusId,
+  statuses = [],
+}: {
+  statusId: number;
+  statuses?: PRStatusRow[];
+}) {
+  const cfg = statusCfgFor(statusId, statuses);
   return (
     <View
       style={{
@@ -729,10 +1055,12 @@ function StatusBadge({ statusId }: { statusId: number }) {
 function PRTableRow({
   record,
   isEven,
+  statuses = [],
   onPress,
 }: {
   record: PRSummary;
   isEven: boolean;
+  statuses?: PRStatusRow[];
   onPress: () => void;
 }) {
   return (
@@ -765,18 +1093,20 @@ function PRTableRow({
           {record.purpose}
         </Text>
       </View>
-      <StatusBadge statusId={record.statusId} />
+      <StatusBadge statusId={record.statusId} statuses={statuses} />
       <Text
         style={{
           fontSize: 10,
           fontWeight: "700",
           color: "#374151",
-          fontFamily: MONO,
           minWidth: 54,
           textAlign: "right",
         }}
       >
-        ₱{record.totalCost.toLocaleString("en-PH")}
+        ₱
+        <Text style={{ fontFamily: MONO }}>
+          {record.totalCost.toLocaleString("en-PH")}
+        </Text>
       </Text>
       <MaterialIcons name="chevron-right" size={14} color="#d1d5db" />
     </TouchableOpacity>
@@ -786,12 +1116,18 @@ function PRTableRow({
 /** Slim PR card for End-User — status pill + cost, no step tracker */
 function PRSummaryCard({
   pr,
+  statuses = [],
   onPress,
 }: {
   pr: PRSummary;
+  statuses?: PRStatusRow[];
   onPress: () => void;
 }) {
-  const cfg = statusCfgFor(pr.statusId);
+  // Always resolve from the DB-fetched statuses array; pr.statusLabel is the
+  // pre-resolved label from rowToSummary, which already uses status_name from the DB.
+  const cfg = statusCfgFor(pr.statusId, statuses);
+  // Use the DB-resolved label stored on the summary (most accurate source).
+  const label = pr.statusLabel || cfg.label;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -851,7 +1187,7 @@ function PRSummaryCard({
           }}
         >
           <Text style={{ fontSize: 9.5, fontWeight: "700", color: cfg.text }}>
-            {cfg.label}
+            {label}
           </Text>
         </View>
         <Text
@@ -859,10 +1195,12 @@ function PRSummaryCard({
             fontSize: 10.5,
             fontWeight: "700",
             color: "#374151",
-            fontFamily: MONO,
           }}
         >
-          ₱{pr.totalCost.toLocaleString("en-PH")}
+          ₱
+          <Text style={{ fontFamily: MONO }}>
+            {pr.totalCost.toLocaleString("en-PH")}
+          </Text>
         </Text>
       </View>
       <MaterialIcons name="chevron-right" size={14} color="#d1d5db" />
@@ -891,58 +1229,53 @@ function ApprovalFunnelChart({
       </Text>
     );
   }
+
   return (
     <View style={{ gap: 8 }}>
       {breakdown.map((b) => (
-        <View key={b.id}>
+        <View
+          key={b.id}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
           <View
             style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              marginBottom: 3,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: b.color,
+              width: `${(b.count / total) * 100}%`,
+            }}
+          />
+          <Text
+            style={{
+              fontSize: 10,
+              fontWeight: "600",
+              color: "#4b5563",
+              minWidth: 36,
             }}
           >
-            <Text
-              style={{ fontSize: 10.5, color: "#6b7280" }}
-              numberOfLines={1}
-            >
-              {b.label}
-            </Text>
-            <Text
-              style={{
-                fontSize: 10.5,
-                fontWeight: "700",
-                color: "#374151",
-                fontFamily: MONO,
-              }}
-            >
-              {b.count}
-              <Text style={{ color: "#9ca3af", fontWeight: "400" }}>
-                {" "}
-                ({Math.round((b.count / total) * 100)}%)
-              </Text>
-            </Text>
-          </View>
-          <View
-            style={{ height: 5, borderRadius: 999, backgroundColor: "#f3f4f6" }}
+            {b.count}
+          </Text>
+          <Text
+            style={{
+              fontSize: 10,
+              fontWeight: "600",
+              color: "#6b7280",
+              flex: 1,
+            }}
+            numberOfLines={1}
           >
-            <View
-              style={{
-                height: 5,
-                borderRadius: 999,
-                backgroundColor: b.color,
-                width:
-                  `${Math.max(Math.round((b.count / total) * 100), 2)}%` as any,
-              }}
-            />
-          </View>
+            {b.label}
+          </Text>
         </View>
       ))}
     </View>
   );
 }
 
-/** Compact green welcome header */
 function WelcomeHeader({
   roleLabel,
   username,
@@ -1133,9 +1466,17 @@ function QuickActionGrid({
 // role_id 8 — sees all PRs system-wide, oriented toward PO readiness.
 
 function SupplyDashboard({ navigation }: any) {
-  const { currentUser } = useAuth();
-  const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
-    useSupplyData();
+  const { fullname, roleName } = useCurrentUser();
+  const {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh,
+    lastRefresh,
+  } = useSupplyData();
 
   useFocusEffect(
     useCallback(() => {
@@ -1166,8 +1507,8 @@ function SupplyDashboard({ navigation }: any) {
       }
     >
       <WelcomeHeader
-        roleLabel="Supply Section · All Divisions"
-        username={currentUser?.fullname ?? "Supply Officer"}
+        roleLabel={roleName || "Supply"}
+        username={fullname || "Supply Officer"}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1246,6 +1587,7 @@ function SupplyDashboard({ navigation }: any) {
               key={record.id}
               record={record}
               isEven={i % 2 === 0}
+              statuses={statuses}
               onPress={() => navigation?.navigate?.("Procurement")}
             />
           ))}
@@ -1263,9 +1605,17 @@ function SupplyDashboard({ navigation }: any) {
 // role_id 7 — sees all canvassable PRs (status_id >= 6) across every division.
 
 function CanvasserDashboard({ navigation }: any) {
-  const { currentUser } = useAuth();
-  const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
-    useCanvasserData();
+  const { fullname, roleName } = useCurrentUser();
+  const {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh,
+    lastRefresh,
+  } = useCanvasserData();
 
   useFocusEffect(
     useCallback(() => {
@@ -1296,8 +1646,8 @@ function CanvasserDashboard({ navigation }: any) {
       }
     >
       <WelcomeHeader
-        roleLabel="Canvasser · All Divisions"
-        username={currentUser?.fullname ?? "Canvasser"}
+        roleLabel={roleName || "Canvasser"}
+        username={fullname || "Canvasser"}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1378,6 +1728,7 @@ function CanvasserDashboard({ navigation }: any) {
               key={record.id}
               record={record}
               isEven={i % 2 === 0}
+              statuses={statuses}
               onPress={() =>
                 navigation?.navigate?.("Canvassing", { prNo: record.prNo })
               }
@@ -1396,25 +1747,32 @@ function CanvasserDashboard({ navigation }: any) {
 // ─── Dashboard entry point ────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }: any) {
-  const { currentUser } = useAuth();
-  const roleId = currentUser?.role_id ?? 6;
+  const { isAuthenticated, roleId } = useCurrentUser();
+
+  // Guard: if the user is not authenticated yet (e.g. session is still
+  // hydrating), show a loading screen rather than rendering a dashboard
+  // with no data and a potentially wrong role fallback.
+  if (!isAuthenticated || roleId === 0) return <LoadingScreen />;
+
   if (roleId === 1) return <AdminDashboard navigation={navigation} />;
   if (roleId === 7) return <CanvasserDashboard navigation={navigation} />;
   if (roleId === 8) return <SupplyDashboard navigation={navigation} />;
   if (roleId in ROLE_QUEUE_STATUS)
     return <ProcessorDashboard navigation={navigation} roleId={roleId} />;
+  // role_id 6 (End User) and any unrecognised role → division-scoped view
   return <EndUserDashboard navigation={navigation} />;
 }
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
 function AdminDashboard({ navigation }: any) {
-  const { currentUser } = useAuth();
+  const { fullname, roleName } = useCurrentUser();
   const {
     prs,
     recent,
     statCards,
     statusBreakdown,
+    statuses,
     loading,
     error,
     refresh,
@@ -1450,8 +1808,8 @@ function AdminDashboard({ navigation }: any) {
       }
     >
       <WelcomeHeader
-        roleLabel="Admin · System Overview"
-        username={currentUser?.fullname ?? "Administrator"}
+        roleLabel={roleName}
+        username={fullname || "Administrator"}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1525,6 +1883,7 @@ function AdminDashboard({ navigation }: any) {
               key={record.id}
               record={record}
               isEven={i % 2 === 0}
+              statuses={statuses}
               onPress={() => navigation?.navigate?.("Procurement")}
             />
           ))
@@ -1547,17 +1906,18 @@ function ProcessorDashboard({
   navigation: any;
   roleId: number;
 }) {
-  const { currentUser } = useAuth();
+  const { fullname, roleName } = useCurrentUser();
   const {
     queue,
     recentOther,
     statCards,
+    statuses,
     loading,
     error,
     refresh,
     lastRefresh,
     queueStatusId,
-  } = useProcessorData(roleId);
+  } = useProcessorData(useAuth().roleId);
 
   useFocusEffect(
     useCallback(() => {
@@ -1572,8 +1932,9 @@ function ProcessorDashboard({
     setRefreshing(false);
   }, [refresh]);
 
-  const roleLabel = ROLE_LABELS[roleId] ?? "Processor";
-  const queueCfg = statusCfgFor(queueStatusId);
+  // Prefer the DB-sourced role_name; fall back to the local map then a generic string.
+  const roleLabel = roleName || ROLE_LABELS[roleId] || "Processor";
+  const queueCfg = statusCfgFor(queueStatusId, statuses);
 
   if (loading && queue.length === 0 && recentOther.length === 0)
     return <LoadingScreen />;
@@ -1591,10 +1952,7 @@ function ProcessorDashboard({
         />
       }
     >
-      <WelcomeHeader
-        roleLabel={roleLabel}
-        username={currentUser?.fullname ?? roleLabel}
-      />
+      <WelcomeHeader roleLabel={roleLabel} username={fullname || roleLabel} />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
       <LastRefreshedBadge time={lastRefresh} />
@@ -1608,7 +1966,7 @@ function ProcessorDashboard({
           gap: 6,
         }}
       >
-        {statCards.map((card) => (
+        {statCards.map((card: StatCard) => (
           <StatTile key={card.label} card={card} />
         ))}
       </View>
@@ -1693,11 +2051,12 @@ function ProcessorDashboard({
             elevation: 1,
           }}
         >
-          {queue.map((record, i) => (
+          {queue.map((record: PRSummary, i: number) => (
             <PRTableRow
               key={record.id}
               record={record}
               isEven={i % 2 === 0}
+              statuses={statuses}
               onPress={() => navigation?.navigate?.("Procurement")}
             />
           ))}
@@ -1727,11 +2086,12 @@ function ProcessorDashboard({
               elevation: 1,
             }}
           >
-            {recentOther.map((record, i) => (
+            {recentOther.map((record: PRSummary, i: number) => (
               <PRTableRow
                 key={record.id}
                 record={record}
                 isEven={i % 2 === 0}
+                statuses={statuses}
                 onPress={() => navigation?.navigate?.("Procurement")}
               />
             ))}
@@ -1749,10 +2109,17 @@ function ProcessorDashboard({
 // ─── End-User Dashboard ───────────────────────────────────────────────────────
 
 function EndUserDashboard({ navigation }: any) {
-  const { currentUser } = useAuth();
-  const divisionId = currentUser?.division_id ?? null;
-  const { prs, recent, statCards, loading, error, refresh, lastRefresh } =
-    useEndUserData(divisionId);
+  const { fullname, divisionId, divisionName, roleId } = useCurrentUser();
+  const {
+    prs,
+    recent,
+    statCards,
+    statuses,
+    loading,
+    error,
+    refresh,
+    lastRefresh,
+  } = useEndUserData(divisionId);
 
   useFocusEffect(
     useCallback(() => {
@@ -1783,8 +2150,8 @@ function EndUserDashboard({ navigation }: any) {
       }
     >
       <WelcomeHeader
-        roleLabel={currentUser?.division_name ?? "End User"}
-        username={currentUser?.fullname ?? "Welcome"}
+        roleLabel={divisionName || "End User"}
+        username={fullname || "Welcome"}
       />
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
@@ -1847,6 +2214,7 @@ function EndUserDashboard({ navigation }: any) {
           <PRSummaryCard
             key={pr.id}
             pr={pr}
+            statuses={statuses}
             onPress={() => navigation?.navigate?.("Procurement")}
           />
         ))
@@ -1854,7 +2222,7 @@ function EndUserDashboard({ navigation }: any) {
 
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
-      <QuickActionGrid navigation={navigation} roleId={6} />
+      <QuickActionGrid navigation={navigation} roleId={roleId} />
     </ScrollView>
   );
 }

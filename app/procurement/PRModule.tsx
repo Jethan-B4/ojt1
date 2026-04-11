@@ -1,10 +1,10 @@
 import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,6 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import BACView from "../(canvassing)/BACView/index";
+import CanvasserView from "../(canvassing)/CanvasserView";
+import EndUserView from "../(canvassing)/EndUserView";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
 import { CreatePRModal, PRSubmitPayload } from "../(modals)/CreatePRModal";
@@ -34,7 +37,7 @@ import {
   fetchPurchaseRequestsByDivision,
   insertProposalForPR,
   insertPurchaseRequest,
-  updatePRStatus
+  updatePRStatus,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
@@ -543,11 +546,8 @@ const RecordCard: React.FC<{
           {record.date}
         </Text>
         <View className="flex-1" />
-        <Text
-          className="text-[12.5px] font-bold text-gray-700"
-          style={{ fontFamily: MONO }}
-        >
-          ₱{fmt(record.totalCost)}
+        <Text className="text-[12.5px] font-bold text-gray-700">
+          ₱<Text style={{ fontFamily: MONO }}>{fmt(record.totalCost)}</Text>
         </Text>
       </View>
       {/* ── Latest status flag from remarks ── */}
@@ -616,9 +616,9 @@ const RecordCard: React.FC<{
             <TouchableOpacity
               onPress={() => onProcess(record)}
               activeOpacity={0.8}
-              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+              className="flex-1 bg-[#064E3B] rounded-xl py-2 items-center"
             >
-              <Text className="text-white text-[12px] font-bold">Process</Text>
+              <Text className="text-white text-[12px] font-bold">Open</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -633,9 +633,13 @@ const RecordCard: React.FC<{
           <TouchableOpacity
             onPress={() => onProcess(record)}
             activeOpacity={0.8}
-            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+            className={`flex-1 rounded-xl py-2 items-center ${
+              record.statusId >= 6 ? "bg-[#064E3B]" : "bg-violet-600"
+            }`}
           >
-            <Text className="text-white text-[12px] font-bold">Process</Text>
+            <Text className="text-white text-[12px] font-bold">
+              {record.statusId >= 6 ? "Open" : "Process"}
+            </Text>
           </TouchableOpacity>
         )}
         {roleId === 1 && (
@@ -678,7 +682,6 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 export default function PRModule({
   initialSubTab,
 }: { initialSubTab?: SubTab } = {}) {
-  const navigation = useNavigation();
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
@@ -728,6 +731,14 @@ export default function PRModule({
   const [prModalOpen, setPrModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ── Inline canvassing view state ────────────────────────────────────────────
+  // When set, the canvass/AAA subtab renders the appropriate canvassing view
+  // inline rather than showing the card list. Cleared by the view's onBack.
+  const [selectedCanvassPR, setSelectedCanvassPR] = useState<PRRecord | null>(
+    null,
+  );
+  const [canvassModalOpen, setCanvassModalOpen] = useState(false);
 
   // Load PR status lookup table once — labels come from DB, not hardcoded strings.
   useEffect(() => {
@@ -904,6 +915,23 @@ export default function PRModule({
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
+  // ── Helper: shape a PRRecord into the CanvassingPR expected by canvassing views ──
+  function toCanvassingPR(r: PRRecord) {
+    return {
+      prNo: r.prNo,
+      officeSection: r.officeSection,
+      purpose: r.purpose ?? "",
+      totalCost: r.totalCost,
+      date: r.date,
+      isHighValue: (r as any).isHighValue ?? false,
+      // responsibilityCode maps from resp_code on the DB row; PRRecord does not
+      // carry it, and no canvassing view reads it from pr — safe to default "".
+      responsibilityCode:
+        (r as any).responsibilityCode ?? (r as any).respCode ?? "",
+      items: [], // each view re-fetches live items from DB via prNo
+    };
+  }
+
   return (
     <View className="flex-1 bg-gray-50">
       <SubTabRow
@@ -915,12 +943,74 @@ export default function PRModule({
           setSectionFilter("All");
           setSearchQuery("");
           setFilterOpen(false);
+          setSelectedCanvassPR(null);
+          setCanvassModalOpen(false);
         }}
       />
+
+      <Modal
+        visible={canvassModalOpen && !!selectedCanvassPR}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setCanvassModalOpen(false);
+          setSelectedCanvassPR(null);
+        }}
+      >
+        <View className="flex-1 bg-gray-50">
+          <View className="bg-white border-b border-gray-100 px-4 pt-4 pb-3">
+            <View className="flex-row items-center justify-between">
+              <TouchableOpacity
+                onPress={() => {
+                  setCanvassModalOpen(false);
+                  setSelectedCanvassPR(null);
+                }}
+                activeOpacity={0.8}
+                className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center"
+              >
+                <MaterialIcons name="close" size={18} color="#6b7280" />
+              </TouchableOpacity>
+              <View className="items-center flex-1 px-3">
+                <Text className="text-[11px] text-gray-400 font-semibold">
+                  Canvassing
+                </Text>
+                <Text className="text-[13px] font-extrabold text-gray-900">
+                  {selectedCanvassPR?.prNo ?? ""}
+                </Text>
+              </View>
+              <View style={{ width: 36 }} />
+            </View>
+          </View>
+
+          {selectedCanvassPR &&
+            (() => {
+              const canvassingPR = toCanvassingPR(selectedCanvassPR);
+              const handleBack = () => {
+                setCanvassModalOpen(false);
+                setSelectedCanvassPR(null);
+              };
+
+              if (roleId === 3) {
+                return (
+                  <BACView
+                    pr={canvassingPR}
+                    onBack={handleBack}
+                    onComplete={handleBack}
+                  />
+                );
+              }
+              if (roleId === 7) {
+                return <CanvasserView pr={canvassingPR} onBack={handleBack} />;
+              }
+              return <EndUserView pr={canvassingPR} onBack={handleBack} />;
+            })()}
+        </View>
+      </Modal>
       <SearchBar
         value={searchQuery}
         onChange={(t) => {
           setSearchQuery(t);
+          setPage(1);
           setPage(1);
         }}
         onCreatePress={handleOpenCreate}
@@ -1011,6 +1101,13 @@ export default function PRModule({
                 setEditVisible(true);
               }}
               onProcess={async (r) => {
+                // ── Canvassing-phase PRs (status 6–11): open canvassing modal ──
+                if (r.statusId >= 6 && r.statusId <= 11) {
+                  setSelectedCanvassPR(r);
+                  setCanvassModalOpen(true);
+                  return;
+                }
+
                 // End User initial processing: Pending (1) → Div. Head (2)
                 if (roleId === 6 && r.statusId === 1) {
                   try {
@@ -1033,20 +1130,6 @@ export default function PRModule({
                   return;
                 }
                 if (roleId === 1) {
-                  if (r.statusId >= 6 && r.statusId < 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                    return;
-                  }
-                  if (r.statusId === 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
-                    return;
-                  }
                   const mapped =
                     r.statusId === 2 ||
                     r.statusId === 3 ||
@@ -1096,20 +1179,6 @@ export default function PRModule({
                     setProcessVisible(true);
                     return;
                   }
-                  if (r.statusId >= 6 && r.statusId < 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                    return;
-                  }
-                  if (r.statusId === 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
-                    return;
-                  }
                   Alert.alert(
                     "Not Available",
                     "This PR is not yet in the BAC step or canvassing phase.",
@@ -1118,17 +1187,15 @@ export default function PRModule({
                 }
                 if (roleId === 7 || roleId === 6) {
                   if (r.statusId >= 6 && r.statusId < 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
+                    // Already handled above in the canvassing-phase guard.
+                    // This branch is dead code but retained for safety.
+                    setSelectedCanvassPR(r);
+                    setCanvassModalOpen(true);
                     return;
                   }
                   if (r.statusId === 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
+                    setSelectedCanvassPR(r);
+                    setCanvassModalOpen(true);
                     return;
                   }
                   Alert.alert(

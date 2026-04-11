@@ -135,11 +135,8 @@ function ItemsSection({ items }: { items: CanvassingPRItem[] }) {
           </View>
         </View>
         <View className="flex-row items-center gap-2">
-          <Text
-            className="text-[12px] font-bold text-[#064E3B]"
-            style={{ fontFamily: MONO }}
-          >
-            ₱{fmt(prTotal(items))}
+          <Text className="text-[12px] font-bold text-[#064E3B]">
+            ₱<Text style={{ fontFamily: MONO }}>{fmt(prTotal(items))}</Text>
           </Text>
           <MaterialIcons
             name={open ? "expand-less" : "expand-more"}
@@ -187,17 +184,14 @@ function ItemsSection({ items }: { items: CanvassingPRItem[] }) {
               >
                 {item.qty}
               </Text>
-              <Text
-                className="flex-1 text-[11px] text-gray-700 text-right"
-                style={{ fontFamily: MONO }}
-              >
-                ₱{fmt(item.unitCost)}
+              <Text className="flex-1 text-[11px] text-gray-700 text-right">
+                ₱<Text style={{ fontFamily: MONO }}>{fmt(item.unitCost)}</Text>
               </Text>
-              <Text
-                className="flex-1 text-[11px] font-semibold text-[#2d6a4f] text-right"
-                style={{ fontFamily: MONO }}
-              >
-                ₱{fmt(item.qty * item.unitCost)}
+              <Text className="flex-1 text-[11px] font-semibold text-[#2d6a4f] text-right">
+                ₱
+                <Text style={{ fontFamily: MONO }}>
+                  {fmt(item.qty * item.unitCost)}
+                </Text>
               </Text>
             </View>
           ))}
@@ -212,11 +206,8 @@ function ItemsSection({ items }: { items: CanvassingPRItem[] }) {
             <Text className="flex-1" />
             <Text className="flex-1" />
             <Text className="flex-1" />
-            <Text
-              className="flex-1 text-[11.5px] font-bold text-[#064E3B] text-right"
-              style={{ fontFamily: MONO }}
-            >
-              ₱{fmt(prTotal(items))}
+            <Text className="flex-1 text-[11.5px] font-bold text-[#064E3B] text-right">
+              ₱<Text style={{ fontFamily: MONO }}>{fmt(prTotal(items))}</Text>
             </Text>
           </View>
         </View>
@@ -774,11 +765,11 @@ export default function EndUserView({
                   <Text className="text-[10px] text-gray-400 mb-0.5">
                     Total
                   </Text>
-                  <Text
-                    className="text-[14px] font-extrabold text-[#064E3B]"
-                    style={{ fontFamily: MONO }}
-                  >
-                    ₱{fmt(prTotal(liveItems))}
+                  <Text className="text-[14px] font-extrabold text-[#064E3B]">
+                    ₱
+                    <Text style={{ fontFamily: MONO }}>
+                      {fmt(prTotal(liveItems))}
+                    </Text>
                   </Text>
                   <Text className="text-[10.5px] text-gray-400">
                     {liveItems.length} item{liveItems.length !== 1 ? "s" : ""}

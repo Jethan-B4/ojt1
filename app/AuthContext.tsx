@@ -1,16 +1,17 @@
 import { router } from "expo-router";
 import React, {
-    createContext,
-    JSX,
-    ReactNode,
-    useContext,
-    useState,
+  createContext,
+  JSX,
+  ReactNode,
+  useContext,
+  useState,
 } from "react";
 import { Alert, Platform } from "react-native";
 import { supabase, updateLastLogin } from "../lib/supabase";
 import type { DatabaseUser } from "../types/user";
 
 interface AuthContextType {
+  [x: string]: any;
   isAuthenticated: boolean;
   currentUser: DatabaseUser | null;
   handleSignOut: () => void;
@@ -49,7 +50,9 @@ export function AuthProvider({
       // Storing plain text passwords is NOT secure. This is for demonstration as requested.
       const { data, error } = await supabase
         .from("users")
-        .select("id, fullname, username, password, role_id, division_id, created_at, last_login")
+        .select(
+          "id, fullname, username, password, role_id, division_id, created_at, last_login",
+        )
         .eq("username", user_id)
         .eq("password", password)
         .single();
@@ -131,7 +134,8 @@ export function AuthProvider({
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, currentUser, handleSignOut, handleSignIn }}>
+      value={{ isAuthenticated, currentUser, handleSignOut, handleSignIn }}
+    >
       {children}
     </AuthContext.Provider>
   );

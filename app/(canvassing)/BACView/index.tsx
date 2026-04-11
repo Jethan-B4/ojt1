@@ -1,7 +1,7 @@
 /**
- * BACView — BAC role (role_id 3) canvassing workflow, Steps 6–9.
- * Handles PR reception, canvasser release, quote collection, and BAC resolution.
- * Step 10 (AAA preparation) is handled separately in AAAView module.
+ * BACView — BAC role (role_id 3) canvassing workflow, Steps 6–10.
+ * Handles PR reception, canvasser release, quote collection, BAC resolution,
+ * and AAA preparation. Step 10 (AAA) is rendered inline via AAAView.
  *
  * Modularized structure:
  *   /constants.ts — staging & procurement mode constants
@@ -61,6 +61,7 @@ import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
 import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
 import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
 import { useAuth } from "../../AuthContext";
+import AAAView from "../AAAView/AAAModule";
 import StageRemarkBox from "../StageRemarkBox";
 import PRReceptionStep from "./PRReceptionStep";
 import RFQReviewModal from "./RFQReviewModal";
@@ -1896,6 +1897,19 @@ export default function BACView({
               onSubmit={handleStep7}
             />
           </View>
+        )}
+
+        {/* ── Step 10: AAA Preparation ── */}
+        {stage === "aaa_preparation" && sessionId && (
+          <AAAView
+            sessionId={sessionId}
+            pr={pr}
+            bacNo={bacNo}
+            resolutionNo={resNo}
+            mode={mode}
+            onComplete={onComplete}
+            onBack={() => goToStage("bac_resolution")}
+          />
         )}
       </ScrollView>
 

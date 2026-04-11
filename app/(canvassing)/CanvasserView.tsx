@@ -268,17 +268,25 @@ const WinnerAbstract = ({
             >
               {w && w.winnerPrice > 0 ? w.winnerName : "—"}
             </Text>
-            <Text
-              className="flex-1 text-[10.5px] font-bold text-emerald-700 text-right"
-              style={{ fontFamily: MONO }}
-            >
-              {w && w.winnerPrice > 0 ? `₱${fmt(w.winnerPrice)}` : "—"}
+            <Text className="flex-1 text-[10.5px] font-bold text-emerald-700 text-right">
+              {w && w.winnerPrice > 0 ? (
+                <>
+                  ₱
+                  <Text style={{ fontFamily: MONO }}>{fmt(w.winnerPrice)}</Text>
+                </>
+              ) : (
+                "—"
+              )}
             </Text>
-            <Text
-              className="flex-1 text-[11px] font-extrabold text-[#064E3B] text-right"
-              style={{ fontFamily: MONO }}
-            >
-              {w && w.winnerTotal > 0 ? `₱${fmt(w.winnerTotal)}` : "—"}
+            <Text className="flex-1 text-[11px] font-extrabold text-[#064E3B] text-right">
+              {w && w.winnerTotal > 0 ? (
+                <>
+                  ₱
+                  <Text style={{ fontFamily: MONO }}>{fmt(w.winnerTotal)}</Text>
+                </>
+              ) : (
+                "—"
+              )}
             </Text>
           </View>
         );
@@ -290,11 +298,8 @@ const WinnerAbstract = ({
         <Text className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">
           Grand Total
         </Text>
-        <Text
-          className="text-[13px] font-extrabold text-[#064E3B]"
-          style={{ fontFamily: MONO }}
-        >
-          ₱{fmt(grandTotal)}
+        <Text className="text-[13px] font-extrabold text-[#064E3B]">
+          ₱<Text style={{ fontFamily: MONO }}>{fmt(grandTotal)}</Text>
         </Text>
       </View>
     </View>
@@ -400,15 +405,31 @@ const SubmissionCard = ({
               </Text>
               <Text
                 className={`w-20 text-[10.5px] font-semibold text-right ${isWin ? "text-emerald-700" : "text-gray-600"}`}
-                style={{ fontFamily: MONO }}
               >
-                {entry ? `₱${fmt(entry.unit_price)}` : "—"}
+                {entry ? (
+                  <>
+                    ₱
+                    <Text style={{ fontFamily: MONO }}>
+                      {fmt(entry.unit_price)}
+                    </Text>
+                  </>
+                ) : (
+                  "—"
+                )}
               </Text>
               <Text
                 className={`w-20 text-[10.5px] font-bold text-right ${isWin ? "text-emerald-700" : "text-gray-500"}`}
-                style={{ fontFamily: MONO }}
               >
-                {entry ? `₱${fmt(entry.total_price)}` : "—"}
+                {entry ? (
+                  <>
+                    ₱
+                    <Text style={{ fontFamily: MONO }}>
+                      {fmt(entry.total_price)}
+                    </Text>
+                  </>
+                ) : (
+                  "—"
+                )}
               </Text>
               <View className="w-5 items-center">
                 {isWin ? (
@@ -424,11 +445,8 @@ const SubmissionCard = ({
           <Text className="text-[10px] text-gray-400">
             {entries.length} item{entries.length !== 1 ? "s" : ""} quoted
           </Text>
-          <Text
-            className="text-[11.5px] font-bold text-[#064E3B]"
-            style={{ fontFamily: MONO }}
-          >
-            ₱{fmt(totalQuoted)}
+          <Text className="text-[11.5px] font-bold text-[#064E3B]">
+            ₱<Text style={{ fontFamily: MONO }}>{fmt(totalQuoted)}</Text>
           </Text>
         </View>
       </View>
@@ -472,23 +490,17 @@ const ItemsTable = ({ items }: { items: CanvassingPRItem[] }) => (
             <Text className="flex-1 text-[11.5px] text-gray-500">
               {item.unit}
             </Text>
-            <Text
-              className="flex-1 text-[11.5px] text-gray-700 text-right"
-              style={{ fontFamily: MONO }}
-            >
+            <Text className="flex-1 text-[11.5px] text-gray-700 text-right">
               {item.qty}
             </Text>
-            <Text
-              className="flex-1 text-[11.5px] text-gray-700 text-right"
-              style={{ fontFamily: MONO }}
-            >
-              ₱{fmt(item.unitCost)}
+            <Text className="flex-1 text-[11.5px] text-gray-700 text-right">
+              ₱<Text style={{ fontFamily: MONO }}>{fmt(item.unitCost)}</Text>
             </Text>
-            <Text
-              className="flex-1 text-[11.5px] font-semibold text-[#2d6a4f] text-right"
-              style={{ fontFamily: MONO }}
-            >
-              ₱{fmt(item.qty * item.unitCost)}
+            <Text className="flex-1 text-[11.5px] font-semibold text-[#2d6a4f] text-right">
+              ₱
+              <Text style={{ fontFamily: MONO }}>
+                {fmt(item.qty * item.unitCost)}
+              </Text>
             </Text>
           </View>
         ))}
@@ -502,11 +514,8 @@ const ItemsTable = ({ items }: { items: CanvassingPRItem[] }) => (
           <Text className="flex-1 text-[11px] text-transparent">—</Text>
           <Text className="flex-1 text-[11px] text-transparent">—</Text>
           <Text className="flex-1 text-[11px] text-transparent">—</Text>
-          <Text
-            className="flex-1 text-[12px] font-bold text-[#064E3B] text-right"
-            style={{ fontFamily: MONO }}
-          >
-            ₱{fmt(prTotal(items))}
+          <Text className="flex-1 text-[12px] font-bold text-[#064E3B] text-right">
+            ₱<Text style={{ fontFamily: MONO }}>{fmt(prTotal(items))}</Text>
           </Text>
         </View>
       </View>
@@ -1425,11 +1434,9 @@ export default function CanvasserView({
                   <Text className="text-[11px] font-semibold text-emerald-700">
                     Your quoted total
                   </Text>
-                  <Text
-                    className="text-[13px] font-extrabold text-[#064E3B]"
-                    style={{ fontFamily: MONO }}
-                  >
-                    ₱{fmt(quotedTotal)}
+                  <Text className="text-[13px] font-extrabold text-[#064E3B]">
+                    ₱
+                    <Text style={{ fontFamily: MONO }}>{fmt(quotedTotal)}</Text>
                   </Text>
                 </View>
               )}

@@ -606,9 +606,11 @@ export function OrsModal({
                   </Text>
                   <Text
                     className="text-[18px] font-black text-white"
-                    style={{ fontFamily: MONO }}
                   >
-                    ₱{fmt2(parseFloat(form.amount.replace(/,/g, "")) || 0)}
+                    ₱
+                    <Text style={{ fontFamily: MONO }}>
+                      {fmt2(parseFloat(form.amount.replace(/,/g, "")) || 0)}
+                    </Text>
                   </Text>
                 </View>
               )}
@@ -890,9 +892,8 @@ export function ORSSection({
                 </Text>
                 <Text
                   className="flex-1 text-[11.5px] font-semibold text-gray-800 text-right"
-                  style={{ fontFamily: MONO }}
                 >
-                  ₱{fmt(entry.amount)}
+                  ₱<Text style={{ fontFamily: MONO }}>{fmt(entry.amount)}</Text>
                 </Text>
                 <View className="w-24 items-end">
                   <OrsStatusPill status={entry.status} />
@@ -942,9 +943,11 @@ export function ORSSection({
               </Text>
               <Text
                 className="text-[13px] font-extrabold text-emerald-800"
-                style={{ fontFamily: MONO }}
               >
-                ₱{fmt(orsEntries.reduce((s, e) => s + e.amount, 0))}
+                ₱
+                <Text style={{ fontFamily: MONO }}>
+                  {fmt(orsEntries.reduce((s, e) => s + e.amount, 0))}
+                </Text>
               </Text>
               <View className="w-16" />
             </View>
@@ -1225,9 +1228,8 @@ export function ORSInlinePanel({
               </View>
               <Text
                 className="text-[12px] font-semibold text-gray-700 mr-2"
-                style={{ fontFamily: MONO }}
               >
-                ₱{fmt(entry.amount)}
+                ₱<Text style={{ fontFamily: MONO }}>{fmt(entry.amount)}</Text>
               </Text>
               <OrsStatusPill status={entry.status} />
 
@@ -1270,9 +1272,11 @@ export function ORSInlinePanel({
             </Text>
             <Text
               className="text-[12px] font-extrabold text-violet-800"
-              style={{ fontFamily: MONO }}
             >
-              ₱{fmt(entries.reduce((s, e) => s + e.amount, 0))}
+              ₱
+              <Text style={{ fontFamily: MONO }}>
+                {fmt(entries.reduce((s, e) => s + e.amount, 0))}
+              </Text>
             </Text>
           </View>
         </View>

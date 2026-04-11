@@ -518,8 +518,9 @@ export default function DivisionBudgetSection({
                     </View>
                     {canEdit && <MaterialIcons name="edit" size={12} color="#9ca3af" />}
                   </View>
-                  <Text className="text-[11.5px] font-semibold text-gray-600" style={{ fontFamily: MONO }}>
-                    ₱{fmt(row.utilized)} / {fmt(row.allocated)}
+                  <Text className="text-[11.5px] font-semibold text-gray-600">
+                    ₱<Text style={{ fontFamily: MONO }}>{fmt(row.utilized)}</Text>{" "}
+                    / <Text style={{ fontFamily: MONO }}>{fmt(row.allocated)}</Text>
                   </Text>
                 </View>
 
