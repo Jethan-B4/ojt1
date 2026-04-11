@@ -40,6 +40,7 @@ import { ORSInlinePanel } from "../(components)/ORSModule";
 import PORemarkSheet, {
   type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
+import CancelPOModal from "../(modals)/CancelPOModal";
 import CreatePOModal, { type POCreatePayload } from "../(modals)/CreatePOModal";
 import EditPOModal, {
   type POEditPayload,
@@ -501,6 +502,8 @@ interface MoreSheetProps {
   onRemarks: () => void;
   onEdit: () => void;
   onOverride: () => void;
+  /** Admin-only: open the Cancel PO confirmation modal. */
+  onCancel: () => void;
 }
 
 const MoreSheet: React.FC<MoreSheetProps> = ({
@@ -512,6 +515,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
   onRemarks,
   onEdit,
   onOverride,
+  onCancel,
 }) => {
   if (!record) return null;
   const cfg = poCfgFor(record.statusId);
@@ -564,6 +568,17 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
             onPress: () => {
               onClose();
               onOverride();
+            },
+          },
+          {
+            icon: "cancel",
+            label: "Cancel PO",
+            sublabel: "Void this PO and reject any linked ORS entry",
+            color: "#b91c1c",
+            bg: "#fff1f2",
+            onPress: () => {
+              onClose();
+              onCancel();
             },
           },
         ] as Action[])
@@ -996,6 +1011,11 @@ export default function POModule() {
   );
   const [remarkVisible, setRemarkVisible] = useState(false);
 
+  // CancelPOModal state — admin only
+  const [cancelPoId, setCancelPoId] = useState<string | null>(null);
+  const [cancelPoNo, setCancelPoNo] = useState<string | null>(null);
+  const [cancelVisible, setCancelVisible] = useState(false);
+
   // ── Permissions ────────────────────────────────────────────────────────────
 
   // Roles that can see every PO regardless of division
@@ -1101,6 +1121,12 @@ export default function POModule() {
     setRecords((prev) =>
       prev.map((r) => (r.id === id ? { ...r, statusId: newStatusId } : r)),
     );
+  }, []);
+
+  /** Remove the cancelled PO from the local list immediately. */
+  const handlePOCancelled = useCallback((id: string) => {
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setPage(1);
   }, []);
 
   // ── Derived list ──────────────────────────────────────────────────────────
@@ -1321,7 +1347,7 @@ export default function POModule() {
         onProcessed={handlePOProcessed}
       />
 
-      {/* MoreSheet — Remarks + Edit (role-gated) + Admin Override */}
+      {/* MoreSheet — Remarks + Edit (role-gated) + Admin Override + Admin Cancel */}
       <MoreSheet
         visible={moreVisible}
         record={moreRecord}
@@ -1360,6 +1386,13 @@ export default function POModule() {
             setProcessVisible(true);
           }
         }}
+        onCancel={() => {
+          if (moreRecord) {
+            setCancelPoId(moreRecord.id);
+            setCancelPoNo(moreRecord.poNo);
+            setCancelVisible(true);
+          }
+        }}
       />
 
       {/* PORemarkSheet — unified PO + linked PR remarks */}
@@ -1370,6 +1403,24 @@ export default function POModule() {
         onClose={() => {
           setRemarkVisible(false);
           setRemarkRecord(null);
+        }}
+      />
+
+      {/* CancelPOModal — admin only */}
+      <CancelPOModal
+        visible={cancelVisible}
+        poId={cancelPoId}
+        poNo={cancelPoNo}
+        onClose={() => {
+          setCancelVisible(false);
+          setCancelPoId(null);
+          setCancelPoNo(null);
+        }}
+        onCancelled={(id) => {
+          handlePOCancelled(id);
+          setCancelVisible(false);
+          setCancelPoId(null);
+          setCancelPoNo(null);
         }}
       />
 

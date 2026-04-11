@@ -574,8 +574,410 @@ function SupplyModal({
   );
 }
 
-function AdminModal(props: Omit<ProcessPOModalProps, "roleId">) {
-  return <SupplyModal {...props} />;
+// ─── Admin-override phase labels (mirrors Phase 2 swimlane) ──────────────────
+
+const PHASE2_STEPS: Record<
+  number,
+  { label: string; role: string; action: string }
+> = {
+  12: {
+    label: "PO (Creation)",
+    role: "Supply",
+    action: "Advance to Allocation",
+  },
+  13: {
+    label: "PO (Allocation)",
+    role: "Supply",
+    action: "Forward to Budget",
+  },
+  14: {
+    label: "ORS (Creation)",
+    role: "Budget",
+    action: "Finalize ORS",
+  },
+  15: {
+    label: "ORS (Processing)",
+    role: "Budget / Accounting",
+    action: "Mark as Forwarded",
+  },
+};
+
+/**
+ * AdminModal — full Phase 2 override.
+ *
+ * Status 12 (PO Creation)    → advance to 13, remark only (mirrors SupplyModal step 12→13)
+ * Status 13 (PO Allocation)  → advance to 14, remark only (mirrors SupplyModal step 13→14)
+ * Status 14 (ORS Creation)   → advance to 15, ORS fields required (mirrors BudgetModal)
+ * Status 15 (ORS Processing) → advance to 16 (Accounting), remark only — admin can push past Budget
+ *
+ * Every step shows: current-step banner, remark & flag, and the relevant data fields.
+ */
+function AdminModal({
+  visible,
+  record,
+  onClose,
+  onProcessed,
+}: Omit<ProcessPOModalProps, "roleId">) {
+  const { currentUser } = useAuth();
+
+  // ── Shared state ──
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [headerPrId, setHeaderPrId] = useState<string | null>(null);
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+
+  // ── ORS-specific fields (status 14) ──
+  const [orsNo, setOrsNo] = useState("");
+  const [orsDate, setOrsDate] = useState("");
+  const [orsAmount, setOrsAmount] = useState("");
+  const [fundsAvailable, setFundsAvailable] = useState("");
+
+  // ── Target-status picker (admin can jump to any Phase 2 step) ──
+  const currentStatus = record?.statusId ?? 12;
+  const defaultTarget = currentStatus < 15 ? currentStatus + 1 : 16;
+  const [targetStatusId, setTargetStatusId] = useState<number>(defaultTarget);
+
+  useEffect(() => {
+    if (!visible || !record) return;
+    const computed = record.statusId < 15 ? record.statusId + 1 : 16;
+    setTargetStatusId(computed);
+    setLoading(true);
+    setSaving(false);
+    setRemarks("");
+    setStatusFlag(null);
+    setOrsNo("");
+    setOrsDate("");
+    setOrsAmount("");
+    setFundsAvailable("");
+    (async () => {
+      try {
+        const { header } = await fetchPOWithItemsById(record.id);
+        setHeaderPrId((header as any)?.pr_id ?? null);
+        // Pre-fill ORS fields if already present
+        setOrsNo((header as any)?.ors_no ?? "");
+        setOrsDate(normalizeDateString((header as any)?.ors_date ?? ""));
+        setOrsAmount(
+          (header as any)?.ors_amount
+            ? String((header as any)?.ors_amount)
+            : "",
+        );
+        setFundsAvailable((header as any)?.funds_available ?? "");
+      } catch (e: any) {
+        Alert.alert("Load failed", e?.message ?? "Could not load PO details.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [visible, record]);
+
+  const isOrsStep = currentStatus === 14;
+  const isForwardingStep = currentStatus === 15;
+
+  // Whether the submit button should be disabled
+  const submitDisabled =
+    saving || loading || (isOrsStep && (!orsNo.trim() || !orsDate.trim()));
+
+  const submit = useCallback(async () => {
+    if (!record) return;
+    setSaving(true);
+    try {
+      // 1. Optionally save ORS fields when at status 14
+      if (isOrsStep) {
+        await updatePO(record.id, {
+          ors_no: orsNo.trim() || null,
+          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
+          ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
+          funds_available: fundsAvailable.trim() || null,
+        });
+      }
+
+      // 2. Insert remark (fire-and-forget style; non-blocking failure is ok)
+      await insertPORemark(
+        record.id,
+        headerPrId,
+        currentUser?.id ?? null,
+        remarks,
+        getStatusFlagId(statusFlag),
+      );
+
+      // 3. Advance status
+      await updatePOStatus(record.id, targetStatusId);
+      onProcessed(record.id, targetStatusId);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not update PO status.");
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    record,
+    isOrsStep,
+    orsNo,
+    orsDate,
+    orsAmount,
+    fundsAvailable,
+    headerPrId,
+    currentUser?.id,
+    remarks,
+    statusFlag,
+    targetStatusId,
+    onProcessed,
+    onClose,
+  ]);
+
+  const stepMeta = PHASE2_STEPS[currentStatus];
+  const actionLabel = stepMeta?.action ?? "Advance";
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView className="flex-1 bg-gray-50">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          className="flex-1"
+        >
+          {/* Header */}
+          <View className="px-5 pt-4 pb-3 bg-[#064E3B]">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 mr-3">
+                <Text className="text-white/60 text-[11px] font-bold tracking-widest uppercase">
+                  Admin Override · {record?.poNo ?? ""}
+                </Text>
+                <Text className="text-white text-[18px] font-extrabold">
+                  Process PO
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={onClose}
+                hitSlop={10}
+                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
+              >
+                <MaterialIcons name="close" size={18} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {loading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator />
+              <Text className="text-[12px] text-gray-400 mt-2">Loading…</Text>
+            </View>
+          ) : (
+            <ScrollView
+              className="flex-1"
+              contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+            >
+              {/* ── Current phase banner ── */}
+              <View className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-3">
+                <MaterialIcons
+                  name="admin-panel-settings"
+                  size={20}
+                  color="#92400e"
+                />
+                <View className="flex-1">
+                  <Text className="text-[10px] font-bold uppercase tracking-widest text-amber-700 mb-0.5">
+                    Phase 2 — Step {currentStatus - 11} of 4
+                  </Text>
+                  <Text className="text-[13px] font-bold text-amber-900">
+                    {stepMeta?.label ?? `Status ${currentStatus}`}
+                    {"  "}
+                    <Text className="font-normal text-amber-700">
+                      ({stepMeta?.role ?? "—"})
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+
+              {/* ── Target status picker (admin can override to any Phase 2 or post-phase step) ── */}
+              <View
+                className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
+                style={{ elevation: 2 }}
+              >
+                <View className="px-4 pt-3 pb-3">
+                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                    Target Status
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {([12, 13, 14, 15, 16] as const).map((sid) => {
+                      const meta =
+                        sid === 16
+                          ? { label: "Forwarded to Accounting" }
+                          : PHASE2_STEPS[sid];
+                      if (!meta) return null;
+                      const active = targetStatusId === sid;
+                      const isPast = sid <= currentStatus;
+                      return (
+                        <TouchableOpacity
+                          key={sid}
+                          onPress={() => setTargetStatusId(sid)}
+                          activeOpacity={0.75}
+                          className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+                            active
+                              ? "bg-[#064E3B] border-[#064E3B]"
+                              : isPast
+                                ? "bg-gray-100 border-gray-200"
+                                : "bg-white border-gray-300"
+                          }`}
+                        >
+                          {isPast && !active && (
+                            <MaterialIcons
+                              name="check-circle"
+                              size={12}
+                              color="#6b7280"
+                              style={{ marginRight: 4 }}
+                            />
+                          )}
+                          <Text
+                            className={`text-[11px] font-bold ${
+                              active
+                                ? "text-white"
+                                : isPast
+                                  ? "text-gray-400"
+                                  : "text-gray-700"
+                            }`}
+                          >
+                            {sid === 16 ? "→ Accounting" : meta.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <Text className="text-[10px] text-gray-400 mt-2">
+                    Admin can set any Phase 2 target status. Grayed = already
+                    passed.
+                  </Text>
+                </View>
+              </View>
+
+              {/* ── ORS fields — shown when current status is 14 OR target is 14/15 ── */}
+              {(isOrsStep || targetStatusId >= 15) && (
+                <View
+                  className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
+                  style={{ elevation: 2 }}
+                >
+                  <View className="px-4 pt-3 pb-3">
+                    <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                      ORS Details
+                      {isOrsStep && (
+                        <Text className="text-red-400"> (required)</Text>
+                      )}
+                    </Text>
+
+                    <Field label="ORS No." required={isOrsStep}>
+                      <Input
+                        value={orsNo}
+                        onChangeText={setOrsNo}
+                        placeholder="e.g. ORS-2026-001"
+                        mono
+                      />
+                    </Field>
+
+                    <Field label="ORS Date" required={isOrsStep}>
+                      <DatePickerButton
+                        value={orsDate}
+                        onChange={setOrsDate}
+                        placeholder="Select ORS date…"
+                      />
+                    </Field>
+
+                    <Field label="ORS Amount">
+                      <Input
+                        value={orsAmount}
+                        onChangeText={setOrsAmount}
+                        placeholder="e.g. 150000.00"
+                        keyboardType="numeric"
+                        mono
+                      />
+                    </Field>
+
+                    <Field label="Funds Available">
+                      <Input
+                        value={fundsAvailable}
+                        onChangeText={setFundsAvailable}
+                        placeholder="Optional"
+                      />
+                    </Field>
+                  </View>
+                </View>
+              )}
+
+              {/* ── Forwarding note — shown when pushing past status 15 ── */}
+              {isForwardingStep && (
+                <View className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2">
+                  <MaterialIcons name="send" size={16} color="#1d4ed8" />
+                  <Text className="text-[12px] text-blue-800 flex-1">
+                    This will mark the PO as forwarded to Accounting for
+                    incoming check processing (Phase 3).
+                  </Text>
+                </View>
+              )}
+
+              {/* ── Remark & flag ── */}
+              <View
+                className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
+                style={{ elevation: 2 }}
+              >
+                <View className="px-4 pt-3 pb-3">
+                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                    Remark & Flag
+                  </Text>
+                  <View className="flex-row items-center justify-between mb-2">
+                    <Text className="text-[11px] font-bold text-gray-500">
+                      Status flag
+                    </Text>
+                    <FlagButton
+                      selected={statusFlag}
+                      onPress={() => setFlagOpen(true)}
+                    />
+                  </View>
+                  <Field label="Remark">
+                    <Input
+                      value={remarks}
+                      onChangeText={setRemarks}
+                      placeholder={`Admin override remark for ${stepMeta?.label ?? "this step"}…`}
+                      multiline
+                    />
+                  </Field>
+                </View>
+              </View>
+
+              {/* ── Submit ── */}
+              <TouchableOpacity
+                onPress={submit}
+                disabled={submitDisabled}
+                activeOpacity={0.85}
+                className={`rounded-2xl py-3 items-center flex-row justify-center gap-2 ${
+                  submitDisabled ? "bg-gray-300" : "bg-[#064E3B]"
+                }`}
+              >
+                <MaterialIcons
+                  name="admin-panel-settings"
+                  size={16}
+                  color={submitDisabled ? "#9ca3af" : "#ffffff"}
+                />
+                <Text className="text-[13.5px] font-extrabold text-white">
+                  {saving ? "Saving…" : actionLabel}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+
+          <StatusFlagPicker
+            visible={flagOpen}
+            selected={statusFlag}
+            onSelect={setStatusFlag}
+            onClose={() => setFlagOpen(false)}
+          />
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
 }
 
 export default function ProcessPOModal({
