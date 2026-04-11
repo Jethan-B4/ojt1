@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '../global.css';
 import { AuthProvider, useAuth } from './AuthContext';
+import { RealtimeProvider } from './RealtimeContext';
 import { StatusBarProvider, useStatusBar } from './StatusBarContext';
 
 export const unstable_settings = {
@@ -37,7 +38,9 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <StatusBarProvider>
-        <RootLayoutNav />
+        <RealtimeProvider>
+          <RootLayoutNav />
+        </RealtimeProvider>
       </StatusBarProvider>
     </AuthProvider>
   );

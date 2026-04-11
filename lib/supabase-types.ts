@@ -14,8 +14,8 @@ export interface PRItemRow {
 }
 
 export interface CanvasserAssignmentRow {
-  id: string;
-  session_id: string;
+  id: number;
+  session_id: string | number;
   division_id: number;
   canvasser_id?: number | null;
   released_at?: string | null;
@@ -24,10 +24,10 @@ export interface CanvasserAssignmentRow {
 }
 
 export interface CanvassEntryRow {
-  id: string;
-  session_id: string;
+  id: number;
+  session_id: string | number;
   /** Nullable: when set, ties the row to a specific canvasser assignment return */
-  assignment_id?: string | null;
+  assignment_id?: number | null;
   item_no: number;
   description: string;
   unit: string;

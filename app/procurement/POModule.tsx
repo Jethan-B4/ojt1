@@ -60,6 +60,7 @@ import {
   type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
+import { useRealtime } from "../RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -948,6 +949,7 @@ const Pagination: React.FC<{
 export default function POModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
+  const { tick } = useRealtime();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1063,7 +1065,7 @@ export default function POModule() {
 
   useEffect(() => {
     loadPOs();
-  }, [loadPOs]);
+  }, [loadPOs, tick]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -1,7 +1,7 @@
 import { supabase } from "./client";
 
 export async function insertAAAForSession(
-  sessionId: string,
+  sessionId: string | number,
   payload: {
     aaa_no: string;
     prepared_by: number;
@@ -10,9 +10,10 @@ export async function insertAAAForSession(
     particulars?: string | null;
   },
 ) {
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("aaa_documents")
-    .insert({ ...payload, session_id: sessionId })
+    .insert({ ...payload, session_id: sid })
     .select()
     .single();
   if (error) throw error;
@@ -24,7 +25,7 @@ export async function insertAAAForSession(
  * never creates duplicate rows and doesn't throw when no row exists yet.
  */
 export async function updateAAAForSession(
-  sessionId: string,
+  sessionId: string | number,
   payload: Partial<{
     aaa_no: string;
     prepared_by: number;
@@ -33,27 +34,23 @@ export async function updateAAAForSession(
     particulars?: string | null;
   }>,
 ) {
-  // Delete any existing row first (idempotent)
-  await supabase.from("aaa_documents").delete().eq("session_id", sessionId);
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("aaa_documents")
-    .insert({ ...payload, session_id: sessionId })
+    .update(payload)
+    .eq("session_id", sid)
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-/**
- * Alias for updateAAAForSession — preferred name for upsert semantics.
- */
-export const upsertAAAForSession = updateAAAForSession;
-
-export async function fetchAAAForSession(sessionId: string) {
+export async function fetchAAAForSession(sessionId: string | number) {
+  const sid = String(sessionId);
   const { data, error } = await supabase
     .from("aaa_documents")
     .select("*")
-    .eq("session_id", sessionId)
+    .eq("session_id", sid)
     .order("prepared_at", { ascending: false })
     .limit(1)
     .maybeSingle();

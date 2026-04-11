@@ -40,6 +40,7 @@ import {
   updatePRStatus,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
+import { useRealtime } from "../RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -684,6 +685,7 @@ export default function PRModule({
 }: { initialSubTab?: SubTab } = {}) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
+  const { tick } = useRealtime();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(
     initialSubTab ?? "all",
@@ -798,7 +800,7 @@ export default function PRModule({
 
   useEffect(() => {
     loadPRs();
-  }, [loadPRs]);
+  }, [loadPRs, tick]);
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {

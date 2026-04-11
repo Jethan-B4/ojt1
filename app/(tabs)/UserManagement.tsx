@@ -13,7 +13,7 @@ import {
 } from "@/lib/supabase/index";
 import type { DatabaseUser } from "@/types/user";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,6 +28,7 @@ import {
 import CreateUserModal from "../(modals)/CreateUserModal";
 import DeleteUserModal from "../(modals)/DeleteUserModal";
 import EditUserModal from "../(modals)/EditUserModal";
+import { useRealtime } from "../RealtimeContext";
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
@@ -324,6 +325,8 @@ export default function UserManagementScreen() {
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const { tick } = useRealtime();
+  const isFocused = useIsFocused();
 
   // ── Load roles ──────────────────────────────────────────────────────────────
   const loadRoles = useCallback(async () => {
@@ -368,6 +371,11 @@ export default function UserManagementScreen() {
       loadUsers();
     }, [loadRoles, loadUsers]),
   );
+
+  useEffect(() => {
+    if (!isFocused) return;
+    loadUsers(true);
+  }, [tick, isFocused, loadUsers]);
 
   // ── Filter users ────────────────────────────────────────────────────────────
   useEffect(() => {

@@ -149,8 +149,8 @@ export default function BACView({
   const [canvassEntries, setCanvassEntries] = useState<CanvassEntryRow[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
-  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
-  const [expandedRFQs, setExpandedRFQs] = useState<Set<string>>(new Set());
+  const [selectedReturnId, setSelectedReturnId] = useState<number | null>(null);
+  const [expandedRFQs, setExpandedRFQs] = useState<Set<number>>(new Set());
   const [collectedRFQ, setCollectedRFQ] = useState<CanvassPreviewData | null>(
     null,
   );
@@ -328,10 +328,11 @@ export default function BACView({
         }
 
         const prefill = (session as any).aaa_prefill_assignment_id as
+          | number
           | string
           | null
           | undefined;
-        if (prefill) setSelectedReturnId(prefill);
+        if (prefill != null) setSelectedReturnId(Number(prefill));
       } catch {}
     })();
   }, [pr.prNo]);
@@ -541,10 +542,12 @@ export default function BACView({
   );
 
   const entriesForAssignment = React.useCallback(
-    (assignmentId: string) => {
+    (assignmentId: number) => {
       const filtered = canvassEntries.filter((e) => prItemIdSet.has(e.item_no));
       if (!hasAssignmentId) return filtered;
-      return filtered.filter((e: any) => e.assignment_id === assignmentId);
+      return filtered.filter(
+        (e: any) => Number(e.assignment_id) === Number(assignmentId),
+      );
     },
     [canvassEntries, prItemIdSet, hasAssignmentId],
   );
@@ -608,7 +611,7 @@ export default function BACView({
   );
 
   const applyReturnAsBase = React.useCallback(
-    async (assignmentId: string) => {
+    async (assignmentId: number) => {
       if (!sessionId) return;
       const src = entriesForAssignment(assignmentId);
       const payload = src
@@ -650,14 +653,15 @@ export default function BACView({
     );
     if (hasPrices) return;
 
-    let bestId: string | null = null;
+    let bestId: number | null = null;
     let bestTotal = Number.POSITIVE_INFINITY;
     returned.forEach((a) => {
-      const ent = entriesForAssignment(a.id);
+      const aid = Number(a.id);
+      const ent = entriesForAssignment(aid);
       const total = ent.reduce((sum, e) => sum + (e.total_price || 0), 0);
       if (ent.length > 0 && total < bestTotal) {
         bestTotal = total;
-        bestId = a.id;
+        bestId = aid;
       }
     });
     if (!bestId) return;
@@ -1281,19 +1285,20 @@ export default function BACView({
                   <View className="px-4 pt-3 pb-2">
                     <Divider label="Collected RFQs" />
                     {returned.map((a) => {
+                      const aid = Number(a.id);
                       const user = a.canvasser_id
                         ? userById[a.canvasser_id]
                         : undefined;
                       const divName =
                         user?.division_name ?? `Division ${a.division_id}`;
                       const canvasserName = user?.username ?? "—";
-                      const ent = entriesForAssignment(a.id);
+                      const ent = entriesForAssignment(aid);
                       const totalQuoted = ent.reduce(
                         (s, e) => s + (e.total_price || 0),
                         0,
                       );
-                      const expanded = expandedRFQs.has(a.id);
-                      const active = selectedReturnId === a.id;
+                      const expanded = expandedRFQs.has(aid);
+                      const active = selectedReturnId === aid;
                       return (
                         <View
                           key={a.id}
@@ -1304,8 +1309,8 @@ export default function BACView({
                             onPress={() =>
                               setExpandedRFQs((prev) => {
                                 const n = new Set(prev);
-                                if (n.has(a.id)) n.delete(a.id);
-                                else n.add(a.id);
+                                if (n.has(aid)) n.delete(aid);
+                                else n.add(aid);
                                 return n;
                               })
                             }
@@ -1381,7 +1386,7 @@ export default function BACView({
                                 </Text>
                               </TouchableOpacity>
                               <TouchableOpacity
-                                onPress={() => applyReturnAsBase(a.id)}
+                                onPress={() => applyReturnAsBase(Number(a.id))}
                                 activeOpacity={0.85}
                                 className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-[#064E3B]"
                               >
@@ -1470,14 +1475,14 @@ export default function BACView({
               <View className="px-4 pt-3 pb-3">
                 <View className="flex-row items-center justify-between gap-3 mb-1">
                   <Divider label="Supplier Quotations" />
-                  {selectedReturnId && (
+                  {selectedReturnId != null && (
                     <TouchableOpacity
                       onPress={() => {
                         const a = assignments.find(
-                          (x) => x.id === selectedReturnId,
+                          (x) => Number(x.id) === Number(selectedReturnId),
                         );
                         if (!a) return;
-                        const ent = entriesForAssignment(a.id);
+                        const ent = entriesForAssignment(Number(a.id));
                         setCollectedRFQ(buildCollectedRFQData(a, ent));
                       }}
                       activeOpacity={0.85}

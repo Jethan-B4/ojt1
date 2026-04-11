@@ -666,7 +666,7 @@ export default function AAAView({
   const [allAssignments, setAllAssignments] = useState<EnrichedAssignmentRow[]>(
     [],
   );
-  const [sourceReturnId, setSourceReturnId] = useState<string | null>(null);
+  const [sourceReturnId, setSourceReturnId] = useState<number | null>(null);
   const [applyingSource, setApplyingSource] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -730,7 +730,8 @@ export default function AAAView({
         // Session meta
         const sess = await fetchCanvassSessionById(sessionId);
         if (sess?.bac_no) setBacNo(sess.bac_no);
-        setSourceReturnId((sess as any)?.aaa_prefill_assignment_id ?? null);
+        const prefill = (sess as any)?.aaa_prefill_assignment_id;
+        setSourceReturnId(prefill == null ? null : (Number(prefill) as any));
 
         // Assignments — store all, expose "returned" subset separately
         const asgn = await fetchAssignmentsWithDetails(sessionId);
@@ -768,7 +769,7 @@ export default function AAAView({
   }, [sessionId, pr.prNo, pr.officeSection, loadEntries]);
 
   const applySource = useCallback(
-    async (assignmentId: string) => {
+    async (assignmentId: number) => {
       setApplyingSource(true);
       try {
         const src = await fetchQuotesForSubmission(sessionId, assignmentId);
@@ -1062,12 +1063,13 @@ export default function AAAView({
                 contentContainerStyle={{ gap: 8 }}
               >
                 {returns.map((r) => {
-                  const active = sourceReturnId === r.id;
+                  const rid = Number(r.id);
+                  const active = sourceReturnId === rid;
                   return (
                     <TouchableOpacity
                       key={r.id}
                       activeOpacity={0.85}
-                      onPress={() => setSourceReturnId(r.id)}
+                      onPress={() => setSourceReturnId(rid)}
                       className={`px-3 py-2 rounded-xl border ${
                         active
                           ? "bg-emerald-50 border-emerald-200"
@@ -1090,11 +1092,13 @@ export default function AAAView({
               </ScrollView>
               <View className="flex-row justify-end mt-2">
                 <TouchableOpacity
-                  disabled={!sourceReturnId || applyingSource}
-                  onPress={() => sourceReturnId && applySource(sourceReturnId)}
+                  disabled={sourceReturnId == null || applyingSource}
+                  onPress={() =>
+                    sourceReturnId != null && applySource(sourceReturnId)
+                  }
                   activeOpacity={0.85}
                   className={`flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl ${
-                    !sourceReturnId || applyingSource
+                    sourceReturnId == null || applyingSource
                       ? "bg-gray-300"
                       : "bg-[#064E3B]"
                   }`}
