@@ -105,10 +105,21 @@ function getStatusFlagId(flag: StatusFlag | null): number | null {
   return null;
 }
 
+/**
+ * Whether a given role can process a PO at the given status.
+ *
+ * Full Phase 2 swimlane ownership:
+ *   Supply (8)  — 12→13 (Creation→Allocation), 13→14 (Allocation→ORS),
+ *                 17→18 (PARPO→Serving, serve PO to suppliers)
+ *   Budget (4)  — 14→15 (ORS Creation→Processing), 15→16 (ORS Processing→Accounting)
+ *   Accounting / PARPO — no dedicated role_id yet; handled via Admin override
+ *   Admin (1)   — all statuses
+ */
 export function canRoleProcessPO(roleId: number, statusId: number) {
   if (roleId === 1) return true;
-  if (roleId === 8) return statusId === 12 || statusId === 13;
-  if (roleId === 4) return statusId === 14;
+  if (roleId === 8)
+    return statusId === 12 || statusId === 13 || statusId === 17;
+  if (roleId === 4) return statusId === 14 || statusId === 15;
   return false;
 }
 
@@ -279,14 +290,18 @@ function BudgetModal({
         getStatusFlagId(statusFlag),
       );
 
-      await updatePO(record.id, {
-        ors_no: orsNo.trim() || null,
-        ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
-        ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
-        funds_available: fundsAvailable.trim() || null,
-      });
+      // At ORS Creation (14): save ORS fields and advance to ORS Processing (15)
+      // At ORS Processing (15): forward to Accounting (16) — no extra fields needed
+      if (record.statusId === 14) {
+        await updatePO(record.id, {
+          ors_no: orsNo.trim() || null,
+          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
+          ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
+          funds_available: fundsAvailable.trim() || null,
+        });
+      }
 
-      const targetStatusId = 15;
+      const targetStatusId = record.statusId === 14 ? 15 : 16;
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
       onClose();
@@ -322,7 +337,9 @@ function BudgetModal({
           className="flex-1"
         >
           <Header
-            title="Process ORS"
+            title={
+              record?.statusId === 14 ? "Prepare ORS" : "Forward to Accounting"
+            }
             subtitle={`Budget · ${record?.poNo ?? ""}`}
             onClose={onClose}
           />
@@ -336,51 +353,65 @@ function BudgetModal({
               className="flex-1"
               contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
             >
-              <View
-                className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-                style={{ elevation: 2 }}
-              >
-                <View className="px-4 pt-3 pb-3">
-                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                    ORS Details
-                  </Text>
+              {/* ORS fields — only at status 14 (ORS Creation) */}
+              {record?.statusId === 14 && (
+                <View
+                  className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
+                  style={{ elevation: 2 }}
+                >
+                  <View className="px-4 pt-3 pb-3">
+                    <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+                      ORS Details
+                    </Text>
 
-                  <Field label="ORS No." required>
-                    <Input
-                      value={orsNo}
-                      onChangeText={setOrsNo}
-                      placeholder="e.g. ORS-2026-001"
-                      mono
-                    />
-                  </Field>
+                    <Field label="ORS No." required>
+                      <Input
+                        value={orsNo}
+                        onChangeText={setOrsNo}
+                        placeholder="e.g. ORS-2026-001"
+                        mono
+                      />
+                    </Field>
 
-                  <Field label="ORS Date" required>
-                    <DatePickerButton
-                      value={orsDate}
-                      onChange={setOrsDate}
-                      placeholder="Select ORS date…"
-                    />
-                  </Field>
+                    <Field label="ORS Date" required>
+                      <DatePickerButton
+                        value={orsDate}
+                        onChange={setOrsDate}
+                        placeholder="Select ORS date…"
+                      />
+                    </Field>
 
-                  <Field label="ORS Amount">
-                    <Input
-                      value={orsAmount}
-                      onChangeText={setOrsAmount}
-                      placeholder="e.g. 150000.00"
-                      keyboardType="numeric"
-                      mono
-                    />
-                  </Field>
+                    <Field label="ORS Amount">
+                      <Input
+                        value={orsAmount}
+                        onChangeText={setOrsAmount}
+                        placeholder="e.g. 150000.00"
+                        keyboardType="numeric"
+                        mono
+                      />
+                    </Field>
 
-                  <Field label="Funds Available">
-                    <Input
-                      value={fundsAvailable}
-                      onChangeText={setFundsAvailable}
-                      placeholder="Optional"
-                    />
-                  </Field>
+                    <Field label="Funds Available">
+                      <Input
+                        value={fundsAvailable}
+                        onChangeText={setFundsAvailable}
+                        placeholder="Optional"
+                      />
+                    </Field>
+                  </View>
                 </View>
-              </View>
+              )}
+
+              {/* Forwarding note — at status 15 (ORS Processing → Accounting) */}
+              {record?.statusId === 15 && (
+                <View className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2">
+                  <MaterialIcons name="send" size={16} color="#1d4ed8" />
+                  <Text className="text-[12px] text-blue-800 flex-1">
+                    Budget officer has signed the ORS. This will forward the
+                    purchase order to Accounting for incoming check processing.
+                  </Text>
+                </View>
+              )}
 
               <View
                 className="bg-white rounded-2xl border border-gray-200 overflow-hidden mt-3"
@@ -405,7 +436,11 @@ function BudgetModal({
                     <Input
                       value={remarks}
                       onChangeText={setRemarks}
-                      placeholder="Optional remark for this ORS step…"
+                      placeholder={
+                        record?.statusId === 14
+                          ? "Optional remark for this ORS step…"
+                          : "Optional remark before forwarding to Accounting…"
+                      }
                       multiline
                     />
                   </Field>
@@ -414,16 +449,26 @@ function BudgetModal({
 
               <TouchableOpacity
                 onPress={submit}
-                disabled={saving || !orsNo.trim() || !orsDate.trim()}
+                disabled={
+                  saving ||
+                  (record?.statusId === 14 &&
+                    (!orsNo.trim() || !orsDate.trim()))
+                }
                 activeOpacity={0.85}
                 className={`mt-4 rounded-2xl py-3 items-center ${
-                  saving || !orsNo.trim() || !orsDate.trim()
+                  saving ||
+                  (record?.statusId === 14 &&
+                    (!orsNo.trim() || !orsDate.trim()))
                     ? "bg-gray-300"
                     : "bg-[#064E3B]"
                 }`}
               >
                 <Text className="text-[13.5px] font-extrabold text-white">
-                  {saving ? "Saving…" : "Finalize ORS"}
+                  {saving
+                    ? "Saving…"
+                    : record?.statusId === 14
+                      ? "Finalize ORS"
+                      : "Forward to Accounting"}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -478,7 +523,12 @@ function SupplyModal({
         remarks,
         getStatusFlagId(statusFlag),
       );
-      const targetStatusId = record.statusId === 12 ? 13 : 14;
+      // Status progression:
+      //   12 (PO Creation)    → 13 (PO Allocation)
+      //   13 (PO Allocation)  → 14 (ORS Creation)
+      //   17 (PO PARPO)       → 18 (PO Serving)
+      const targetStatusId =
+        record.statusId === 12 ? 13 : record.statusId === 13 ? 14 : 18;
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
       onClose();
@@ -557,7 +607,9 @@ function SupplyModal({
                   ? "Saving…"
                   : record?.statusId === 12
                     ? "Advance to Allocation"
-                    : "Forward to Budget"}
+                    : record?.statusId === 13
+                      ? "Forward to Budget"
+                      : "Serve PO to Supplier"}
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -576,6 +628,15 @@ function SupplyModal({
 
 // ─── Admin-override phase labels (mirrors Phase 2 swimlane) ──────────────────
 
+/**
+ * Full Phase 2 step metadata keyed by status_id (public.status table).
+ *
+ * Swimlane ownership:
+ *   Supply (8)  — 12 (Creation), 13 (Allocation), 18 (Serving)
+ *   Budget (4)  — 14 (ORS Creation), 15 (ORS Processing)
+ *   Accounting  — 16 (Accounting)   [no dedicated role yet → admin override]
+ *   PARPO       — 17 (PARPO)        [no dedicated role yet → admin override]
+ */
 const PHASE2_STEPS: Record<
   number,
   { label: string; role: string; action: string }
@@ -597,20 +658,38 @@ const PHASE2_STEPS: Record<
   },
   15: {
     label: "ORS (Processing)",
-    role: "Budget / Accounting",
-    action: "Mark as Forwarded",
+    role: "Budget",
+    action: "Forward to Accounting",
+  },
+  16: {
+    label: "PO (Accounting)",
+    role: "Accounting",
+    action: "Forward to PARPO",
+  },
+  17: {
+    label: "PO (PARPO)",
+    role: "PARPO",
+    action: "Forward to Supply (Serving)",
+  },
+  18: {
+    label: "PO (Serving)",
+    role: "Supply",
+    action: "Mark as Served",
   },
 };
 
 /**
- * AdminModal — full Phase 2 override.
+ * AdminModal — full Phase 2 override (statuses 12–18).
  *
- * Status 12 (PO Creation)    → advance to 13, remark only (mirrors SupplyModal step 12→13)
- * Status 13 (PO Allocation)  → advance to 14, remark only (mirrors SupplyModal step 13→14)
- * Status 14 (ORS Creation)   → advance to 15, ORS fields required (mirrors BudgetModal)
- * Status 15 (ORS Processing) → advance to 16 (Accounting), remark only — admin can push past Budget
+ *   12 (PO Creation)    → 13  remark only             Supply owns normally
+ *   13 (PO Allocation)  → 14  remark only             Supply owns normally
+ *   14 (ORS Creation)   → 15  ORS fields required     Budget owns normally
+ *   15 (ORS Processing) → 16  remark only             Budget owns normally
+ *   16 (PO Accounting)  → 17  remark only             no role yet → admin
+ *   17 (PO PARPO)       → 18  remark only             no role yet → admin
+ *   18 (PO Serving)     → —   terminal; target picker shown for rollback
  *
- * Every step shows: current-step banner, remark & flag, and the relevant data fields.
+ * Shows: step banner (N of 7), target picker, contextual ORS fields, remark & flag.
  */
 function AdminModal({
   visible,
@@ -636,12 +715,12 @@ function AdminModal({
 
   // ── Target-status picker (admin can jump to any Phase 2 step) ──
   const currentStatus = record?.statusId ?? 12;
-  const defaultTarget = currentStatus < 15 ? currentStatus + 1 : 16;
+  const defaultTarget = Math.min(currentStatus + 1, 18);
   const [targetStatusId, setTargetStatusId] = useState<number>(defaultTarget);
 
   useEffect(() => {
     if (!visible || !record) return;
-    const computed = record.statusId < 15 ? record.statusId + 1 : 16;
+    const computed = Math.min(record.statusId + 1, 18);
     setTargetStatusId(computed);
     setLoading(true);
     setSaving(false);
@@ -673,7 +752,9 @@ function AdminModal({
   }, [visible, record]);
 
   const isOrsStep = currentStatus === 14;
-  const isForwardingStep = currentStatus === 15;
+  // Steps where forwarding-to-next-department context note is shown
+  const isForwardingStep =
+    currentStatus === 15 || currentStatus === 16 || currentStatus === 17;
 
   // Whether the submit button should be disabled
   const submitDisabled =
@@ -782,7 +863,7 @@ function AdminModal({
                 />
                 <View className="flex-1">
                   <Text className="text-[10px] font-bold uppercase tracking-widest text-amber-700 mb-0.5">
-                    Phase 2 — Step {currentStatus - 11} of 4
+                    Phase 2 — Step {currentStatus - 11} of 7
                   </Text>
                   <Text className="text-[13px] font-bold text-amber-900">
                     {stepMeta?.label ?? `Status ${currentStatus}`}
@@ -794,7 +875,7 @@ function AdminModal({
                 </View>
               </View>
 
-              {/* ── Target status picker (admin can override to any Phase 2 or post-phase step) ── */}
+              {/* ── Target status picker ── */}
               <View
                 className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
                 style={{ elevation: 2 }}
@@ -804,11 +885,8 @@ function AdminModal({
                     Target Status
                   </Text>
                   <View className="flex-row flex-wrap gap-2">
-                    {([12, 13, 14, 15, 16] as const).map((sid) => {
-                      const meta =
-                        sid === 16
-                          ? { label: "Forwarded to Accounting" }
-                          : PHASE2_STEPS[sid];
+                    {([12, 13, 14, 15, 16, 17, 18] as const).map((sid) => {
+                      const meta = PHASE2_STEPS[sid];
                       if (!meta) return null;
                       const active = targetStatusId === sid;
                       const isPast = sid <= currentStatus;
@@ -842,7 +920,7 @@ function AdminModal({
                                   : "text-gray-700"
                             }`}
                           >
-                            {sid === 16 ? "→ Accounting" : meta.label}
+                            {meta.label}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -907,13 +985,16 @@ function AdminModal({
                 </View>
               )}
 
-              {/* ── Forwarding note — shown when pushing past status 15 ── */}
+              {/* ── Forwarding note — shown when handing off to next department ── */}
               {isForwardingStep && (
                 <View className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2">
                   <MaterialIcons name="send" size={16} color="#1d4ed8" />
                   <Text className="text-[12px] text-blue-800 flex-1">
-                    This will mark the PO as forwarded to Accounting for
-                    incoming check processing (Phase 3).
+                    {currentStatus === 15
+                      ? "Budget officer has signed the ORS. This will forward the PO to Accounting for incoming check processing."
+                      : currentStatus === 16
+                        ? "Accounting has verified document completeness. This will forward the PO to PARPO II for review and signature."
+                        : "PARPO II has signed the PO. This will hand off to Supply for serving to suppliers."}
                   </Text>
                 </View>
               )}

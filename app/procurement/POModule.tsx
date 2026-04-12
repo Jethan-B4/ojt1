@@ -9,16 +9,19 @@
  *   - Filter panel, pagination — identical shape to PRModule
  *   - Pull-to-refresh, saving overlay, empty state
  *
- * PO status lifecycle (public.status table):
+ * PO status lifecycle (public.status table) — full Phase 2:
  *   12 = PO (Creation)    ← every new PO starts here (Supply logs receipt)
  *   13 = PO (Allocation)  ← Supply assigns PO # and prepares document
  *   14 = ORS (Creation)   ← Budget prepares ORS
- *   15 = ORS (Processing) ← Budget officer signs and forwards to Accounting
+ *   15 = ORS (Processing) ← Budget officer signs; forwards to Accounting
+ *   16 = PO (Accounting)  ← Accounting verifies document completeness
+ *   17 = PO (PARPO)       ← PARPO II reviews and signs PO
+ *   18 = PO (Serving)     ← Supply serves PO to suppliers
  *
  * Role permissions:
- *   role_id 1  = Admin   — sees all, can process (override), can edit
- *   role_id 4  = Budget  — sees all, can process 14→15 (ORS), can edit ORS
- *   role_id 8  = Supply  — sees all, can create, can process 12→13→14, can edit ≤ 13
+ *   role_id 1  = Admin   — sees all, can process (override all statuses), can edit
+ *   role_id 4  = Budget  — sees all, can process 14→15 and 15→16 (ORS), can edit ORS
+ *   role_id 8  = Supply  — sees all, can create, can process 12→13→14 and 17→18, can edit ≤ 13
  *   All others           — view only
  */
 
@@ -82,17 +85,20 @@ export interface PORecord {
 
 type SortBy = "date_created" | "date_modified";
 
-type SubTab = "all" | "po" | "ors";
+type SubTab = "all" | "po" | "ors" | "serving";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
  * Visual config keyed by status_id — mirrors public.status table.
- * PO lifecycle starts at 12 (PO Creation).
- *   12 = PO (Creation)    — Supply receives Abstract and begins PO document
- *   13 = PO (Allocation)  — Supply assigns PO # and forwards to Budget
+ * Full Phase 2 lifecycle (statuses 12–18):
+ *   12 = PO (Creation)    — Supply receives Abstract, logs receipt
+ *   13 = PO (Allocation)  — Supply assigns PO # and prepares document
  *   14 = ORS (Creation)   — Budget prepares ORS and assigns ORS number
  *   15 = ORS (Processing) — Budget officer signs; forwards to Accounting
+ *   16 = PO (Accounting)  — Accounting verifies document completeness
+ *   17 = PO (PARPO)       — PARPO II reviews and signs PO
+ *   18 = PO (Serving)     — Supply serves PO to suppliers
  */
 const PO_STATUS_CFG: Record<
   number,
@@ -121,6 +127,24 @@ const PO_STATUS_CFG: Record<
     text: "#1e40af",
     dot: "#3b82f6",
     label: "ORS (Processing)",
+  },
+  16: {
+    bg: "#fefce8",
+    text: "#854d0e",
+    dot: "#ca8a04",
+    label: "PO (Accounting)",
+  },
+  17: {
+    bg: "#fdf4ff",
+    text: "#86198f",
+    dot: "#c026d3",
+    label: "PO (PARPO)",
+  },
+  18: {
+    bg: "#f0fdf4",
+    text: "#166534",
+    dot: "#16a34a",
+    label: "PO (Serving)",
   },
 };
 
@@ -192,6 +216,7 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "all", label: "All" },
   { key: "po", label: "Purchase Order" },
   { key: "ors", label: "ORS" },
+  { key: "serving", label: "Serving" },
 ];
 
 // ─── SubTabRow ────────────────────────────────────────────────────────────────
@@ -1028,11 +1053,11 @@ export default function POModule() {
   const canEditOrs = roleId === 1 || roleId === 4;
 
   // Supply (8) can edit POs at status ≤ 13; Admin (1) can always edit;
-  // Budget (4) can edit ORS fields on POs at status 14
+  // Budget (4) can edit ORS fields on POs at status 14–15
   const canEditPO = (statusId: number) =>
     roleId === 1 ||
     (roleId === 8 && statusId <= 13) ||
-    (roleId === 4 && statusId === 14);
+    (roleId === 4 && statusId >= 14 && statusId <= 15);
 
   // ── One-time lookups ───────────────────────────────────────────────────────
 
@@ -1063,6 +1088,11 @@ export default function POModule() {
         // ORS: status_id 14–15 (ORS Creation, ORS Processing)
         rows = allRows.filter(
           (r) => r.status_id !== null && r.status_id >= 14 && r.status_id <= 15,
+        );
+      } else if (activeSubTab === "serving") {
+        // Serving pipeline: 16 (Accounting) → 17 (PARPO) → 18 (Serving)
+        rows = allRows.filter(
+          (r) => r.status_id !== null && r.status_id >= 16 && r.status_id <= 18,
         );
       } else {
         rows = allRows;

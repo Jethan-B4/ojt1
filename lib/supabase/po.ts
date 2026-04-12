@@ -248,16 +248,27 @@ export async function insertPurchaseOrder(
 
 // ─── Lookups ──────────────────────────────────────────────────────────────────
 
-/** Fetch PO-lifecycle status rows from public.status for label lookups. */
+/**
+ * Fetch PO-lifecycle status rows from public.status for label lookups.
+ *
+ * Full Phase 2 lifecycle (from public.status table):
+ *   12 = PO (Creation)    — Supply receives Abstract, logs receipt
+ *   13 = PO (Allocation)  — Supply assigns PO # and prepares document
+ *   14 = ORS (Creation)   — Budget prepares ORS, assigns ORS number
+ *   15 = ORS (Processing) — Budget officer signs; forwards to Accounting
+ *   16 = PO (Accounting)  — Accounting incoming check / document completeness
+ *   17 = PO (PARPO)       — PARPO II reviews and signs PO
+ *   18 = PO (Serving)     — Supply serves PO to suppliers
+ */
 export async function fetchPOStatuses(): Promise<
   { id: number; status_name: string }[]
 > {
   const { data, error } = await supabase
     .from("status")
     .select("id, status_name")
-    // PO lifecycle status IDs: 12 (PO Creation) → 15 (ORS Processing)
+    // PO lifecycle status IDs: 12 (PO Creation) → 18 (PO Serving)
     .gte("id", 12)
-    .lte("id", 15)
+    .lte("id", 18)
     .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as { id: number; status_name: string }[];
