@@ -485,7 +485,6 @@ const RecordCard: React.FC<{
   onEdit: (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
   onMore: (r: PRRecord) => void;
-  onCancel: (r: PRRecord) => void;
 }> = ({
   record,
   isEven,
@@ -496,7 +495,6 @@ const RecordCard: React.FC<{
   onEdit,
   onProcess,
   onMore,
-  onCancel,
 }) => {
   const statusLabel =
     statuses.find((s) => s.id === record.statusId)?.status_name ??
@@ -643,26 +641,180 @@ const RecordCard: React.FC<{
             </Text>
           </TouchableOpacity>
         )}
-        {roleId === 1 && (
-          <TouchableOpacity
-            onPress={() => onCancel(record)}
-            activeOpacity={0.8}
-            className="w-10 h-10 bg-red-600 rounded-xl items-center justify-center"
-          >
-            <Text className="text-white text-[11px] font-bold">X</Text>
-          </TouchableOpacity>
-        )}
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
           className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
         >
-          <Text className="text-white text-[11px] font-bold tracking-widest">
-            •••
-          </Text>
+          <MaterialIcons name="more-horiz" size={20} color="#ffffff" />
         </TouchableOpacity>
       </View>
     </View>
+  );
+};
+
+// ─── MoreSheet ────────────────────────────────────────────────────────────────
+
+interface PRMoreSheetProps {
+  visible: boolean;
+  record: PRRecord | null;
+  roleId: number;
+  onClose: () => void;
+  onRemarks: () => void;
+  /** Admin-only: open the Cancel PR confirmation modal. */
+  onCancel: () => void;
+}
+
+const PRMoreSheet: React.FC<PRMoreSheetProps> = ({
+  visible,
+  record,
+  roleId,
+  onClose,
+  onRemarks,
+  onCancel,
+}) => {
+  if (!record) return null;
+  const cfg = statusCfgFor(record.statusId);
+
+  type Action = {
+    icon: keyof typeof MaterialIcons.glyphMap;
+    label: string;
+    sublabel: string;
+    color: string;
+    bg: string;
+    onPress: () => void;
+  };
+
+  const actions: Action[] = [
+    {
+      icon: "chat-bubble-outline",
+      label: "Remarks",
+      sublabel: "View or add processing notes",
+      color: "#065f46",
+      bg: "#ecfdf5",
+      onPress: () => {
+        onClose();
+        onRemarks();
+      },
+    },
+    // Admin-only: Cancel PR
+    ...(roleId === 1
+      ? ([
+          {
+            icon: "cancel",
+            label: "Cancel PR",
+            sublabel: "Void this PR and cancel any linked canvass session",
+            color: "#b91c1c",
+            bg: "#fff1f2",
+            onPress: () => {
+              onClose();
+              onCancel();
+            },
+          },
+        ] as Action[])
+      : []),
+  ];
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        className="flex-1 bg-black/40 justify-end"
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableOpacity activeOpacity={1}>
+          <View
+            className="bg-white rounded-t-3xl overflow-hidden"
+            style={{ paddingBottom: 32 }}
+          >
+            {/* Drag handle */}
+            <View className="items-center pt-3 pb-1">
+              <View className="w-10 h-1 rounded-full bg-gray-200" />
+            </View>
+
+            {/* PR identity header */}
+            <View className="px-5 pt-2 pb-4 border-b border-gray-100">
+              <Text
+                className="text-[15px] font-extrabold text-gray-900"
+                style={{ fontFamily: MONO }}
+              >
+                {record.prNo}
+              </Text>
+              <Text
+                className="text-[12px] text-gray-500 mt-0.5"
+                numberOfLines={1}
+              >
+                {record.officeSection}
+              </Text>
+              <View
+                className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
+                style={{ backgroundColor: cfg.bg }}
+              >
+                <View
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: cfg.dot }}
+                />
+                <Text
+                  className="text-[10.5px] font-bold"
+                  style={{ color: cfg.text }}
+                >
+                  {cfg.label}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action rows */}
+            <View className="px-4 pt-3 gap-2">
+              {actions.map((a) => (
+                <TouchableOpacity
+                  key={a.label}
+                  onPress={a.onPress}
+                  activeOpacity={0.8}
+                  className="flex-row items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-gray-100"
+                  style={{ backgroundColor: a.bg }}
+                >
+                  <View
+                    className="w-9 h-9 rounded-xl items-center justify-center"
+                    style={{ backgroundColor: a.color + "18" }}
+                  >
+                    <MaterialIcons name={a.icon} size={18} color={a.color} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-[13.5px] font-bold text-gray-800">
+                      {a.label}
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                      {a.sublabel}
+                    </Text>
+                  </View>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={18}
+                    color="#d1d5db"
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Dismiss */}
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.8}
+              className="mx-4 mt-3 py-3 rounded-2xl bg-gray-100 items-center"
+            >
+              <Text className="text-[13.5px] font-bold text-gray-500">
+                Dismiss
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 };
 
@@ -720,14 +872,16 @@ export default function PRModule({
     null,
   );
   const [cancelVisible, setCancelVisible] = useState(false);
-  const [cancelRecord, setCancelRecord] = useState<{
-    id: string;
-    prNo: string;
-  } | null>(null);
+  // CancelPRModal state — admin only (flat fields mirror POModule pattern)
+  const [cancelPrId, setCancelPrId] = useState<string | null>(null);
+  const [cancelPrNo, setCancelPrNo] = useState<string | null>(null);
 
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
+  // RemarkSheet state — opened from PRMoreSheet's Remarks action
+  const [remarkRecord, setRemarkRecord] = useState<PRRecord | null>(null);
+  const [remarkVisible, setRemarkVisible] = useState(false);
 
   // Create PR modal state
   const [prModalOpen, setPrModalOpen] = useState(false);
@@ -886,6 +1040,12 @@ export default function PRModule({
             },
       ),
     );
+  }, []);
+
+  /** Remove the cancelled PR from the local list immediately and reset pagination. */
+  const handlePRCancelled = useCallback((id: string) => {
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setPage(1);
   }, []);
 
   const filtered = records
@@ -1227,10 +1387,6 @@ export default function PRModule({
                 setMoreRecord(r);
                 setMoreVisible(true);
               }}
-              onCancel={(r) => {
-                setCancelRecord({ id: r.id, prNo: r.prNo });
-                setCancelVisible(true);
-              }}
             />
           ))
         )}
@@ -1329,14 +1485,38 @@ export default function PRModule({
         }}
       />
 
-      {/* More / Remarks sheet */}
-      <RemarkSheet
+      {/* More / actions sheet — Remarks + admin Cancel PR */}
+      <PRMoreSheet
         visible={moreVisible}
         record={moreRecord}
-        currentUser={currentUser}
+        roleId={roleId}
         onClose={() => {
           setMoreVisible(false);
           setMoreRecord(null);
+        }}
+        onRemarks={() => {
+          if (moreRecord) {
+            setRemarkRecord(moreRecord);
+            setRemarkVisible(true);
+          }
+        }}
+        onCancel={() => {
+          if (moreRecord) {
+            setCancelPrId(moreRecord.id);
+            setCancelPrNo(moreRecord.prNo);
+            setCancelVisible(true);
+          }
+        }}
+      />
+
+      {/* Remarks sheet — opened from PRMoreSheet's Remarks action */}
+      <RemarkSheet
+        visible={remarkVisible}
+        record={remarkRecord}
+        currentUser={currentUser}
+        onClose={() => {
+          setRemarkVisible(false);
+          setRemarkRecord(null);
         }}
       />
 
@@ -1371,16 +1551,21 @@ export default function PRModule({
           );
         }}
       />
+      {/* CancelPRModal — admin only */}
       <CancelPRModal
         visible={cancelVisible}
-        prId={cancelRecord?.id ?? null}
-        prNo={cancelRecord?.prNo ?? null}
+        prId={cancelPrId}
+        prNo={cancelPrNo}
         onClose={() => {
           setCancelVisible(false);
-          setCancelRecord(null);
+          setCancelPrId(null);
+          setCancelPrNo(null);
         }}
         onCancelled={(id) => {
-          setRecords((prev) => prev.filter((r) => r.id !== id));
+          handlePRCancelled(id);
+          setCancelVisible(false);
+          setCancelPrId(null);
+          setCancelPrNo(null);
         }}
       />
 

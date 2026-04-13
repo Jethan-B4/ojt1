@@ -730,8 +730,6 @@ export default function AAAView({
         // Session meta
         const sess = await fetchCanvassSessionById(sessionId);
         if (sess?.bac_no) setBacNo(sess.bac_no);
-        const prefill = (sess as any)?.aaa_prefill_assignment_id;
-        setSourceReturnId(prefill == null ? null : (Number(prefill) as any));
 
         // Assignments — store all, expose "returned" subset separately
         const asgn = await fetchAssignmentsWithDetails(sessionId);
@@ -786,9 +784,6 @@ export default function AAAView({
           }))
           .filter((e: any) => (Number(e.unit_price) || 0) > 0);
 
-        await updateCanvassSessionMeta(sessionId, {
-          aaa_prefill_assignment_id: assignmentId,
-        });
         await replaceSupplierQuotesForSubmission(sessionId, null, payload);
         setSourceReturnId(assignmentId);
         await loadEntries();
@@ -800,6 +795,45 @@ export default function AAAView({
     },
     [sessionId, loadEntries],
   );
+
+  useEffect(() => {
+    if (sourceReturnId != null) return;
+    if (returns.length === 0) return;
+    if (entries.length === 0) return;
+    (async () => {
+      try {
+        const sig = new Set(
+          entries.map(
+            (e) =>
+              `${e.item_no}|${String(e.supplier_name)}|${Number(e.unit_price)}`,
+          ),
+        );
+
+        let best: number | null = null;
+        let bestScore = -1;
+        await Promise.all(
+          returns.map(async (r) => {
+            const rid = Number(r.id);
+            const rows = await fetchQuotesForSubmission(sessionId, rid);
+            let score = 0;
+            (rows as any[]).forEach((e) => {
+              if (
+                sig.has(
+                  `${e.item_no}|${String(e.supplier_name)}|${Number(e.unit_price)}`,
+                )
+              )
+                score++;
+            });
+            if (score > bestScore) {
+              bestScore = score;
+              best = rid;
+            }
+          }),
+        );
+        if (best != null && bestScore > 0) setSourceReturnId(best);
+      } catch {}
+    })();
+  }, [sourceReturnId, returns, entries, sessionId]);
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const suppliers = useMemo(

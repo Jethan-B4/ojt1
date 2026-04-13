@@ -1,5 +1,19 @@
 /**
- * ProcessPOModal.tsx — Role-gated PO processing modal
+ * ProcessPOModal.tsx — Role-gated PO processing modal (Phase 2)
+ *
+ * Architecture mirrors ProcessPRModal exactly:
+ *   usePOFetch      — shared data hook (PO header + DB status labels)
+ *   ROLE_META       — per-step accent colour, step label, title, next status
+ *   ModalHeader     — coloured header with step / title / PO No.
+ *   POSummaryCard   — PO details card with status_name from public.status
+ *   ModalFooter     — sticky Cancel | Confirm footer
+ *   Field / StyledInput / SectionLabel — shared form micro-components
+ *
+ * Phase 2 swimlane ownership (public.status table):
+ *   Supply  (8)  — 12 PO Creation → 13, 13 PO Allocation → 14, 17 PO PARPO → 18
+ *   Budget  (4)  — 14 ORS Creation → 15, 15 ORS Processing → 16
+ *   Accounting / PARPO — no dedicated role yet; handled via AdminModal
+ *   Admin   (1)  — full override across all 7 steps (12–18)
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -16,12 +30,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase/client";
 import {
+  fetchPOStatuses,
   fetchPOWithItemsById,
   updatePO,
   updatePOStatus,
+  type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
 import CalendarPickerModal from "./CalendarModal";
@@ -32,6 +47,12 @@ import {
   type StatusFlag,
 } from "./ProcessPRModal";
 
+// ─── Re-exports (consumed by POModule) ───────────────────────────────────────
+
+export { STATUS_FLAGS, type StatusFlag };
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface ProcessPORecord {
   id: string;
   poNo: string;
@@ -39,7 +60,133 @@ export interface ProcessPORecord {
   statusId: number;
 }
 
-export { STATUS_FLAGS, type StatusFlag };
+interface ProcessPOModalProps {
+  visible: boolean;
+  record: ProcessPORecord | null;
+  roleId: number;
+  onClose: () => void;
+  onProcessed: (poId: string, newStatusId: number) => void;
+}
+
+interface POStatusRow {
+  id: number;
+  status_name: string;
+}
+
+// ─── Role metadata ────────────────────────────────────────────────────────────
+
+/**
+ * Keyed by the *current* status_id being processed.
+ * Drives ModalHeader colour, step label, title, and the sticky footer button.
+ */
+const ROLE_META: Record<
+  number,
+  { step: string; title: string; accentColor: string; nextStatusId: number }
+> = {
+  12: {
+    step: "Step 12",
+    title: "PO Creation",
+    accentColor: "#0f766e",
+    nextStatusId: 13,
+  },
+  13: {
+    step: "Step 13",
+    title: "PO Allocation",
+    accentColor: "#7c3aed",
+    nextStatusId: 14,
+  },
+  14: {
+    step: "Step 14",
+    title: "ORS Creation",
+    accentColor: "#b45309",
+    nextStatusId: 15,
+  },
+  15: {
+    step: "Step 15",
+    title: "ORS Processing",
+    accentColor: "#1d4ed8",
+    nextStatusId: 16,
+  },
+  16: {
+    step: "Step 16",
+    title: "PO Accounting",
+    accentColor: "#854d0e",
+    nextStatusId: 17,
+  },
+  17: {
+    step: "Step 17",
+    title: "PO (PARPO)",
+    accentColor: "#86198f",
+    nextStatusId: 18,
+  },
+  18: {
+    step: "Step 18",
+    title: "PO (Serving)",
+    accentColor: "#166534",
+    nextStatusId: 18,
+  },
+};
+
+// ─── Phase 2 swimlane step labels (AdminModal target picker) ──────────────────
+
+const PHASE2_STEPS: Record<
+  number,
+  { label: string; role: string; action: string }
+> = {
+  12: {
+    label: "PO (Creation)",
+    role: "Supply",
+    action: "Advance to Allocation",
+  },
+  13: {
+    label: "PO (Allocation)",
+    role: "Supply",
+    action: "Assign PO & Forward to Budget",
+  },
+  14: { label: "ORS (Creation)", role: "Budget", action: "Finalize ORS" },
+  15: {
+    label: "ORS (Processing)",
+    role: "Budget",
+    action: "Forward to Accounting",
+  },
+  16: {
+    label: "PO (Accounting)",
+    role: "Accounting",
+    action: "Forward to PARPO",
+  },
+  17: {
+    label: "PO (PARPO)",
+    role: "PARPO",
+    action: "Forward to Supply (Serving)",
+  },
+  18: { label: "PO (Serving)", role: "Supply", action: "Mark as Served" },
+};
+
+// ─── canRoleProcessPO ─────────────────────────────────────────────────────────
+
+/**
+ * Whether a given role can process a PO at the given status_id.
+ *   Supply (8)  — 12→13, 13→14, 17→18
+ *   Budget (4)  — 14→15, 15→16
+ *   Admin  (1)  — all statuses
+ */
+export function canRoleProcessPO(roleId: number, statusId: number): boolean {
+  if (roleId === 1) return true;
+  if (roleId === 8)
+    return statusId === 12 || statusId === 13 || statusId === 17;
+  if (roleId === 4) return statusId === 14 || statusId === 15;
+  return false;
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
+
+const fmt = (n: number) =>
+  n.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-PH", {
@@ -56,71 +203,17 @@ function normalizeDateString(dateStr: string | null | undefined): string {
   return dateStr;
 }
 
-function DatePickerButton({
-  value,
-  onChange,
-  placeholder = "Select date…",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <TouchableOpacity
-        onPress={() => setOpen(true)}
-        activeOpacity={0.8}
-        className="bg-gray-50 rounded-[10px] border border-gray-200 px-3 py-2.5 flex-row items-center justify-between"
-        style={{ minHeight: 42 }}
-      >
-        <Text
-          className="text-sm flex-1 mr-2"
-          style={{ color: value ? "#111827" : "#9ca3af" }}
-        >
-          {value || placeholder}
-        </Text>
-        <MaterialIcons name="calendar-today" size={15} color="#064E3B" />
-      </TouchableOpacity>
-      <CalendarPickerModal
-        visible={open}
-        onClose={() => setOpen(false)}
-        onSelectDate={(date) => {
-          onChange(formatDate(date));
-          setOpen(false);
-        }}
-      />
-    </>
-  );
-}
-
 function getStatusFlagId(flag: StatusFlag | null): number | null {
   if (!flag) return null;
-  if (flag === "complete") return 2;
-  if (flag === "incomplete_info") return 3;
-  if (flag === "wrong_information") return 4;
-  if (flag === "needs_revision") return 5;
-  if (flag === "on_hold") return 6;
-  if (flag === "urgent") return 7;
-  return null;
-}
-
-/**
- * Whether a given role can process a PO at the given status.
- *
- * Full Phase 2 swimlane ownership:
- *   Supply (8)  — 12→13 (Creation→Allocation), 13→14 (Allocation→ORS),
- *                 17→18 (PARPO→Serving, serve PO to suppliers)
- *   Budget (4)  — 14→15 (ORS Creation→Processing), 15→16 (ORS Processing→Accounting)
- *   Accounting / PARPO — no dedicated role_id yet; handled via Admin override
- *   Admin (1)   — all statuses
- */
-export function canRoleProcessPO(roleId: number, statusId: number) {
-  if (roleId === 1) return true;
-  if (roleId === 8)
-    return statusId === 12 || statusId === 13 || statusId === 17;
-  if (roleId === 4) return statusId === 14 || statusId === 15;
-  return false;
+  const map: Record<StatusFlag, number> = {
+    complete: 2,
+    incomplete_info: 3,
+    wrong_information: 4,
+    needs_revision: 5,
+    on_hold: 6,
+    urgent: 7,
+  };
+  return map[flag] ?? null;
 }
 
 async function insertPORemark(
@@ -143,41 +236,161 @@ async function insertPORemark(
   if (error) throw error;
 }
 
-interface ProcessPOModalProps {
-  visible: boolean;
-  record: ProcessPORecord | null;
-  roleId: number;
-  onClose: () => void;
-  onProcessed: (poId: string, newStatusId: number) => void;
+// ─── usePOFetch ───────────────────────────────────────────────────────────────
+
+/**
+ * Shared data hook — mirrors usePRFetch from ProcessPRModal.
+ * Fetches PO header + all Phase 2 status labels in one Promise.all.
+ */
+function usePOFetch(
+  visible: boolean,
+  record: ProcessPORecord | null,
+  onClose: () => void,
+) {
+  const [header, setHeader] = useState<PORow | null>(null);
+  const [statuses, setStatuses] = useState<POStatusRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !record) return;
+    setHeader(null);
+    setLoading(true);
+    Promise.all([fetchPOWithItemsById(record.id), fetchPOStatuses()])
+      .then(([{ header: h }, statusRows]) => {
+        setHeader(h);
+        setStatuses(statusRows);
+      })
+      .catch((e: any) => {
+        Alert.alert("Error", e?.message ?? "Could not load PO.");
+        onClose();
+      })
+      .finally(() => setLoading(false));
+  }, [visible, record]);
+
+  return { header, statuses, loading };
 }
 
-function Header({
-  title,
-  subtitle,
+// ─── Micro-components ─────────────────────────────────────────────────────────
+
+function ModalHeader({
+  meta,
+  poNo,
   onClose,
 }: {
-  title: string;
-  subtitle: string;
+  meta: { step: string; title: string; accentColor: string };
+  poNo: string;
   onClose: () => void;
 }) {
   return (
-    <View className="px-5 pt-4 pb-3 bg-[#064E3B]">
+    <View
+      style={{
+        backgroundColor: meta.accentColor,
+        paddingHorizontal: 20,
+        paddingTop: 18,
+        paddingBottom: 14,
+      }}
+    >
       <View className="flex-row items-center justify-between">
-        <View>
-          <Text className="text-white/60 text-[11px] font-bold tracking-widest uppercase">
-            {subtitle}
+        <View className="flex-1 pr-3">
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
+            {meta.step} · Phase 2
           </Text>
-          <Text className="text-white text-[18px] font-extrabold">{title}</Text>
+          <Text className="text-[16px] font-bold text-white">{meta.title}</Text>
+          <Text
+            className="text-[11px] text-white/50 mt-0.5"
+            style={{ fontFamily: MONO }}
+          >
+            {poNo}
+          </Text>
         </View>
         <TouchableOpacity
           onPress={onClose}
           hitSlop={10}
           className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
         >
-          <MaterialIcons name="close" size={18} color="#ffffff" />
+          <Text className="text-white text-[20px] leading-none font-light">
+            ×
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
+  );
+}
+
+function POSummaryCard({
+  header,
+  statuses,
+}: {
+  header: PORow;
+  statuses: POStatusRow[];
+}) {
+  const statusLabel =
+    statuses.find((s) => s.id === header.status_id)?.status_name ??
+    `Status #${header.status_id}`;
+
+  const rows: { label: string; value: string; mono?: boolean }[] = [
+    { label: "PO No.", value: header.po_no ?? "—", mono: true },
+    { label: "PR No.", value: header.pr_no ?? "—", mono: true },
+    { label: "Supplier", value: header.supplier ?? "—" },
+    { label: "Section", value: header.office_section ?? "—" },
+    {
+      label: "Amount",
+      value:
+        header.total_amount != null
+          ? `₱${fmt(Number(header.total_amount))}`
+          : "—",
+      mono: true,
+    },
+    { label: "Status", value: statusLabel },
+    ...(header.ors_no
+      ? [{ label: "ORS No.", value: header.ors_no, mono: true }]
+      : []),
+    ...(header.fund_cluster
+      ? [{ label: "Fund Cluster", value: header.fund_cluster }]
+      : []),
+  ];
+
+  return (
+    <View
+      className="bg-white rounded-2xl border border-gray-200 p-4 mb-4"
+      style={{
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 2,
+      }}
+    >
+      <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+        PO Summary
+      </Text>
+      {rows.map(({ label, value, mono }, i) => (
+        <View
+          key={label}
+          className={`flex-row items-start justify-between py-2 ${
+            i < rows.length - 1 ? "border-b border-gray-100" : ""
+          }`}
+        >
+          <Text className="text-[11.5px] font-semibold text-gray-400 w-24">
+            {label}
+          </Text>
+          <Text
+            className="text-[12px] font-semibold text-gray-800 flex-1 text-right"
+            style={mono ? { fontFamily: MONO } : undefined}
+            numberOfLines={2}
+          >
+            {value}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+      {children}
+    </Text>
   );
 }
 
@@ -191,300 +404,149 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <View className="mb-3.5">
-      <Text className="text-[11px] font-bold text-gray-500 mb-1">
-        {label}
-        {required ? <Text className="text-red-500"> *</Text> : null}
-      </Text>
+    <View className="mb-4">
+      <View className="flex-row items-center gap-1 mb-1.5">
+        <Text className="text-[12px] font-semibold text-gray-700">{label}</Text>
+        {required && (
+          <Text className="text-[12px] font-bold text-red-500">*</Text>
+        )}
+      </View>
       {children}
     </View>
   );
 }
 
-function Input({
+function StyledInput({
   value,
   onChangeText,
   placeholder,
-  mono,
-  keyboardType,
   multiline,
+  keyboardType,
+  mono,
 }: {
   value: string;
-  onChangeText?: (v: string) => void;
+  onChangeText: (t: string) => void;
   placeholder?: string;
-  mono?: boolean;
-  keyboardType?: any;
   multiline?: boolean;
+  keyboardType?: any;
+  mono?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <TextInput
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
       placeholderTextColor="#9ca3af"
-      keyboardType={keyboardType}
       multiline={multiline}
-      className="bg-gray-50 rounded-[10px] border border-gray-200 px-3 py-2.5 text-sm text-gray-900"
+      keyboardType={keyboardType}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      className={`rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border bg-white ${
+        focused ? "border-emerald-500" : "border-gray-200"
+      } ${multiline ? "min-h-[80px]" : ""}`}
       style={[
-        mono
-          ? { fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace" }
-          : {},
+        multiline ? { textAlignVertical: "top" } : undefined,
+        mono ? { fontFamily: MONO } : undefined,
       ]}
     />
   );
 }
 
-function BudgetModal({
-  visible,
-  record,
-  onClose,
-  onProcessed,
-}: Omit<ProcessPOModalProps, "roleId">) {
-  const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [headerPrId, setHeaderPrId] = useState<string | null>(null);
-  const [orsNo, setOrsNo] = useState("");
-  const [orsDate, setOrsDate] = useState("");
-  const [orsAmount, setOrsAmount] = useState("");
-  const [fundsAvailable, setFundsAvailable] = useState("");
-  const [remarks, setRemarks] = useState("");
-  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
-  const [flagOpen, setFlagOpen] = useState(false);
-
-  useEffect(() => {
-    if (!visible || !record) return;
-    setLoading(true);
-    setSaving(false);
-    setRemarks("");
-    setStatusFlag(null);
-    (async () => {
-      try {
-        const { header } = await fetchPOWithItemsById(record.id);
-        setHeaderPrId((header as any)?.pr_id ?? null);
-        setOrsNo((header as any)?.ors_no ?? "");
-        setOrsDate(normalizeDateString((header as any)?.ors_date ?? ""));
-        setOrsAmount(
-          (header as any)?.ors_amount
-            ? String((header as any)?.ors_amount)
-            : "",
-        );
-        setFundsAvailable((header as any)?.funds_available ?? "");
-      } catch (e: any) {
-        Alert.alert("Load failed", e?.message ?? "Could not load PO details.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [visible, record]);
-
-  const submit = useCallback(async () => {
-    if (!record) return;
-    setSaving(true);
-    try {
-      await insertPORemark(
-        record.id,
-        headerPrId,
-        currentUser?.id ?? null,
-        remarks,
-        getStatusFlagId(statusFlag),
-      );
-
-      // At ORS Creation (14): save ORS fields and advance to ORS Processing (15)
-      // At ORS Processing (15): forward to Accounting (16) — no extra fields needed
-      if (record.statusId === 14) {
-        await updatePO(record.id, {
-          ors_no: orsNo.trim() || null,
-          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
-          ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
-          funds_available: fundsAvailable.trim() || null,
-        });
-      }
-
-      const targetStatusId = record.statusId === 14 ? 15 : 16;
-      await updatePOStatus(record.id, targetStatusId);
-      onProcessed(record.id, targetStatusId);
-      onClose();
-    } catch (e: any) {
-      Alert.alert("Failed", e?.message ?? "Could not update PO status.");
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    record,
-    headerPrId,
-    currentUser?.id,
-    remarks,
-    statusFlag,
-    orsNo,
-    orsDate,
-    orsAmount,
-    fundsAvailable,
-    onProcessed,
-    onClose,
-  ]);
-
+function LoadingBody({ color }: { color: string }) {
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <SafeAreaView className="flex-1 bg-gray-50">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          className="flex-1"
-        >
-          <Header
-            title={
-              record?.statusId === 14 ? "Prepare ORS" : "Forward to Accounting"
-            }
-            subtitle={`Budget · ${record?.poNo ?? ""}`}
-            onClose={onClose}
-          />
-          {loading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator />
-              <Text className="text-[12px] text-gray-400 mt-2">Loading…</Text>
-            </View>
-          ) : (
-            <ScrollView
-              className="flex-1"
-              contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-            >
-              {/* ORS fields — only at status 14 (ORS Creation) */}
-              {record?.statusId === 14 && (
-                <View
-                  className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-                  style={{ elevation: 2 }}
-                >
-                  <View className="px-4 pt-3 pb-3">
-                    <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                      ORS Details
-                    </Text>
-
-                    <Field label="ORS No." required>
-                      <Input
-                        value={orsNo}
-                        onChangeText={setOrsNo}
-                        placeholder="e.g. ORS-2026-001"
-                        mono
-                      />
-                    </Field>
-
-                    <Field label="ORS Date" required>
-                      <DatePickerButton
-                        value={orsDate}
-                        onChange={setOrsDate}
-                        placeholder="Select ORS date…"
-                      />
-                    </Field>
-
-                    <Field label="ORS Amount">
-                      <Input
-                        value={orsAmount}
-                        onChangeText={setOrsAmount}
-                        placeholder="e.g. 150000.00"
-                        keyboardType="numeric"
-                        mono
-                      />
-                    </Field>
-
-                    <Field label="Funds Available">
-                      <Input
-                        value={fundsAvailable}
-                        onChangeText={setFundsAvailable}
-                        placeholder="Optional"
-                      />
-                    </Field>
-                  </View>
-                </View>
-              )}
-
-              {/* Forwarding note — at status 15 (ORS Processing → Accounting) */}
-              {record?.statusId === 15 && (
-                <View className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2">
-                  <MaterialIcons name="send" size={16} color="#1d4ed8" />
-                  <Text className="text-[12px] text-blue-800 flex-1">
-                    Budget officer has signed the ORS. This will forward the
-                    purchase order to Accounting for incoming check processing.
-                  </Text>
-                </View>
-              )}
-
-              <View
-                className="bg-white rounded-2xl border border-gray-200 overflow-hidden mt-3"
-                style={{ elevation: 2 }}
-              >
-                <View className="px-4 pt-3 pb-3">
-                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                    Remark & Flag
-                  </Text>
-
-                  <View className="flex-row items-center justify-between mb-2">
-                    <Text className="text-[11px] font-bold text-gray-500">
-                      Status flag
-                    </Text>
-                    <FlagButton
-                      selected={statusFlag}
-                      onPress={() => setFlagOpen(true)}
-                    />
-                  </View>
-
-                  <Field label="Remark">
-                    <Input
-                      value={remarks}
-                      onChangeText={setRemarks}
-                      placeholder={
-                        record?.statusId === 14
-                          ? "Optional remark for this ORS step…"
-                          : "Optional remark before forwarding to Accounting…"
-                      }
-                      multiline
-                    />
-                  </Field>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={submit}
-                disabled={
-                  saving ||
-                  (record?.statusId === 14 &&
-                    (!orsNo.trim() || !orsDate.trim()))
-                }
-                activeOpacity={0.85}
-                className={`mt-4 rounded-2xl py-3 items-center ${
-                  saving ||
-                  (record?.statusId === 14 &&
-                    (!orsNo.trim() || !orsDate.trim()))
-                    ? "bg-gray-300"
-                    : "bg-[#064E3B]"
-                }`}
-              >
-                <Text className="text-[13.5px] font-extrabold text-white">
-                  {saving
-                    ? "Saving…"
-                    : record?.statusId === 14
-                      ? "Finalize ORS"
-                      : "Forward to Accounting"}
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          )}
-
-          <StatusFlagPicker
-            visible={flagOpen}
-            selected={statusFlag}
-            onSelect={setStatusFlag}
-            onClose={() => setFlagOpen(false)}
-          />
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
+    <View className="flex-1 items-center justify-center gap-3 bg-gray-50">
+      <ActivityIndicator size="large" color={color} />
+      <Text className="text-[13px] text-gray-400">Loading PO…</Text>
+    </View>
   );
 }
+
+function ModalFooter({
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmingLabel,
+  disabled,
+  saving,
+  color,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  confirmLabel: string;
+  confirmingLabel: string;
+  disabled: boolean;
+  saving: boolean;
+  color: string;
+}) {
+  return (
+    <View className="flex-row items-center justify-between px-5 py-4 bg-white border-t border-gray-100">
+      <TouchableOpacity
+        onPress={onCancel}
+        activeOpacity={0.7}
+        className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+      >
+        <Text className="text-[13.5px] font-semibold text-gray-500">
+          Cancel
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={onConfirm}
+        disabled={disabled || saving}
+        activeOpacity={0.8}
+        className={`flex-row items-center gap-2 px-5 py-2.5 rounded-xl ${
+          disabled || saving ? "opacity-40" : ""
+        }`}
+        style={{ backgroundColor: color }}
+      >
+        {saving && <ActivityIndicator size="small" color="#fff" />}
+        <Text className="text-[13.5px] font-bold text-white">
+          {saving ? confirmingLabel : confirmLabel}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function DatePickerButton({
+  value,
+  onChange,
+  placeholder = "Select date…",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setOpen(true)}
+        activeOpacity={0.8}
+        className="bg-white rounded-xl border border-gray-200 px-3.5 py-2.5 flex-row items-center justify-between"
+        style={{ minHeight: 44 }}
+      >
+        <Text
+          className="text-[13.5px] flex-1 mr-2"
+          style={{ color: value ? "#111827" : "#9ca3af" }}
+        >
+          {value || placeholder}
+        </Text>
+        <MaterialIcons name="calendar-today" size={15} color="#064E3B" />
+      </TouchableOpacity>
+      <CalendarPickerModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        onSelectDate={(date) => {
+          onChange(formatDate(date));
+          setOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+// ─── Supply Modal (role_id = 8 · Steps 12, 13, 17) ───────────────────────────
 
 function SupplyModal({
   visible,
@@ -493,42 +555,48 @@ function SupplyModal({
   onProcessed,
 }: Omit<ProcessPOModalProps, "roleId">) {
   const { currentUser } = useAuth();
-  const [saving, setSaving] = useState(false);
-  const [headerPrId, setHeaderPrId] = useState<string | null>(null);
+  const { header, statuses, loading } = usePOFetch(visible, record, onClose);
+  const [poNo, setPoNo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const statusId = record?.statusId ?? 12;
+  const meta = ROLE_META[statusId] ?? ROLE_META[12];
 
   useEffect(() => {
-    if (!visible || !record) return;
-    setSaving(false);
+    if (!visible) return;
     setRemarks("");
     setStatusFlag(null);
-    (async () => {
-      try {
-        const { header } = await fetchPOWithItemsById(record.id);
-        setHeaderPrId((header as any)?.pr_id ?? null);
-      } catch {}
-    })();
-  }, [visible, record]);
+    setPoNo("");
+  }, [visible]);
 
-  const submit = useCallback(async () => {
+  // Pre-fill PO No. from DB
+  useEffect(() => {
+    if (header?.po_no) setPoNo(header.po_no);
+  }, [header]);
+
+  const handleSubmit = async () => {
     if (!record) return;
     setSaving(true);
     try {
+      // At Allocation (13): write the assigned PO number back to the DB
+      if (statusId === 13 && poNo.trim()) {
+        await updatePO(record.id, { po_no: poNo.trim() });
+      }
+
       await insertPORemark(
         record.id,
-        headerPrId,
+        header?.pr_id ?? null,
         currentUser?.id ?? null,
         remarks,
         getStatusFlagId(statusFlag),
       );
-      // Status progression:
-      //   12 (PO Creation)    → 13 (PO Allocation)
-      //   13 (PO Allocation)  → 14 (ORS Creation)
-      //   17 (PO PARPO)       → 18 (PO Serving)
-      const targetStatusId =
-        record.statusId === 12 ? 13 : record.statusId === 13 ? 14 : 18;
+
+      // 12 → 13 · 13 → 14 · 17 → 18
+      const targetStatusId = statusId === 12 ? 13 : statusId === 13 ? 14 : 18;
+
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
       onClose();
@@ -537,235 +605,160 @@ function SupplyModal({
     } finally {
       setSaving(false);
     }
-  }, [
-    record,
-    headerPrId,
-    currentUser?.id,
-    remarks,
-    statusFlag,
-    onProcessed,
-    onClose,
-  ]);
+  };
 
+  const confirmLabel =
+    statusId === 12
+      ? "Advance to Allocation"
+      : statusId === 13
+        ? "Assign PO & Forward to Budget"
+        : "Serve PO to Suppliers";
+
+  if (!record) return null;
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <SafeAreaView className="flex-1 bg-gray-50">
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          className="flex-1"
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <Header
-            title="Process PO"
-            subtitle={`Supply · ${record?.poNo ?? ""}`}
-            onClose={onClose}
-          />
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-          >
-            <View
-              className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
-              style={{ elevation: 2 }}
+          <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
+          {loading ? (
+            <LoadingBody color={meta.accentColor} />
+          ) : (
+            <ScrollView
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <View className="px-4 pt-3 pb-3">
-                <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                  Remark & Flag
-                </Text>
-                <View className="flex-row items-center justify-between mb-2">
-                  <Text className="text-[11px] font-bold text-gray-500">
-                    Status flag
-                  </Text>
-                  <FlagButton
-                    selected={statusFlag}
-                    onPress={() => setFlagOpen(true)}
-                  />
-                </View>
-                <Field label="Remark">
-                  <Input
-                    value={remarks}
-                    onChangeText={setRemarks}
-                    placeholder="Optional remark for this step…"
-                    multiline
+              {header && <POSummaryCard header={header} statuses={statuses} />}
+
+              <SectionLabel>Supply Action</SectionLabel>
+
+              {/* PO number assignment — only at Allocation step */}
+              {statusId === 13 && (
+                <Field label="Assign PO Number" required>
+                  <StyledInput
+                    value={poNo}
+                    onChangeText={setPoNo}
+                    placeholder="e.g. PO-2026-0042"
+                    mono
                   />
                 </Field>
-              </View>
-            </View>
+              )}
 
-            <TouchableOpacity
-              onPress={submit}
-              disabled={saving}
-              activeOpacity={0.85}
-              className={`mt-4 rounded-2xl py-3 items-center ${saving ? "bg-gray-300" : "bg-[#064E3B]"}`}
-            >
-              <Text className="text-[13.5px] font-extrabold text-white">
-                {saving
-                  ? "Saving…"
-                  : record?.statusId === 12
-                    ? "Advance to Allocation"
-                    : record?.statusId === 13
-                      ? "Forward to Budget"
-                      : "Serve PO to Supplier"}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+              {/* Serving step context note */}
+              {statusId === 17 && (
+                <View className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
+                  <MaterialIcons
+                    name="local-shipping"
+                    size={16}
+                    color="#065f46"
+                  />
+                  <Text className="text-[12px] text-emerald-800 flex-1">
+                    PARPO II has signed the PO. Serve the purchase order to
+                    suppliers and photocopy signed PO + attachments for COA
+                    submission.
+                  </Text>
+                </View>
+              )}
 
-          <StatusFlagPicker
-            visible={flagOpen}
-            selected={statusFlag}
-            onSelect={setStatusFlag}
-            onClose={() => setFlagOpen(false)}
+              <Field label="Status Flag">
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
+                />
+              </Field>
+              <Field label="Remarks / Notes">
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder={
+                    statusId === 12
+                      ? "e.g. Abstract received and reviewed. Assigning PO number."
+                      : statusId === 13
+                        ? "e.g. PO prepared and numbered. Forwarding to Budget for ORS."
+                        : "e.g. PO served to supplier. Attachments photocopied for COA."
+                  }
+                  multiline
+                />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleSubmit}
+            confirmLabel={confirmLabel}
+            confirmingLabel="Processing…"
+            disabled={loading || (statusId === 13 && !poNo.trim())}
+            saving={saving}
+            color={meta.accentColor}
           />
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
 
-// ─── Admin-override phase labels (mirrors Phase 2 swimlane) ──────────────────
+// ─── Budget Modal (role_id = 4 · Steps 14, 15) ───────────────────────────────
 
-/**
- * Full Phase 2 step metadata keyed by status_id (public.status table).
- *
- * Swimlane ownership:
- *   Supply (8)  — 12 (Creation), 13 (Allocation), 18 (Serving)
- *   Budget (4)  — 14 (ORS Creation), 15 (ORS Processing)
- *   Accounting  — 16 (Accounting)   [no dedicated role yet → admin override]
- *   PARPO       — 17 (PARPO)        [no dedicated role yet → admin override]
- */
-const PHASE2_STEPS: Record<
-  number,
-  { label: string; role: string; action: string }
-> = {
-  12: {
-    label: "PO (Creation)",
-    role: "Supply",
-    action: "Advance to Allocation",
-  },
-  13: {
-    label: "PO (Allocation)",
-    role: "Supply",
-    action: "Forward to Budget",
-  },
-  14: {
-    label: "ORS (Creation)",
-    role: "Budget",
-    action: "Finalize ORS",
-  },
-  15: {
-    label: "ORS (Processing)",
-    role: "Budget",
-    action: "Forward to Accounting",
-  },
-  16: {
-    label: "PO (Accounting)",
-    role: "Accounting",
-    action: "Forward to PARPO",
-  },
-  17: {
-    label: "PO (PARPO)",
-    role: "PARPO",
-    action: "Forward to Supply (Serving)",
-  },
-  18: {
-    label: "PO (Serving)",
-    role: "Supply",
-    action: "Mark as Served",
-  },
-};
-
-/**
- * AdminModal — full Phase 2 override (statuses 12–18).
- *
- *   12 (PO Creation)    → 13  remark only             Supply owns normally
- *   13 (PO Allocation)  → 14  remark only             Supply owns normally
- *   14 (ORS Creation)   → 15  ORS fields required     Budget owns normally
- *   15 (ORS Processing) → 16  remark only             Budget owns normally
- *   16 (PO Accounting)  → 17  remark only             no role yet → admin
- *   17 (PO PARPO)       → 18  remark only             no role yet → admin
- *   18 (PO Serving)     → —   terminal; target picker shown for rollback
- *
- * Shows: step banner (N of 7), target picker, contextual ORS fields, remark & flag.
- */
-function AdminModal({
+function BudgetModal({
   visible,
   record,
   onClose,
   onProcessed,
 }: Omit<ProcessPOModalProps, "roleId">) {
   const { currentUser } = useAuth();
-
-  // ── Shared state ──
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [headerPrId, setHeaderPrId] = useState<string | null>(null);
-  const [remarks, setRemarks] = useState("");
-  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
-  const [flagOpen, setFlagOpen] = useState(false);
-
-  // ── ORS-specific fields (status 14) ──
+  const { header, statuses, loading } = usePOFetch(visible, record, onClose);
   const [orsNo, setOrsNo] = useState("");
   const [orsDate, setOrsDate] = useState("");
   const [orsAmount, setOrsAmount] = useState("");
   const [fundsAvailable, setFundsAvailable] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // ── Target-status picker (admin can jump to any Phase 2 step) ──
-  const currentStatus = record?.statusId ?? 12;
-  const defaultTarget = Math.min(currentStatus + 1, 18);
-  const [targetStatusId, setTargetStatusId] = useState<number>(defaultTarget);
+  const statusId = record?.statusId ?? 14;
+  const meta = ROLE_META[statusId] ?? ROLE_META[14];
 
   useEffect(() => {
-    if (!visible || !record) return;
-    const computed = Math.min(record.statusId + 1, 18);
-    setTargetStatusId(computed);
-    setLoading(true);
-    setSaving(false);
+    if (!visible) return;
     setRemarks("");
     setStatusFlag(null);
     setOrsNo("");
     setOrsDate("");
     setOrsAmount("");
     setFundsAvailable("");
-    (async () => {
-      try {
-        const { header } = await fetchPOWithItemsById(record.id);
-        setHeaderPrId((header as any)?.pr_id ?? null);
-        // Pre-fill ORS fields if already present
-        setOrsNo((header as any)?.ors_no ?? "");
-        setOrsDate(normalizeDateString((header as any)?.ors_date ?? ""));
-        setOrsAmount(
-          (header as any)?.ors_amount
-            ? String((header as any)?.ors_amount)
-            : "",
-        );
-        setFundsAvailable((header as any)?.funds_available ?? "");
-      } catch (e: any) {
-        Alert.alert("Load failed", e?.message ?? "Could not load PO details.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [visible, record]);
+  }, [visible]);
 
-  const isOrsStep = currentStatus === 14;
-  // Steps where forwarding-to-next-department context note is shown
-  const isForwardingStep =
-    currentStatus === 15 || currentStatus === 16 || currentStatus === 17;
+  // Pre-fill ORS fields from DB
+  useEffect(() => {
+    if (!header) return;
+    if (header.ors_no) setOrsNo(header.ors_no);
+    if (header.ors_date) setOrsDate(normalizeDateString(header.ors_date));
+    if (header.ors_amount) setOrsAmount(String(header.ors_amount));
+    if (header.funds_available)
+      setFundsAvailable(String(header.funds_available));
+  }, [header]);
 
-  // Whether the submit button should be disabled
-  const submitDisabled =
-    saving || loading || (isOrsStep && (!orsNo.trim() || !orsDate.trim()));
-
-  const submit = useCallback(async () => {
+  const handleSubmit = async () => {
     if (!record) return;
     setSaving(true);
     try {
-      // 1. Optionally save ORS fields when at status 14
-      if (isOrsStep) {
+      if (statusId === 14) {
         await updatePO(record.id, {
           ors_no: orsNo.trim() || null,
           ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
@@ -774,16 +767,232 @@ function AdminModal({
         });
       }
 
-      // 2. Insert remark (fire-and-forget style; non-blocking failure is ok)
       await insertPORemark(
         record.id,
-        headerPrId,
+        header?.pr_id ?? null,
         currentUser?.id ?? null,
         remarks,
         getStatusFlagId(statusFlag),
       );
 
-      // 3. Advance status
+      // 14 → 15 · 15 → 16
+      const targetStatusId = statusId === 14 ? 15 : 16;
+      await updatePOStatus(record.id, targetStatusId);
+      onProcessed(record.id, targetStatusId);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not update PO status.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!record) return null;
+  return (
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <KeyboardAvoidingView
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
+          {loading ? (
+            <LoadingBody color={meta.accentColor} />
+          ) : (
+            <ScrollView
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {header && <POSummaryCard header={header} statuses={statuses} />}
+
+              {/* ORS Creation (14) — full ORS form */}
+              {statusId === 14 && (
+                <>
+                  <SectionLabel>ORS Details</SectionLabel>
+                  <Field label="ORS Number" required>
+                    <StyledInput
+                      value={orsNo}
+                      onChangeText={setOrsNo}
+                      placeholder="e.g. ORS-2026-001"
+                      mono
+                    />
+                  </Field>
+                  <Field label="ORS Date" required>
+                    <DatePickerButton
+                      value={orsDate}
+                      onChange={setOrsDate}
+                      placeholder="Select ORS date…"
+                    />
+                  </Field>
+                  <Field label="ORS Amount">
+                    <StyledInput
+                      value={orsAmount}
+                      onChangeText={setOrsAmount}
+                      placeholder="e.g. 150000.00"
+                      keyboardType="numeric"
+                      mono
+                    />
+                  </Field>
+                  <Field label="Funds Available">
+                    <StyledInput
+                      value={fundsAvailable}
+                      onChangeText={setFundsAvailable}
+                      placeholder="e.g. 150000.00"
+                      mono
+                    />
+                  </Field>
+                </>
+              )}
+
+              {/* ORS Processing (15) — forwarding note */}
+              {statusId === 15 && (
+                <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
+                  <MaterialIcons name="send" size={16} color="#1d4ed8" />
+                  <Text className="text-[12px] text-blue-800 flex-1">
+                    Budget officer has signed the ORS. This will forward the
+                    purchase order to Accounting for incoming check processing.
+                  </Text>
+                </View>
+              )}
+
+              <SectionLabel>Budget Action</SectionLabel>
+              <Field label="Status Flag">
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
+                />
+              </Field>
+              <Field label="Remarks / Notes">
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder={
+                    statusId === 14
+                      ? "e.g. ORS prepared and assigned ORS number. Forwarding for signature."
+                      : "e.g. Budget officer signature obtained. Forwarding to Accounting."
+                  }
+                  multiline
+                />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleSubmit}
+            confirmLabel={
+              statusId === 14 ? "Finalize ORS" : "Forward to Accounting"
+            }
+            confirmingLabel="Saving…"
+            disabled={
+              loading || (statusId === 14 && (!orsNo.trim() || !orsDate.trim()))
+            }
+            saving={saving}
+            color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
+    </>
+  );
+}
+
+// ─── Admin Modal (role_id = 1 · full Phase 2 override, Steps 12–18) ──────────
+
+function AdminModal({
+  visible,
+  record,
+  onClose,
+  onProcessed,
+}: Omit<ProcessPOModalProps, "roleId">) {
+  const { currentUser } = useAuth();
+  const { header, statuses, loading } = usePOFetch(visible, record, onClose);
+
+  const [poNo, setPoNo] = useState("");
+  const [orsNo, setOrsNo] = useState("");
+  const [orsDate, setOrsDate] = useState("");
+  const [orsAmount, setOrsAmount] = useState("");
+  const [fundsAvailable, setFundsAvailable] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const currentStatus = record?.statusId ?? 12;
+  const [targetStatusId, setTargetStatusId] = useState<number>(
+    Math.min(currentStatus + 1, 18),
+  );
+
+  useEffect(() => {
+    if (!visible || !record) return;
+    setTargetStatusId(Math.min(record.statusId + 1, 18));
+    setRemarks("");
+    setStatusFlag(null);
+    setPoNo("");
+    setOrsNo("");
+    setOrsDate("");
+    setOrsAmount("");
+    setFundsAvailable("");
+  }, [visible, record]);
+
+  useEffect(() => {
+    if (!header) return;
+    if (header.po_no) setPoNo(header.po_no);
+    if (header.ors_no) setOrsNo(header.ors_no);
+    if (header.ors_date) setOrsDate(normalizeDateString(header.ors_date));
+    if (header.ors_amount) setOrsAmount(String(header.ors_amount));
+    if (header.funds_available)
+      setFundsAvailable(String(header.funds_available));
+  }, [header]);
+
+  const isOrsStep = currentStatus === 14;
+  const isForwardingStep =
+    currentStatus === 15 || currentStatus === 16 || currentStatus === 17;
+
+  const submitDisabled =
+    saving || loading || (isOrsStep && (!orsNo.trim() || !orsDate.trim()));
+
+  const stepMeta = PHASE2_STEPS[currentStatus];
+  const roleMeta = ROLE_META[currentStatus] ?? {
+    step: `Step ${currentStatus - 11}`,
+    title: stepMeta?.label ?? `Status ${currentStatus}`,
+    accentColor: "#064E3B",
+    nextStatusId: currentStatus,
+  };
+
+  const handleSubmit = useCallback(async () => {
+    if (!record) return;
+    setSaving(true);
+    try {
+      if (currentStatus === 13 && poNo.trim()) {
+        await updatePO(record.id, { po_no: poNo.trim() });
+      }
+      if (isOrsStep) {
+        await updatePO(record.id, {
+          ors_no: orsNo.trim() || null,
+          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
+          ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
+          funds_available: fundsAvailable.trim() || null,
+        });
+      }
+      await insertPORemark(
+        record.id,
+        header?.pr_id ?? null,
+        currentUser?.id ?? null,
+        remarks,
+        getStatusFlagId(statusFlag),
+      );
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
       onClose();
@@ -794,12 +1003,14 @@ function AdminModal({
     }
   }, [
     record,
+    currentStatus,
+    poNo,
     isOrsStep,
     orsNo,
     orsDate,
     orsAmount,
     fundsAvailable,
-    headerPrId,
+    header?.pr_id,
     currentUser?.id,
     remarks,
     statusFlag,
@@ -808,54 +1019,33 @@ function AdminModal({
     onClose,
   ]);
 
-  const stepMeta = PHASE2_STEPS[currentStatus];
-  const actionLabel = stepMeta?.action ?? "Advance";
-
+  if (!record) return null;
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <SafeAreaView className="flex-1 bg-gray-50">
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          className="flex-1"
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          {/* Header */}
-          <View className="px-5 pt-4 pb-3 bg-[#064E3B]">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1 mr-3">
-                <Text className="text-white/60 text-[11px] font-bold tracking-widest uppercase">
-                  Admin Override · {record?.poNo ?? ""}
-                </Text>
-                <Text className="text-white text-[18px] font-extrabold">
-                  Process PO
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={onClose}
-                hitSlop={10}
-                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
-              >
-                <MaterialIcons name="close" size={18} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
+          <ModalHeader meta={roleMeta} poNo={record.poNo} onClose={onClose} />
           {loading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator />
-              <Text className="text-[12px] text-gray-400 mt-2">Loading…</Text>
-            </View>
+            <LoadingBody color={roleMeta.accentColor} />
           ) : (
             <ScrollView
-              className="flex-1"
-              contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              {/* ── Current phase banner ── */}
-              <View className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-3">
+              {header && <POSummaryCard header={header} statuses={statuses} />}
+
+              {/* Admin override banner */}
+              <View className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-3">
                 <MaterialIcons
                   name="admin-panel-settings"
                   size={20}
@@ -863,7 +1053,7 @@ function AdminModal({
                 />
                 <View className="flex-1">
                   <Text className="text-[10px] font-bold uppercase tracking-widest text-amber-700 mb-0.5">
-                    Phase 2 — Step {currentStatus - 11} of 7
+                    Admin Override · Phase 2 — Step {currentStatus - 11} of 7
                   </Text>
                   <Text className="text-[13px] font-bold text-amber-900">
                     {stepMeta?.label ?? `Status ${currentStatus}`}
@@ -875,191 +1065,163 @@ function AdminModal({
                 </View>
               </View>
 
-              {/* ── Target status picker ── */}
-              <View
-                className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
-                style={{ elevation: 2 }}
-              >
-                <View className="px-4 pt-3 pb-3">
-                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                    Target Status
-                  </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {([12, 13, 14, 15, 16, 17, 18] as const).map((sid) => {
-                      const meta = PHASE2_STEPS[sid];
-                      if (!meta) return null;
-                      const active = targetStatusId === sid;
-                      const isPast = sid <= currentStatus;
-                      return (
-                        <TouchableOpacity
-                          key={sid}
-                          onPress={() => setTargetStatusId(sid)}
-                          activeOpacity={0.75}
-                          className={`flex-row items-center px-3 py-1.5 rounded-full border ${
-                            active
-                              ? "bg-[#064E3B] border-[#064E3B]"
-                              : isPast
-                                ? "bg-gray-100 border-gray-200"
-                                : "bg-white border-gray-300"
-                          }`}
-                        >
-                          {isPast && !active && (
-                            <MaterialIcons
-                              name="check-circle"
-                              size={12}
-                              color="#6b7280"
-                              style={{ marginRight: 4 }}
-                            />
-                          )}
-                          <Text
-                            className={`text-[11px] font-bold ${
-                              active
-                                ? "text-white"
-                                : isPast
-                                  ? "text-gray-400"
-                                  : "text-gray-700"
-                            }`}
-                          >
-                            {meta.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                  <Text className="text-[10px] text-gray-400 mt-2">
-                    Admin can set any Phase 2 target status. Grayed = already
-                    passed.
-                  </Text>
-                </View>
-              </View>
-
-              {/* ── ORS fields — shown when current status is 14 OR target is 14/15 ── */}
-              {(isOrsStep || targetStatusId >= 15) && (
-                <View
-                  className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
-                  style={{ elevation: 2 }}
-                >
-                  <View className="px-4 pt-3 pb-3">
-                    <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                      ORS Details
-                      {isOrsStep && (
-                        <Text className="text-red-400"> (required)</Text>
+              {/* Target status picker */}
+              <SectionLabel>Target Status</SectionLabel>
+              <View className="flex-row flex-wrap gap-2 mb-1">
+                {([12, 13, 14, 15, 16, 17, 18] as const).map((sid) => {
+                  const m = PHASE2_STEPS[sid];
+                  if (!m) return null;
+                  const active = targetStatusId === sid;
+                  const isPast = sid <= currentStatus;
+                  return (
+                    <TouchableOpacity
+                      key={sid}
+                      onPress={() => setTargetStatusId(sid)}
+                      activeOpacity={0.75}
+                      className={`flex-row items-center px-3 py-1.5 rounded-full border ${
+                        active
+                          ? "bg-[#064E3B] border-[#064E3B]"
+                          : isPast
+                            ? "bg-gray-100 border-gray-200"
+                            : "bg-white border-gray-300"
+                      }`}
+                    >
+                      {isPast && !active && (
+                        <MaterialIcons
+                          name="check-circle"
+                          size={12}
+                          color="#6b7280"
+                          style={{ marginRight: 4 }}
+                        />
                       )}
-                    </Text>
+                      <Text
+                        className={`text-[11px] font-bold ${
+                          active
+                            ? "text-white"
+                            : isPast
+                              ? "text-gray-400"
+                              : "text-gray-700"
+                        }`}
+                      >
+                        {m.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text className="text-[10px] text-gray-400 mb-4">
+                Admin can set any Phase 2 target. Grayed = already passed.
+              </Text>
 
-                    <Field label="ORS No." required={isOrsStep}>
-                      <Input
-                        value={orsNo}
-                        onChangeText={setOrsNo}
-                        placeholder="e.g. ORS-2026-001"
-                        mono
-                      />
-                    </Field>
-
-                    <Field label="ORS Date" required={isOrsStep}>
-                      <DatePickerButton
-                        value={orsDate}
-                        onChange={setOrsDate}
-                        placeholder="Select ORS date…"
-                      />
-                    </Field>
-
-                    <Field label="ORS Amount">
-                      <Input
-                        value={orsAmount}
-                        onChangeText={setOrsAmount}
-                        placeholder="e.g. 150000.00"
-                        keyboardType="numeric"
-                        mono
-                      />
-                    </Field>
-
-                    <Field label="Funds Available">
-                      <Input
-                        value={fundsAvailable}
-                        onChangeText={setFundsAvailable}
-                        placeholder="Optional"
-                      />
-                    </Field>
-                  </View>
-                </View>
+              {/* PO No. field — Allocation step */}
+              {currentStatus === 13 && (
+                <>
+                  <SectionLabel>PO Details</SectionLabel>
+                  <Field label="PO Number">
+                    <StyledInput
+                      value={poNo}
+                      onChangeText={setPoNo}
+                      placeholder="e.g. PO-2026-0042"
+                      mono
+                    />
+                  </Field>
+                </>
               )}
 
-              {/* ── Forwarding note — shown when handing off to next department ── */}
+              {/* ORS fields — ORS Creation step or when target ≥ 15 */}
+              {(isOrsStep || targetStatusId >= 15) && (
+                <>
+                  <SectionLabel>
+                    ORS Details{isOrsStep ? " (required)" : " (optional)"}
+                  </SectionLabel>
+                  <Field label="ORS Number" required={isOrsStep}>
+                    <StyledInput
+                      value={orsNo}
+                      onChangeText={setOrsNo}
+                      placeholder="e.g. ORS-2026-001"
+                      mono
+                    />
+                  </Field>
+                  <Field label="ORS Date" required={isOrsStep}>
+                    <DatePickerButton
+                      value={orsDate}
+                      onChange={setOrsDate}
+                      placeholder="Select ORS date…"
+                    />
+                  </Field>
+                  <Field label="ORS Amount">
+                    <StyledInput
+                      value={orsAmount}
+                      onChangeText={setOrsAmount}
+                      placeholder="e.g. 150000.00"
+                      keyboardType="numeric"
+                      mono
+                    />
+                  </Field>
+                  <Field label="Funds Available">
+                    <StyledInput
+                      value={fundsAvailable}
+                      onChangeText={setFundsAvailable}
+                      placeholder="e.g. 150000.00"
+                      mono
+                    />
+                  </Field>
+                </>
+              )}
+
+              {/* Forwarding context note */}
               {isForwardingStep && (
-                <View className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 mb-3 flex-row items-center gap-2">
+                <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
                   <MaterialIcons name="send" size={16} color="#1d4ed8" />
                   <Text className="text-[12px] text-blue-800 flex-1">
                     {currentStatus === 15
-                      ? "Budget officer has signed the ORS. This will forward the PO to Accounting for incoming check processing."
+                      ? "Budget officer has signed the ORS. Forwarding to Accounting for incoming check processing."
                       : currentStatus === 16
-                        ? "Accounting has verified document completeness. This will forward the PO to PARPO II for review and signature."
-                        : "PARPO II has signed the PO. This will hand off to Supply for serving to suppliers."}
+                        ? "Accounting has verified document completeness. Forwarding to PARPO II for review and signature."
+                        : "PARPO II has signed the PO. Handing off to Supply for serving to suppliers."}
                   </Text>
                 </View>
               )}
 
-              {/* ── Remark & flag ── */}
-              <View
-                className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-3"
-                style={{ elevation: 2 }}
-              >
-                <View className="px-4 pt-3 pb-3">
-                  <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                    Remark & Flag
-                  </Text>
-                  <View className="flex-row items-center justify-between mb-2">
-                    <Text className="text-[11px] font-bold text-gray-500">
-                      Status flag
-                    </Text>
-                    <FlagButton
-                      selected={statusFlag}
-                      onPress={() => setFlagOpen(true)}
-                    />
-                  </View>
-                  <Field label="Remark">
-                    <Input
-                      value={remarks}
-                      onChangeText={setRemarks}
-                      placeholder={`Admin override remark for ${stepMeta?.label ?? "this step"}…`}
-                      multiline
-                    />
-                  </Field>
-                </View>
-              </View>
-
-              {/* ── Submit ── */}
-              <TouchableOpacity
-                onPress={submit}
-                disabled={submitDisabled}
-                activeOpacity={0.85}
-                className={`rounded-2xl py-3 items-center flex-row justify-center gap-2 ${
-                  submitDisabled ? "bg-gray-300" : "bg-[#064E3B]"
-                }`}
-              >
-                <MaterialIcons
-                  name="admin-panel-settings"
-                  size={16}
-                  color={submitDisabled ? "#9ca3af" : "#ffffff"}
+              <SectionLabel>Admin Remark</SectionLabel>
+              <Field label="Status Flag">
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
                 />
-                <Text className="text-[13.5px] font-extrabold text-white">
-                  {saving ? "Saving…" : actionLabel}
-                </Text>
-              </TouchableOpacity>
+              </Field>
+              <Field label="Remarks / Notes">
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder={`Admin override remark for ${stepMeta?.label ?? "this step"}…`}
+                  multiline
+                />
+              </Field>
             </ScrollView>
           )}
-
-          <StatusFlagPicker
-            visible={flagOpen}
-            selected={statusFlag}
-            onSelect={setStatusFlag}
-            onClose={() => setFlagOpen(false)}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleSubmit}
+            confirmLabel={stepMeta?.action ?? "Advance"}
+            confirmingLabel="Saving…"
+            disabled={submitDisabled}
+            saving={saving}
+            color={roleMeta.accentColor}
           />
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
+      </Modal>
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
+    </>
   );
 }
+
+// ─── Root export ──────────────────────────────────────────────────────────────
 
 export default function ProcessPOModal({
   roleId,

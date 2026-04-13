@@ -327,12 +327,6 @@ export default function BACView({
           }
         }
 
-        const prefill = (session as any).aaa_prefill_assignment_id as
-          | number
-          | string
-          | null
-          | undefined;
-        if (prefill != null) setSelectedReturnId(Number(prefill));
       } catch {}
     })();
   }, [pr.prNo]);
@@ -629,9 +623,6 @@ export default function BACView({
         }))
         .filter((e) => (Number(e.unit_price) || 0) > 0);
 
-      await updateCanvassSessionMeta(sessionId, {
-        aaa_prefill_assignment_id: assignmentId,
-      });
       setSelectedReturnId(assignmentId);
       await replaceSupplierQuotesForSubmission(sessionId, null, payload);
       const encoded = await fetchQuotesForSubmission(sessionId, null);
@@ -674,6 +665,57 @@ export default function BACView({
     supps,
     entriesForAssignment,
     applyReturnAsBase,
+  ]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (selectedReturnId != null) return;
+    if (!hasAssignmentId) return;
+    const returned = assignments.filter((a) => a.status === "returned");
+    if (returned.length === 0) return;
+    const encoded = canvassEntries.filter(
+      (e: any) =>
+        prItemIdSet.has(e.item_no) &&
+        (e.assignment_id === null || e.assignment_id === undefined),
+    );
+    if (encoded.length === 0) return;
+
+    const sig = new Set(
+      encoded.map(
+        (e: any) =>
+          `${e.item_no}|${String(e.supplier_name)}|${Number(e.unit_price)}`,
+      ),
+    );
+
+    let best: number | null = null;
+    let bestScore = -1;
+    returned.forEach((a) => {
+      const aid = Number(a.id);
+      const ent = entriesForAssignment(aid);
+      let score = 0;
+      ent.forEach((e: any) => {
+        if (
+          sig.has(
+            `${e.item_no}|${String(e.supplier_name)}|${Number(e.unit_price)}`,
+          )
+        )
+          score++;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        best = aid;
+      }
+    });
+
+    if (best != null && bestScore > 0) setSelectedReturnId(best);
+  }, [
+    sessionId,
+    selectedReturnId,
+    hasAssignmentId,
+    assignments,
+    canvassEntries,
+    prItemIdSet,
+    entriesForAssignment,
   ]);
 
   const buildPreviewData = (): CanvassPreviewData => {

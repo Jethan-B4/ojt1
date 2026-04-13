@@ -22,6 +22,7 @@ import type {
 } from "@/lib/supabase-types";
 import {
   fetchAssignmentsWithDetails,
+  fetchCanvassSessionById,
   fetchCanvassSessionForPR,
   fetchQuotesForSession,
 } from "@/lib/supabase/canvassing";
@@ -292,6 +293,28 @@ export default function EndUserView({
   useEffect(() => {
     if (!sessionId) return;
 
+    const sessionChannel = supabase
+      .channel(`eu-session-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canvass_sessions",
+          filter: `id=eq.${sessionId}`,
+        },
+        async () => {
+          try {
+            const sess = await fetchCanvassSessionById(sessionId);
+            if (!sess) return;
+            if (sess.stage) setCurrentStage(sess.stage as CanvassStage);
+            setBacNo(sess.bac_no ?? null);
+            setDeadline(sess.deadline ?? null);
+          } catch {}
+        },
+      )
+      .subscribe();
+
     const asgnsChannel = supabase
       .channel(`eu-asgns-${sessionId}`)
       .on(
@@ -315,7 +338,7 @@ export default function EndUserView({
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "canvass_entries",
           filter: `session_id=eq.${sessionId}`,
@@ -329,6 +352,7 @@ export default function EndUserView({
       .subscribe();
 
     return () => {
+      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(asgnsChannel);
       supabase.removeChannel(entriesChannel);
     };
@@ -464,6 +488,25 @@ export default function EndUserView({
           <Text className="text-[12px] text-gray-400">
             Loading canvass data…
           </Text>
+        </View>
+      ) : !sessionId ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-[13px] font-bold text-gray-800 text-center">
+            This PR has not entered the canvassing stage yet.
+          </Text>
+          <Text className="text-[11.5px] text-gray-500 text-center mt-2">
+            Once BAC starts canvassing, this screen will show live progress and
+            quotations.
+          </Text>
+          {onBack && (
+            <TouchableOpacity
+              onPress={onBack}
+              activeOpacity={0.85}
+              className="mt-4 px-4 py-2.5 rounded-xl bg-[#064E3B]"
+            >
+              <Text className="text-[12px] font-bold text-white">Back</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <ScrollView
