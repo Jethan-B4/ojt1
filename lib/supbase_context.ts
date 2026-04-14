@@ -1,5 +1,14 @@
 export const SUPABASE_SCHEMA_SQL = String.raw`-- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
+--
+-- BAC resolution refinement context:
+-- - bac_resolution now supports standalone creation and richer narrative fields.
+-- - bac_resolution_prs links one BAC resolution to many PR rows
+--   (expected to be same-division in application logic).
+--
+-- Possible next schema hardening:
+-- - unique (resolution_id, pr_no) on bac_resolution_prs
+-- - check constraints for non-empty whereas_1/2/3 and now_therefore_text
 
 CREATE TABLE public.aaa_documents (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

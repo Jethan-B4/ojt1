@@ -17,6 +17,7 @@ import {
 import BACView from "../(canvassing)/BACView/index";
 import CanvasserView from "../(canvassing)/CanvasserView";
 import EndUserView from "../(canvassing)/EndUserView";
+import BACResolutionModule from "../(components)/BACResolutionModule";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
 import { CreatePRModal, PRSubmitPayload } from "../(modals)/CreatePRModal";
@@ -213,6 +214,8 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   onCreatePress: () => void;
   canCreate?: boolean;
+  createLabel?: string;
+  createIcon?: keyof typeof MaterialIcons.glyphMap;
   filterActive: boolean;
   onFilterToggle: () => void;
 }> = ({
@@ -220,6 +223,8 @@ const SearchBar: React.FC<{
   onChange,
   onCreatePress,
   canCreate = true,
+  createLabel = "Create",
+  createIcon = "add",
   filterActive,
   onFilterToggle,
 }) => (
@@ -262,8 +267,8 @@ const SearchBar: React.FC<{
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
         style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
       >
-        <MaterialIcons name="add" size={18} color="#ffffff" />
-        <Text className="text-white text-[13px] font-bold">Create</Text>
+        <MaterialIcons name={createIcon} size={18} color="#ffffff" />
+        <Text className="text-white text-[13px] font-bold">{createLabel}</Text>
       </Pressable>
     )}
   </View>
@@ -885,6 +890,7 @@ export default function PRModule({
 
   // Create PR modal state
   const [prModalOpen, setPrModalOpen] = useState(false);
+  const [bacResolutionOpen, setBacResolutionOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -966,8 +972,12 @@ export default function PRModule({
   // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
   const handleOpenCreate = useCallback(() => {
+    if (roleId === 3) {
+      setBacResolutionOpen(true);
+      return;
+    }
     setPrModalOpen(true);
-  }, []);
+  }, [roleId]);
 
   const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
     setSaving(true);
@@ -1176,7 +1186,9 @@ export default function PRModule({
           setPage(1);
         }}
         onCreatePress={handleOpenCreate}
-        canCreate={roleId === 6}
+        canCreate={roleId === 6 || roleId === 3}
+        createLabel={roleId === 3 ? "Create BAC Resolution" : "Create PR"}
+        createIcon={roleId === 3 ? "gavel" : "add"}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
@@ -1592,6 +1604,26 @@ export default function PRModule({
           currentUser={currentUser as any}
         />
       )}
+
+      {/* Standalone BAC Resolution modal (BAC role only) */}
+      <Modal
+        visible={bacResolutionOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setBacResolutionOpen(false)}
+      >
+        <BACResolutionModule
+          currentUserId={currentUser?.id ?? null}
+          divisionId={currentUser?.division_id ?? null}
+        />
+        <TouchableOpacity
+          onPress={() => setBacResolutionOpen(false)}
+          activeOpacity={0.85}
+          className="absolute top-11 right-4 w-9 h-9 rounded-xl bg-white/90 items-center justify-center border border-gray-200"
+        >
+          <MaterialIcons name="close" size={18} color="#374151" />
+        </TouchableOpacity>
+      </Modal>
 
       {/* Saving overlay */}
       {saving && (

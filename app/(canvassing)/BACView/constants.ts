@@ -11,17 +11,17 @@ export type StageMeta = {
 
 export const STAGE_ORDER: CanvassStage[] = [
   "pr_received",
+  "bac_resolution",
   "release_canvass",
   "collect_canvass",
-  "bac_resolution",
   "aaa_preparation",
 ];
 
 export const STAGE_META: Record<CanvassStage, StageMeta> = {
   pr_received: { step: 6, label: "PR Received", icon: "inbox" },
-  release_canvass: { step: 7, label: "Release", icon: "send" },
-  collect_canvass: { step: 8, label: "Collect", icon: "assignment-return" },
-  bac_resolution: { step: 9, label: "Resolution", icon: "gavel" },
+  bac_resolution: { step: 7, label: "Resolution", icon: "gavel" },
+  release_canvass: { step: 8, label: "Release", icon: "send" },
+  collect_canvass: { step: 9, label: "Collect", icon: "assignment-return" },
   aaa_preparation: { step: 10, label: "AAA", icon: "emoji-events" },
 };
 

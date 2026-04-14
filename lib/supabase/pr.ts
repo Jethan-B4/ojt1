@@ -62,20 +62,26 @@ export async function fetchPurchaseRequestsByDivision(divisionId: number) {
 export async function fetchCanvassablePRs() {
   const { data, error } = await supabase
     .from("purchase_requests")
-    .select("*")
-    .gt("status_id", 5);
+    .select("*, divisions(division_name)")
+    .gt("status_id", 6);
   if (error) throw error;
-  return data;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  }));
 }
 
 export async function fetchCanvassablePRsByDivision(divisionId: number) {
   const { data, error } = await supabase
     .from("purchase_requests")
-    .select("*")
-    .gt("status_id", 5)
+    .select("*, divisions(division_name)")
+    .gt("status_id", 6)
     .eq("division_id", divisionId);
   if (error) throw error;
-  return data;
+  return (data ?? []).map((r: any) => ({
+    ...r,
+    division_name: r.divisions?.division_name ?? null,
+  }));
 }
 
 export async function fetchRemarksByPR(prId: string | number) {
@@ -267,14 +273,14 @@ export async function updatePurchaseRequest(
     pap_code?: string | null;
     proposal_no?: string | null;
   },
-  items?: Array<{
+  items?: {
     stock_no?: string | null;
     unit: string;
     description: string;
     quantity: number;
     unit_price: number;
     subtotal: number;
-  }>,
+  }[],
 ): Promise<void> {
   const now = new Date().toISOString();
 

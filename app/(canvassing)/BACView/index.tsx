@@ -16,7 +16,11 @@ import type {
   CanvassUserRow,
   CanvasserAssignmentRow,
 } from "@/lib/supabase";
-import { insertBACResolution } from "@/lib/supabase/bac";
+import {
+  fetchBACResolutionForPR,
+  insertBACResolution,
+  updateBACResolutionById,
+} from "@/lib/supabase/bac";
 import {
   ensureCanvassSession,
   fetchAssignmentsForSession,
@@ -29,7 +33,7 @@ import {
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
 import {
-  fetchCanvassablePRsByDivision,
+  fetchCanvassablePRs,
   fetchPRIdByNo,
   fetchPRWithItemsById,
   updatePRStatus,
@@ -182,6 +186,10 @@ export default function BACView({
   const [prExpanded, setPrExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
+  const [linkedResolution, setLinkedResolution] = useState<any | null>(null);
+  const [linkedResolutionLoading, setLinkedResolutionLoading] = useState(false);
+  const [linkedResolutionHydrated, setLinkedResolutionHydrated] =
+    useState(false);
 
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [releaseTarget, setReleaseTarget] = useState<CanvassUserRow | null>(
@@ -327,10 +335,8 @@ export default function BACView({
             procMode: header?.status ?? "SVP/Canvass",
           },
         ]);
-        if (divId) {
-          const pool = await fetchCanvassablePRsByDivision(Number(divId));
-          setDivisionPRPool(pool ?? []);
-        }
+        const pool = await fetchCanvassablePRs();
+        setDivisionPRPool(pool ?? []);
         setResolutionWhereas1(
           (prev) =>
             prev ||
@@ -380,6 +386,48 @@ export default function BACView({
     })();
   }, [pr.prNo]);
 
+  useEffect(() => {
+    if (!prId) return;
+    if (stage !== "bac_resolution") return;
+    setLinkedResolutionLoading(true);
+    fetchBACResolutionForPR(prId)
+      .then((res) => {
+        setLinkedResolution(res ?? null);
+        if (!res) return;
+        if (linkedResolutionHydrated) return;
+
+        setResNo(res.resolution_no ?? "");
+        setMode(res.mode ?? PROC_MODES[0]);
+        setResolutionLocation(
+          res.resolved_at_place ?? "HL Bldg. Carnation St, Triangulo Naga City",
+        );
+        setResolutionWhereas1(res.whereas_1 ?? "");
+        setResolutionWhereas2(res.whereas_2 ?? "");
+        setResolutionWhereas3(res.whereas_3 ?? "");
+        setResolutionNowTherefore(
+          res.now_therefore_text ??
+            "to recommend to the Head of Procuring Entity the procurement of items through SVP method.",
+        );
+        setResolutionDivisionId(
+          res.division_id != null ? Number(res.division_id) : null,
+        );
+        setResolutionPRRows(
+          (res.bac_resolution_prs ?? []).map((p: any) => ({
+            key: `respr-${p.id ?? `${p.pr_no}-${Date.now()}`}`,
+            prId: p.pr_id != null ? Number(p.pr_id) : null,
+            prNo: String(p.pr_no ?? ""),
+            date: String(p.pr_date ?? ""),
+            estimatedCost: String(p.estimated_cost ?? ""),
+            endUser: String(p.end_user ?? ""),
+            procMode: String(p.recommended_mode ?? res.mode ?? ""),
+          })),
+        );
+        setLinkedResolutionHydrated(true);
+      })
+      .catch(() => {})
+      .finally(() => setLinkedResolutionLoading(false));
+  }, [prId, stage, linkedResolutionHydrated]);
+
   // ── Step Handlers ──────────────────────────────────────────────────────────
 
   const handleStep6 = useCallback(async () => {
@@ -388,7 +436,7 @@ export default function BACView({
       if (!prId) throw new Error("PR not found");
       const session = await ensureCanvassSession(prId);
       setSessionId(session.id);
-      await updateCanvassStage(session.id, "release_canvass");
+      await updateCanvassStage(session.id, "bac_resolution");
       await updatePRStatus(prId, 6); // status_id 6 = Canvassing (Reception)
       advance("pr_received");
     } catch (e: any) {
@@ -453,19 +501,25 @@ export default function BACView({
       // Always use replace (delete-then-insert) so that re-encoding or editing
       // never accumulates duplicate rows in canvass_entries.
       await replaceSupplierQuotesForSubmission(sessionId, null, quotes);
-      await updatePRStatus(prId, 9);
-      await updateCanvassStage(sessionId, "bac_resolution");
+      await updatePRStatus(prId, 11);
+      await updateCanvassStage(sessionId, "aaa_preparation");
       fetchQuotesForSession(sessionId)
         .then(setCanvassEntries)
         .catch(() => {});
       advance("collect_canvass");
+      onComplete?.({
+        pr_no: pr.prNo,
+        resolution_no: resNo,
+        mode,
+        stage: "aaa_preparation",
+      });
     } catch (e: any) {
       Alert.alert(
         "Quotes failed",
         e?.message ?? "Could not save supplier quotations",
       );
     }
-  }, [sessionId, pr.prNo, supps, liveItems, advance]);
+  }, [sessionId, pr.prNo, supps, liveItems, advance, onComplete, resNo, mode]);
 
   const handleStep7 = useCallback(async () => {
     if (!sessionId || !resNo) return;
@@ -485,6 +539,25 @@ export default function BACView({
       if (cleanRows.length === 0)
         throw new Error("Add at least one PR row for this resolution.");
 
+      const hasCurrentPR = cleanRows.some((r) => r.prNo === pr.prNo);
+      const ensuredRows = hasCurrentPR
+        ? cleanRows
+        : [
+            ...cleanRows,
+            {
+              key: `pr-${pr.prNo}`,
+              prId: Number(prId),
+              prNo: pr.prNo,
+              date: new Date().toLocaleDateString("en-PH"),
+              estimatedCost: liveItems
+                .reduce((s, i) => s + i.qty * i.unitCost, 0)
+                .toFixed(2),
+              endUser:
+                resolutionPRRows.find((r) => r.prNo === pr.prNo)?.endUser ?? "",
+              procMode: mode,
+            },
+          ];
+
       const linkedRows: {
         pr_id?: number | null;
         pr_no: string;
@@ -493,7 +566,7 @@ export default function BACView({
         end_user?: string | null;
         recommended_mode?: string | null;
       }[] = [];
-      for (const row of cleanRows) {
+      for (const row of ensuredRows) {
         let linkedPrId: number | null = row.prId ?? null;
         if (!linkedPrId) {
           const { data } = await supabase
@@ -525,7 +598,7 @@ export default function BACView({
 
       sessionRef.current.resolution_no = resNo;
       sessionRef.current.mode = mode;
-      await insertBACResolution(sessionId, {
+      const core = {
         resolution_no: resNo,
         prepared_by: currentUser?.id ?? 0,
         division_id: resolutionDivisionId ?? null,
@@ -538,21 +611,17 @@ export default function BACView({
         now_therefore_text: resolutionNowTherefore,
         notes: null,
         prs: linkedRows,
-      });
-      // status_id 10 = BAC Resolution (canvassing step just completed)
-      // Move PR to AAA Issuance after BAC Resolution
-      await updatePRStatus(prId, 11);
-      await updateCanvassStage(sessionId, "aaa_preparation");
-      // advance() marks bac_resolution done and moves stage → aaa_preparation
-      // (aaa_preparation is now included in STAGE_ORDER in constants.ts)
+      };
+
+      if (linkedResolution?.id != null) {
+        await updateBACResolutionById(Number(linkedResolution.id), core);
+      } else {
+        await insertBACResolution(sessionId, core);
+      }
+      // BAC Resolution now happens before RFQ release.
+      await updatePRStatus(prId, 10);
+      await updateCanvassStage(sessionId, "release_canvass");
       advance("bac_resolution");
-      // Notify parent so the shell route can open the AAA tab
-      onComplete?.({
-        pr_no: pr.prNo,
-        resolution_no: resNo,
-        mode,
-        stage: "aaa_preparation",
-      });
     } catch (e: any) {
       Alert.alert(
         "Resolution failed",
@@ -566,7 +635,6 @@ export default function BACView({
     mode,
     currentUser?.id,
     advance,
-    onComplete,
     resolutionPRRows,
     resolutionDivisionId,
     resolutionLocation,
@@ -574,6 +642,8 @@ export default function BACView({
     resolutionWhereas2,
     resolutionWhereas3,
     resolutionNowTherefore,
+    linkedResolution?.id,
+    liveItems,
   ]);
 
   const allSigned = true;
@@ -970,7 +1040,7 @@ export default function BACView({
       const divId =
         header?.division_id != null ? Number(header.division_id) : null;
       setResolutionDivisionId(Number.isFinite(divId as number) ? divId : null);
-      if (divId) setDivisionPRPool(await fetchCanvassablePRsByDivision(divId));
+      setDivisionPRPool(await fetchCanvassablePRs());
     } catch {
     } finally {
       setRefreshing(false);
@@ -1869,7 +1939,7 @@ export default function BACView({
               onPrev={goToStage}
               onNext={goToStage}
               canSubmit={!isViewingCompleted}
-              submitLabel="Encoded · BAC Resolution"
+              submitLabel="Encoded · AAA Preparation"
               onSubmit={handleStep9}
             />
           </View>
@@ -1880,6 +1950,49 @@ export default function BACView({
           <View>
             <Card>
               <View className="px-4 pt-3 pb-2">
+                {linkedResolutionLoading ? (
+                  <View className="bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2 mb-3">
+                    <Text className="text-[11.5px] font-semibold text-gray-600">
+                      Checking linked BAC Resolution…
+                    </Text>
+                  </View>
+                ) : linkedResolution ? (
+                  <View className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3 py-2 mb-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1">
+                        <Text className="text-[11.5px] font-bold text-emerald-800">
+                          Linked BAC Resolution found
+                        </Text>
+                        <Text className="text-[10.5px] text-emerald-700 mt-0.5">
+                          Resolution No. {linkedResolution.resolution_no ?? "—"}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setResolutionPreviewOpen(true)}
+                        activeOpacity={0.85}
+                        className="px-3 py-2 rounded-xl bg-[#064E3B]"
+                      >
+                        <Text className="text-[11px] font-bold text-white">
+                          Preview
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text className="text-[10.5px] text-emerald-700 mt-2">
+                      Review the values below and adjust if needed, then submit
+                      to proceed.
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 mb-3">
+                    <Text className="text-[11.5px] font-bold text-amber-800">
+                      No linked BAC Resolution yet
+                    </Text>
+                    <Text className="text-[10.5px] text-amber-700 mt-0.5">
+                      Create a BAC Resolution below to connect this PR and
+                      proceed to RFQ release.
+                    </Text>
+                  </View>
+                )}
                 <Divider label="Resolution Details" />
                 <View className="flex-row gap-2.5">
                   <View className="flex-1">
@@ -1968,49 +2081,46 @@ export default function BACView({
                 {resolutionSource === "valid" && (
                   <View className="mb-2">
                     {divisionPRPool
-                      .filter(
-                        (p: any) =>
-                          Number(p.division_id) ===
-                          Number(resolutionDivisionId),
-                      )
-                      .slice(0, 12)
+                      .filter((p: any) => Number(p.status_id) > 8)
+                      .slice(0, 20)
                       .map((p: any) => {
-                        const exists = resolutionPRRows.some(
-                          (r) => r.prNo === p.pr_no,
-                        );
-                        return (
-                          <TouchableOpacity
-                            key={p.id}
-                            onPress={() =>
-                              setResolutionPRRows((prev) => {
-                                if (exists)
-                                  return prev.filter((r) => r.prNo !== p.pr_no);
-                                return [
-                                  ...prev,
-                                  {
-                                    key: `pool-${p.id}`,
-                                    prId: Number(p.id),
-                                    prNo: p.pr_no,
-                                    date: p.created_at
-                                      ? new Date(
-                                          p.created_at,
-                                        ).toLocaleDateString("en-PH")
-                                      : "",
-                                    estimatedCost: String(p.total_cost ?? 0),
-                                    endUser: p.office_section ?? "",
-                                    procMode: mode,
-                                  },
-                                ];
-                              })
-                            }
-                            className={`px-3 py-2 rounded-xl border mb-1 ${exists ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
-                          >
-                            <Text className="text-[11.5px] font-semibold text-gray-700">
-                              {p.pr_no} · {p.office_section ?? "—"}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
+                      const exists = resolutionPRRows.some(
+                        (r) => r.prNo === p.pr_no,
+                      );
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          onPress={() =>
+                            setResolutionPRRows((prev) => {
+                              if (exists)
+                                return prev.filter((r) => r.prNo !== p.pr_no);
+                              return [
+                                ...prev,
+                                {
+                                  key: `pool-${p.id}`,
+                                  prId: Number(p.id),
+                                  prNo: p.pr_no,
+                                  date: p.created_at
+                                    ? new Date(p.created_at).toLocaleDateString(
+                                        "en-PH",
+                                      )
+                                    : "",
+                                  estimatedCost: String(p.total_cost ?? 0),
+                                  endUser: p.office_section ?? "",
+                                  procMode: mode,
+                                },
+                              ];
+                            })
+                          }
+                          className={`px-3 py-2 rounded-xl border mb-1 ${exists ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                        >
+                          <Text className="text-[11.5px] font-semibold text-gray-700">
+                            {p.pr_no} · {p.office_section ?? "—"} · Status{" "}
+                            {p.status_id}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
                 {resolutionPRRows.map((row) => (
@@ -2189,7 +2299,7 @@ export default function BACView({
                 !!resolutionNowTherefore &&
                 resolutionPRRows.length > 0
               }
-              submitLabel="Resolve & Complete BAC Workflow"
+              submitLabel="Resolved · Release RFQs"
               onSubmit={handleStep7}
             />
           </View>

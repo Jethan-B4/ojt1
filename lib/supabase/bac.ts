@@ -24,6 +24,15 @@ async function insertResolutionRows(resolutionId: number, prs: BACPRPayload[]) {
   if (rowErr) throw rowErr;
 }
 
+async function replaceResolutionRows(resolutionId: number, prs: BACPRPayload[]) {
+  const { error: delErr } = await supabase
+    .from("bac_resolution_prs")
+    .delete()
+    .eq("resolution_id", resolutionId);
+  if (delErr) throw delErr;
+  await insertResolutionRows(resolutionId, prs);
+}
+
 export async function insertBACResolution(
   sessionId: string,
   payload: {
@@ -111,6 +120,57 @@ export async function fetchBACResolutionForSession(sessionId: string) {
     .maybeSingle();
   if (error) return null;
   return (data as any) ?? null;
+}
+
+export async function fetchBACResolutionForPR(prId: string | number) {
+  const { data: links, error: linkErr } = await supabase
+    .from("bac_resolution_prs")
+    .select("resolution_id")
+    .eq("pr_id", prId);
+  if (linkErr) return null;
+  const ids = Array.from(
+    new Set((links ?? []).map((r: any) => Number(r.resolution_id)).filter(Boolean)),
+  );
+  if (ids.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from("bac_resolution")
+    .select("*, bac_resolution_prs(*), users(fullname), divisions(division_name)")
+    .in("id", ids)
+    .order("resolved_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data as any) ?? null;
+}
+
+export async function updateBACResolutionById(
+  resolutionId: number,
+  payload: {
+    resolution_no: string;
+    prepared_by?: number;
+    division_id?: number | null;
+    mode?: string | null;
+    resolved_at?: string | null;
+    resolved_at_place?: string | null;
+    whereas_1?: string | null;
+    whereas_2?: string | null;
+    whereas_3?: string | null;
+    now_therefore_text?: string | null;
+    notes?: string | null;
+    prs?: BACPRPayload[];
+  },
+) {
+  const { prs = [], ...core } = payload;
+  const { data, error } = await supabase
+    .from("bac_resolution")
+    .update(core)
+    .eq("id", resolutionId)
+    .select()
+    .single();
+  if (error) throw error;
+  await replaceResolutionRows(resolutionId, prs);
+  return data;
 }
 
 export async function fetchBACResolutionsByDivision(divisionId: number) {
