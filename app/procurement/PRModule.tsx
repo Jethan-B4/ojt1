@@ -1272,23 +1272,37 @@ export default function PRModule({
 
                 // End User initial processing: Pending (1) → Div. Head (2)
                 if (roleId === 6 && r.statusId === 1) {
-                  try {
-                    setSaving(true);
-                    await updatePRStatus(r.id, 2);
-                    setRecords((prev) =>
-                      prev.map((x) =>
-                        x.id === r.id ? { ...x, statusId: 2 } : x,
-                      ),
-                    );
-                    Alert.alert("Processed", "PR forwarded to Division Head.");
-                  } catch (e: any) {
-                    Alert.alert(
-                      "Failed",
-                      e?.message ?? "Could not update PR status.",
-                    );
-                  } finally {
-                    setSaving(false);
-                  }
+                  const doForward = async () => {
+                    try {
+                      setSaving(true);
+                      await updatePRStatus(r.id, 2);
+                      setRecords((prev) =>
+                        prev.map((x) =>
+                          x.id === r.id ? { ...x, statusId: 2 } : x,
+                        ),
+                      );
+                      Alert.alert(
+                        "Forwarded",
+                        "PR forwarded to Division Head.",
+                      );
+                    } catch (e: any) {
+                      Alert.alert(
+                        "Failed",
+                        e?.message ?? "Could not update PR status.",
+                      );
+                    } finally {
+                      setSaving(false);
+                    }
+                  };
+
+                  Alert.alert(
+                    "Forward this PR?",
+                    "This will forward the Purchase Request to the Division Head for processing.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Forward", onPress: () => void doForward() },
+                    ],
+                  );
                   return;
                 }
                 if (roleId === 1) {

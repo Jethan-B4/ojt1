@@ -18,6 +18,10 @@ export interface CanvasserAssignmentRow {
   session_id: string | number;
   division_id: number;
   canvasser_id?: number | null;
+  /** RFQ "Quotation No." (assigned by BAC during release) */
+  quotation_no?: string | null;
+  /** Sequence number within a session (1..N) */
+  rfq_index?: number | null;
   released_at?: string | null;
   returned_at?: string | null;
   status: "released" | "returned";

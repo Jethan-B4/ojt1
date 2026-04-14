@@ -18,6 +18,7 @@
 import AAAView from "@/app/(canvassing)/AAAView/AAAModule";
 import BACView from "@/app/(canvassing)/BACView";
 import CanvasserView from "@/app/(canvassing)/CanvasserView";
+import BACResolutionModule from "@/app/(components)/BACResolutionModule";
 import EndUserView from "@/app/(canvassing)/EndUserView";
 import { ensureCanvassSession, fetchPRIdByNo } from "@/lib/supabase";
 import type { CanvassPayload, CanvassingPR } from "@/types/canvassing";
@@ -91,6 +92,14 @@ export default function CanvassingModule({
   }, [roleId, targetStage, pr.prNo]);
 
   if (!prNoValue) {
+    if (roleId === 3) {
+      return (
+        <BACResolutionModule
+          currentUserId={currentUser?.id ?? null}
+          divisionId={currentUser?.division_id ?? null}
+        />
+      );
+    }
     return (
       <View
         style={{

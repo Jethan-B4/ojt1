@@ -31,7 +31,7 @@ import {
 } from "react-native";
 import { CompletedBanner, ItemsTable, StepNav } from "./components";
 import { MONO } from "./constants";
-import { Banner, Card, Divider, Field, Input } from "./ui";
+import { Banner, Card, Divider, Field } from "./ui";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -62,8 +62,6 @@ function blockingBannerText(flag: StatusFlag): string {
 interface PRReceptionStepProps {
   pr: CanvassingPR;
   liveItems: CanvassingPRItem[];
-  bacNo: string;
-  onBacNoChange: (v: string) => void;
   currentUser: any;
   isCompleted: boolean;
   onResubmit: () => void;
@@ -137,8 +135,6 @@ const FlagPill = ({ flag }: { flag: StatusFlag }) => {
 export default function PRReceptionStep({
   pr,
   liveItems,
-  bacNo,
-  onBacNoChange,
   currentUser,
   isCompleted,
   onResubmit,
@@ -153,16 +149,14 @@ export default function PRReceptionStep({
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [snapshot, setSnapshot] = useState<{
-    bacNo: string;
     flag: StatusFlag;
     remark: string;
   } | null>(null);
 
-  const hasBacNo = bacNo.trim().length > 0;
   const hasFlag = flag !== null;
   const hasRemark = remark.trim().length > 0;
   const isBlocking = flag !== null && BLOCKING_FLAGS.has(flag);
-  const canForwardNow = hasBacNo && hasFlag && hasRemark && !isBlocking;
+  const canForwardNow = hasFlag && hasRemark && !isBlocking;
 
   const doSaveAndForward = useCallback(async () => {
     setSaving(true);
@@ -175,7 +169,7 @@ export default function PRReceptionStep({
         `[Reception] ${remark.trim()}`,
         flag ? FLAG_TO_ID[flag] : null,
       );
-      setSnapshot({ bacNo: bacNo.trim(), flag: flag!, remark: remark.trim() });
+      setSnapshot({ flag: flag!, remark: remark.trim() });
       await onForward();
       setRemark("");
       setFlag(null);
@@ -187,7 +181,7 @@ export default function PRReceptionStep({
     } finally {
       setSaving(false);
     }
-  }, [flag, remark, bacNo, pr.prNo, currentUser, onForward]);
+  }, [flag, remark, pr.prNo, currentUser, onForward]);
 
   const handleSubmit = useCallback(() => {
     if (!canForwardNow) return;
@@ -210,24 +204,13 @@ export default function PRReceptionStep({
     return (
       <>
         <CompletedBanner
-          label={`${snapshot.bacNo} · ${STATUS_FLAGS[snapshot.flag]?.label ?? snapshot.flag}`}
+          label={`${STATUS_FLAGS[snapshot.flag]?.label ?? snapshot.flag}`}
           onResubmit={onResubmit}
         />
         <Card>
           <View className="px-4 pt-3.5 pb-3">
             <Divider label="Reception Summary" />
             <View className="flex-row items-center justify-between mb-3">
-              <View>
-                <Text className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
-                  BAC Canvass No.
-                </Text>
-                <Text
-                  className="text-[15px] font-extrabold text-[#064E3B]"
-                  style={{ fontFamily: MONO }}
-                >
-                  {snapshot.bacNo}
-                </Text>
-              </View>
               <FlagPill flag={snapshot.flag} />
             </View>
             <Text className="text-[9.5px] font-bold uppercase tracking-widest text-gray-400 mb-1">
@@ -262,11 +245,6 @@ export default function PRReceptionStep({
         <View className="px-4 pt-3.5 pb-1">
           <Divider label="Checklist" />
           <ChecklistRow
-            ok={hasBacNo}
-            label="BAC Canvass No. assigned"
-            detail={hasBacNo ? bacNo : undefined}
-          />
-          <ChecklistRow
             ok={hasFlag && !isBlocking}
             label='Flag set to "Complete" or "Urgent"'
             detail={
@@ -278,23 +256,6 @@ export default function PRReceptionStep({
             }
           />
           <ChecklistRow ok={hasRemark} label="Reception remark recorded" />
-        </View>
-      </Card>
-
-      {/* BAC Canvass No. */}
-      <Card>
-        <View className="px-4 pt-3 pb-3">
-          <Divider label="Acknowledgement" />
-          <Field label="BAC Canvass No." required>
-            <Input
-              value={bacNo}
-              onChange={onBacNoChange}
-              placeholder="e.g. BAC-2026-001"
-            />
-          </Field>
-          <Field label="Date Received">
-            <Input value={new Date().toLocaleDateString("en-PH")} readonly />
-          </Field>
         </View>
       </Card>
 

@@ -33,11 +33,13 @@ export interface BACResolutionData {
     procMode:     string;   // e.g. "SVP/Canvass"
   }[];
 
-  /** WHEREAS body text – free-form, inserted verbatim */
-  whereasText: string;
+  /** WHEREAS clauses body text */
+  whereas1: string;
+  whereas2: string;
+  whereas3: string;
 
-  /** Name of the office/division that requested the items */
-  requestingOffice: string;
+  /** NOW THEREFORE / RESOLVED narrative */
+  nowThereforeText: string;
 
   /** Provincial/regional office label */
   provincialOffice: string;  // e.g. "DARPO-CAMARINES SUR I"
@@ -178,26 +180,9 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
 </div>
 
 <!-- ── WHEREAS clauses ──────────────────────────────────────────────── -->
-<p class="indent">
-  <span class="bold">WHEREAS</span>, the ARBDSP Division the of the Department of Agrarian Reform,
-  ${d.provincialOffice} Office has requested for supply, labor and materials of the net house
-  installation for ${d.requestingOffice} Agribusiness Development Adopting Value Chain Approach
-  for comfort room which is urgently needed by the office;
-</p>
-
-<p class="indent">
-  <span class="bold">WHEREAS</span>, the requested supply, labor and materials of the net house installation
-  for ${d.requestingOffice} Nursery Establishment which have fund earmarked for the estimated cost as
-  certified by the Budget Officer, Ms. Agnes S. Argamusa and approved by the Head of Procuring Entity
-  (HOPE)/ PARPO II, Ricardo C. Garcia;
-</p>
-
-<p class="indent" style="margin-bottom: 10px;">
-  <span class="bold">WHEREAS</span>, the requested supply, labor and materials of the net house installation for
-  ${d.requestingOffice} Nursery Establishment under the Phase II of the Climate Smart Agricultural Productivity
-  and Nursery Establishment which as stated in the Purchase Request have been evaluated by the members of
-  the Bid and Awards Committee (BAC) and is hereby recommended for procurement by SVP method, to wit:
-</p>
+<p class="indent"><span class="bold">WHEREAS</span>, ${d.whereas1}</p>
+<p class="indent"><span class="bold">WHEREAS</span>, ${d.whereas2}</p>
+<p class="indent" style="margin-bottom: 10px;"><span class="bold">WHEREAS</span>, ${d.whereas3}</p>
 
 <!-- ── PR Table ─────────────────────────────────────────────────────── -->
 <div style="margin-bottom: 10px;">
@@ -223,8 +208,7 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
 <!-- ── NOW THEREFORE / RESOLVED ────────────────────────────────────── -->
 <p class="indent">
   <span class="bold">NOW, THEREFORE</span>, we, the members of the Bids and Awards Committee, hereby
-  <span class="bold">RESOLVE</span>, as it is hereby <span class="bold">RESOLVED</span>, to recommend
-  to the Head of Procuring Entity the procurement of items through SVP method.
+  <span class="bold">RESOLVE</span>, as it is hereby <span class="bold">RESOLVED</span>, ${d.nowThereforeText}
 </p>
 
 <p style="margin-bottom: 14px;">

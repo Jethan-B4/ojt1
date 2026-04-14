@@ -148,7 +148,6 @@ const SubmissionCard = ({
   liveItems,
   winners,
   pr,
-  bacNo,
   chairperson,
   onViewRFQ,
 }: {
@@ -156,7 +155,6 @@ const SubmissionCard = ({
   liveItems: CanvassingPRItem[];
   winners: ItemWinner[];
   pr: CanvassingPR;
-  bacNo: string;
   chairperson: string;
   onViewRFQ: (data: CanvassPreviewData) => void;
 }) => {
@@ -167,7 +165,7 @@ const SubmissionCard = ({
 
   const buildRFQData = (): CanvassPreviewData => ({
     prNo: pr.prNo,
-    quotationNo: bacNo || "—",
+    quotationNo: (submission.assignment as any).quotation_no ?? "—",
     date: new Date().toLocaleDateString("en-PH"),
     deadline: "—",
     bacChairperson: chairperson,
@@ -459,7 +457,6 @@ interface RFQReviewModalProps {
   entries: CanvassEntryRow[];
   assignments: CanvasserAssignmentRow[];
   users: CanvassUserRow[];
-  bacNo: string;
   chairperson: string;
 }
 
@@ -471,7 +468,6 @@ export default function RFQReviewModal({
   entries,
   assignments,
   users,
-  bacNo,
   chairperson,
 }: RFQReviewModalProps) {
   const [rfqPreviewData, setRfqPreviewData] =
@@ -612,7 +608,6 @@ export default function RFQReviewModal({
                 liveItems={liveItems}
                 winners={winners}
                 pr={pr}
-                bacNo={bacNo}
                 chairperson={chairperson}
                 onViewRFQ={setRfqPreviewData}
               />

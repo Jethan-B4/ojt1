@@ -242,6 +242,11 @@ export default function EndUserView({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const normalizeStage = (value: any): CanvassStage => {
+    const v = String(value ?? "");
+    return (v && (v as any) in STAGE_META ? v : STAGE_ORDER[0]) as CanvassStage;
+  };
+
   // ── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
@@ -259,7 +264,7 @@ export default function EndUserView({
 
         const sid = String(sessionRow.id);
         setSessionId(sid);
-        if (sessionRow.stage) setCurrentStage(sessionRow.stage as CanvassStage);
+        if (sessionRow.stage) setCurrentStage(normalizeStage(sessionRow.stage));
         setBacNo(sessionRow.bac_no ?? null);
         setDeadline(sessionRow.deadline ?? null);
 
@@ -307,7 +312,7 @@ export default function EndUserView({
           try {
             const sess = await fetchCanvassSessionById(sessionId);
             if (!sess) return;
-            if (sess.stage) setCurrentStage(sess.stage as CanvassStage);
+            if (sess.stage) setCurrentStage(normalizeStage(sess.stage));
             setBacNo(sess.bac_no ?? null);
             setDeadline(sess.deadline ?? null);
           } catch {}
@@ -359,7 +364,8 @@ export default function EndUserView({
   }, [sessionId]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
-  const currentIdx = STAGE_ORDER.indexOf(currentStage);
+  const safeStage = normalizeStage(currentStage);
+  const currentIdx = STAGE_ORDER.indexOf(safeStage);
   const returnedCount = assignments.filter(
     (a) => a.status === "returned",
   ).length;
@@ -428,8 +434,8 @@ export default function EndUserView({
           <View className="items-end gap-1">
             <View className="bg-white/15 px-2.5 py-1 rounded-lg border border-white/20">
               <Text className="text-[10.5px] font-bold text-white">
-                Step {STAGE_META[currentStage].step} ·{" "}
-                {STAGE_META[currentStage].label}
+                Step {STAGE_META[safeStage].step} ·{" "}
+                {STAGE_META[safeStage].label}
               </Text>
             </View>
             <TouchableOpacity
@@ -525,7 +531,7 @@ export default function EndUserView({
                   const sid = String(sessionRow.id);
                   setSessionId(sid);
                   if (sessionRow.stage)
-                    setCurrentStage(sessionRow.stage as CanvassStage);
+                    setCurrentStage(normalizeStage(sessionRow.stage));
                   setBacNo(sessionRow.bac_no ?? null);
                   setDeadline(sessionRow.deadline ?? null);
                   const [{ items }, asgns, quotes] = await Promise.all([

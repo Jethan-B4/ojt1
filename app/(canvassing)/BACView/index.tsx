@@ -23,22 +23,18 @@ import {
   fetchQuotesForSession,
   fetchQuotesForSubmission,
   fetchUsersByRole,
-  insertAssignmentReleased,
   insertAssignmentsForDivisions,
-  markAssignmentReturned,
   replaceSupplierQuotesForSubmission,
-  updateAssignmentReleased,
-  updateCanvassSessionMeta,
   updateCanvassStage,
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
 import {
+  fetchCanvassablePRsByDivision,
   fetchPRIdByNo,
   fetchPRWithItemsById,
   updatePRStatus,
 } from "@/lib/supabase/pr";
 import type {
-  BACMember,
   CanvassStage,
   CanvassingPR,
   CanvassingPRItem,
@@ -49,13 +45,16 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import BACResolutionModule from "../../(components)/BACResolutionModule";
 import type { BACResolutionData } from "../../(components)/BACResolutionPreview";
 import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
 import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
@@ -74,10 +73,17 @@ import {
   StepNav,
 } from "./components";
 import { CANVASS_ROLE_IDS, PROC_MODES, STAGE_ORDER } from "./constants";
-import { Banner, Card, Divider, Field, Input, PickerField } from "./ui";
+import { Card, Divider, Field, Input, PickerField } from "./ui";
 import { fmt } from "./utils";
 
 // ─── Local state factories ────────────────────────────────────────────────────
+
+type BACMember = {
+  name: string;
+  designation: string;
+  signed: boolean;
+  signedAt: string;
+};
 
 const mkBACMembers = (): BACMember[] => [
   {
@@ -107,6 +113,16 @@ const mkSupplier = (id: number): SupplierQ => ({
   remarks: "",
 });
 
+type ResolutionPRRow = {
+  key: string;
+  prId: number | null;
+  prNo: string;
+  date: string;
+  estimatedCost: string;
+  endUser: string;
+  procMode: string;
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BACView({
@@ -122,26 +138,34 @@ export default function BACView({
 
   const [stage, setStage] = useState<CanvassStage>("pr_received");
   const [done, setDone] = useState<Set<CanvassStage>>(new Set());
-  const [members, setMembers] = useState<BACMember[]>(mkBACMembers);
+  const [members] = useState<BACMember[]>(mkBACMembers);
   const [canvassUsers, setCanvassUsers] = useState<CanvassUserRow[]>([]);
-  const [canvassStatuses, setCanvassStatuses] = useState<
-    Record<
-      number,
-      {
-        status: "pending" | "released" | "returned";
-        releaseDate: string;
-        returnDate: string;
-      }
-    >
-  >({});
   const [usersLoading, setUsersLoading] = useState(true);
   const [supps, setSupps] = useState<SupplierQ[]>([mkSupplier(1)]);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
   const [prId, setPrId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [bacNo, setBacNo] = useState("");
   const [resNo, setResNo] = useState("");
   const [mode, setMode] = useState(PROC_MODES[0]);
+  const [resolutionDivisionId, setResolutionDivisionId] = useState<
+    number | null
+  >(null);
+  const [resolutionWhereas1, setResolutionWhereas1] = useState("");
+  const [resolutionWhereas2, setResolutionWhereas2] = useState("");
+  const [resolutionWhereas3, setResolutionWhereas3] = useState("");
+  const [resolutionNowTherefore, setResolutionNowTherefore] = useState(
+    "to recommend to the Head of Procuring Entity the procurement of items through SVP method.",
+  );
+  const [resolutionLocation, setResolutionLocation] = useState(
+    "HL Bldg. Carnation St, Triangulo Naga City",
+  );
+  const [resolutionSource, setResolutionSource] = useState<"manual" | "valid">(
+    "valid",
+  );
+  const [resolutionPRRows, setResolutionPRRows] = useState<ResolutionPRRow[]>(
+    [],
+  );
+  const [divisionPRPool, setDivisionPRPool] = useState<any[]>([]);
   const sessionRef = useRef<any>({ pr_no: pr.prNo });
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -151,12 +175,21 @@ export default function BACView({
   const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
   const [selectedReturnId, setSelectedReturnId] = useState<number | null>(null);
   const [expandedRFQs, setExpandedRFQs] = useState<Set<number>>(new Set());
+  const [standaloneResOpen, setStandaloneResOpen] = useState(false);
   const [collectedRFQ, setCollectedRFQ] = useState<CanvassPreviewData | null>(
     null,
   );
   const [prExpanded, setPrExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
+
+  const [releaseModalOpen, setReleaseModalOpen] = useState(false);
+  const [releaseTarget, setReleaseTarget] = useState<CanvassUserRow | null>(
+    null,
+  );
+  const [rfqCount, setRfqCount] = useState("1");
+  const [qPrefix, setQPrefix] = useState("");
+  const [qStart, setQStart] = useState("");
 
   // ── Navigation & State Management ──────────────────────────────────────────
 
@@ -179,14 +212,6 @@ export default function BACView({
     fetchUsersByRole(CANVASS_ROLE_IDS)
       .then((users) => {
         setCanvassUsers(users);
-        setCanvassStatuses(
-          Object.fromEntries(
-            users.map((u) => [
-              u.id,
-              { status: "pending" as const, releaseDate: "", returnDate: "" },
-            ]),
-          ),
-        );
       })
       .catch(() => {})
       .finally(() => setUsersLoading(false));
@@ -199,22 +224,6 @@ export default function BACView({
     fetchAssignmentsForSession(sessionId)
       .then((asgns) => {
         setAssignments(asgns);
-        // Rehydrate canvassStatuses from DB so the Release step shows the
-        // correct Released/Returned state when the BAC reopens the screen.
-        if (asgns.length > 0) {
-          setCanvassStatuses((prev) => {
-            const next = { ...prev };
-            asgns.forEach((a: any) => {
-              if (!a.canvasser_id) return;
-              next[a.canvasser_id] = {
-                status: a.status === "returned" ? "returned" : "released",
-                releaseDate: a.released_at ?? "",
-                returnDate: a.returned_at ?? "",
-              };
-            });
-            return next;
-          });
-        }
       })
       .catch(() => {})
       .finally(() => setAssignmentsLoading(false));
@@ -286,7 +295,7 @@ export default function BACView({
         if (dbIdx > 0) {
           setDone(new Set(STAGE_ORDER.slice(0, dbIdx)));
         }
-        const { items } = await fetchPRWithItemsById(prId);
+        const { header, items } = await fetchPRWithItemsById(prId);
         const mappedItems = items.map((i) => ({
           id: parseInt(String(i.id)),
           desc: i.description,
@@ -296,6 +305,47 @@ export default function BACView({
           unitCost: i.unit_price,
         }));
         setLiveItems(mappedItems);
+        const divId =
+          header?.division_id != null ? Number(header.division_id) : null;
+        setResolutionDivisionId(
+          Number.isFinite(divId as number) ? divId : null,
+        );
+        const defaultCost = mappedItems.reduce(
+          (s, i) => s + i.qty * i.unitCost,
+          0,
+        );
+        setResolutionPRRows([
+          {
+            key: `pr-${pr.prNo}`,
+            prId: Number(prId),
+            prNo: pr.prNo,
+            date: header?.created_at
+              ? new Date(header.created_at).toLocaleDateString("en-PH")
+              : new Date().toLocaleDateString("en-PH"),
+            estimatedCost: defaultCost.toFixed(2),
+            endUser: header?.office_section ?? "",
+            procMode: header?.status ?? "SVP/Canvass",
+          },
+        ]);
+        if (divId) {
+          const pool = await fetchCanvassablePRsByDivision(Number(divId));
+          setDivisionPRPool(pool ?? []);
+        }
+        setResolutionWhereas1(
+          (prev) =>
+            prev ||
+            `${header?.office_section || "Requesting division"} has requested procurement for ${header?.purpose || "the stated requirements"}.`,
+        );
+        setResolutionWhereas2(
+          (prev) =>
+            prev ||
+            `Funds for the requested procurement are certified available and approved by the Head of Procuring Entity.`,
+        );
+        setResolutionWhereas3(
+          (prev) =>
+            prev ||
+            `The BAC evaluated the request and recommends procurement through the selected mode.`,
+        );
 
         const allQuotes = await fetchQuotesForSession(session.id);
         if (allQuotes.length > 0) setCanvassEntries(allQuotes);
@@ -326,7 +376,6 @@ export default function BACView({
             setSupps(Array.from(supplierMap.values()));
           }
         }
-
       } catch {}
     })();
   }, [pr.prNo]);
@@ -337,15 +386,10 @@ export default function BACView({
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
-      // ensureCanvassSession creates the session with bac_no in one shot.
-      // If the session already exists, update bac_no and stage separately.
-      const session = await ensureCanvassSession(prId, { bac_no: bacNo });
+      const session = await ensureCanvassSession(prId);
       setSessionId(session.id);
-      // Ensure bac_no and stage are persisted even if the session already existed
-      await updateCanvassSessionMeta(session.id, { bac_no: bacNo });
       await updateCanvassStage(session.id, "release_canvass");
       await updatePRStatus(prId, 6); // status_id 6 = Canvassing (Reception)
-      sessionRef.current.bac_no = bacNo;
       advance("pr_received");
     } catch (e: any) {
       Alert.alert(
@@ -353,24 +397,21 @@ export default function BACView({
         e?.message ?? "Could not create canvass session",
       );
     }
-  }, [pr.prNo, bacNo, advance]);
+  }, [pr.prNo, advance]);
 
   const handleStep8 = useCallback(async () => {
     if (!sessionId) return;
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
-      const released = canvassUsers.filter(
-        (u) =>
-          canvassStatuses[u.id]?.status !== "pending" && u.division_id !== null,
-      );
-      const rows = released.map((u) => ({
-        division_id: u.division_id!,
-        canvasser_id: u.id,
-        released_at:
-          canvassStatuses[u.id]?.releaseDate || new Date().toISOString(),
-      }));
-      if (rows.length) await insertAssignmentsForDivisions(sessionId, rows);
+      const asgns = await fetchAssignmentsForSession(sessionId);
+      if (!asgns.length) {
+        Alert.alert(
+          "No RFQs released",
+          "Release at least one RFQ (with a Quotation No.) before proceeding.",
+        );
+        return;
+      }
       await updatePRStatus(prId, 8);
       await updateCanvassStage(sessionId, "collect_canvass");
       fetchAssignmentsForSession(sessionId)
@@ -380,10 +421,10 @@ export default function BACView({
     } catch (e: any) {
       Alert.alert(
         "Release failed",
-        e?.message ?? "Could not record canvass releases",
+        e?.message ?? "Could not proceed to collection",
       );
     }
-  }, [sessionId, pr.prNo, canvassUsers, canvassStatuses, advance]);
+  }, [sessionId, pr.prNo, advance]);
 
   const handleStep9 = useCallback(async () => {
     if (!sessionId) return;
@@ -431,14 +472,72 @@ export default function BACView({
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
+      const cleanRows = resolutionPRRows
+        .map((r) => ({
+          ...r,
+          prNo: r.prNo.trim(),
+          endUser: r.endUser.trim(),
+          procMode: r.procMode.trim(),
+          date: r.date.trim(),
+          estimatedCost: r.estimatedCost.trim(),
+        }))
+        .filter((r) => r.prNo && r.endUser && r.procMode);
+      if (cleanRows.length === 0)
+        throw new Error("Add at least one PR row for this resolution.");
+
+      const linkedRows: {
+        pr_id?: number | null;
+        pr_no: string;
+        pr_date?: string | null;
+        estimated_cost?: number | null;
+        end_user?: string | null;
+        recommended_mode?: string | null;
+      }[] = [];
+      for (const row of cleanRows) {
+        let linkedPrId: number | null = row.prId ?? null;
+        if (!linkedPrId) {
+          const { data } = await supabase
+            .from("purchase_requests")
+            .select("id, division_id")
+            .eq("pr_no", row.prNo)
+            .maybeSingle();
+          if (!data)
+            throw new Error(`PR ${row.prNo} not found. Use a valid PR number.`);
+          if (
+            resolutionDivisionId != null &&
+            Number(data.division_id) !== Number(resolutionDivisionId)
+          ) {
+            throw new Error(
+              `PR ${row.prNo} belongs to a different division and cannot be linked.`,
+            );
+          }
+          linkedPrId = Number(data.id);
+        }
+        linkedRows.push({
+          pr_id: linkedPrId,
+          pr_no: row.prNo,
+          pr_date: row.date || null,
+          estimated_cost: Number(row.estimatedCost || "0") || 0,
+          end_user: row.endUser || null,
+          recommended_mode: row.procMode || null,
+        });
+      }
+
       sessionRef.current.resolution_no = resNo;
       sessionRef.current.mode = mode;
       await insertBACResolution(sessionId, {
         resolution_no: resNo,
         prepared_by: currentUser?.id ?? 0,
+        division_id: resolutionDivisionId ?? null,
         mode,
         resolved_at: new Date().toISOString(),
+        resolved_at_place: resolutionLocation,
+        whereas_1: resolutionWhereas1,
+        whereas_2: resolutionWhereas2,
+        whereas_3: resolutionWhereas3,
+        now_therefore_text: resolutionNowTherefore,
         notes: null,
+        prs: linkedRows,
       });
       // status_id 10 = BAC Resolution (canvassing step just completed)
       // Move PR to AAA Issuance after BAC Resolution
@@ -460,70 +559,31 @@ export default function BACView({
         e?.message ?? "Could not record BAC resolution",
       );
     }
-  }, [sessionId, pr.prNo, resNo, mode, currentUser?.id, advance, onComplete]);
+  }, [
+    sessionId,
+    pr.prNo,
+    resNo,
+    mode,
+    currentUser?.id,
+    advance,
+    onComplete,
+    resolutionPRRows,
+    resolutionDivisionId,
+    resolutionLocation,
+    resolutionWhereas1,
+    resolutionWhereas2,
+    resolutionWhereas3,
+    resolutionNowTherefore,
+  ]);
 
-  const toggleUserStatus = useCallback(
-    async (userId: number) => {
-      try {
-        if (!sessionId) return;
-        const user = canvassUsers.find((u) => u.id === userId);
-        if (!user || !user.division_id) return;
-
-        const cur = canvassStatuses[userId] ?? {
-          status: "pending",
-          releaseDate: "",
-          returnDate: "",
-        };
-        const now = new Date().toISOString();
-
-        if (cur.status === "pending") {
-          try {
-            await updateAssignmentReleased(
-              sessionId,
-              user.division_id,
-              userId,
-              now,
-            );
-          } catch {
-            await insertAssignmentReleased(
-              sessionId,
-              user.division_id,
-              userId,
-              now,
-            );
-          }
-          setCanvassStatuses((prev) => ({
-            ...prev,
-            [userId]: { ...cur, status: "released", releaseDate: now },
-          }));
-          fetchAssignmentsForSession(sessionId)
-            .then(setAssignments)
-            .catch(() => {});
-        } else if (cur.status === "released") {
-          await markAssignmentReturned(sessionId, user.division_id, now);
-          setCanvassStatuses((prev) => ({
-            ...prev,
-            [userId]: { ...cur, status: "returned", returnDate: now },
-          }));
-          fetchAssignmentsForSession(sessionId)
-            .then(setAssignments)
-            .catch(() => {});
-        }
-      } catch (e: any) {
-        Alert.alert(
-          "Error",
-          e?.message ?? "Failed to update assignment status",
-        );
-      }
-    },
-    [sessionId, canvassUsers, canvassStatuses, setAssignments],
-  );
-
-  const allSigned = members.every((m) => m.signed);
+  const allSigned = true;
   const userById = React.useMemo(
     () => Object.fromEntries(canvassUsers.map((u) => [u.id, u])),
     [canvassUsers],
   );
+
+  const firstQuotationNo =
+    assignments.find((a: any) => (a as any).quotation_no)?.quotation_no ?? "";
 
   const hasAssignmentId = React.useMemo(
     () => canvassEntries.some((e: any) => e.assignment_id !== undefined),
@@ -580,7 +640,7 @@ export default function BACView({
       const canvasserName = user?.username ?? "—";
       return {
         prNo: pr.prNo,
-        quotationNo: bacNo || "—",
+        quotationNo: (a as any).quotation_no ?? "—",
         date: new Date().toLocaleDateString("en-PH"),
         deadline: "—",
         bacChairperson:
@@ -601,7 +661,7 @@ export default function BACView({
         canvasserNames: canvasserName ? [canvasserName] : [],
       };
     },
-    [pr, bacNo, members, liveItems, userById],
+    [pr, members, liveItems, userById],
   );
 
   const applyReturnAsBase = React.useCallback(
@@ -723,7 +783,7 @@ export default function BACView({
     deadlineDate.setDate(deadlineDate.getDate() + 7);
     return {
       prNo: pr.prNo,
-      quotationNo: bacNo || "—",
+      quotationNo: "—",
       date: new Date().toLocaleDateString("en-PH"),
       deadline: deadlineDate.toLocaleDateString("en-PH", {
         month: "long",
@@ -742,40 +802,85 @@ export default function BACView({
         unit: item.unit,
         unitPrice: "",
       })),
-      canvasserNames: canvassUsers
-        .filter((u) => canvassStatuses[u.id]?.status !== "pending")
-        .map((u) => u.username),
+      canvasserNames: assignments
+        .map((a) =>
+          a.canvasser_id ? userById[a.canvasser_id]?.username : null,
+        )
+        .filter(Boolean) as string[],
     };
   };
 
-  const buildResolutionData = (): BACResolutionData => {
-    // Compute per-item winner (lowest unit price) from all canvass entries
-    const winners = liveItems.map((item) => {
-      const itemEntries = canvassEntries.filter(
-        (e) => e.item_no === item.id && e.unit_price > 0,
-      );
-      const best = itemEntries.reduce<(typeof itemEntries)[0] | null>(
-        (min, e) => (min == null || e.unit_price < min.unit_price ? e : min),
-        null,
-      );
-      return {
-        item,
-        winner: best,
-        total: best ? best.unit_price * item.qty : 0,
-      };
-    });
-    const winnersTotal = winners.reduce((s, w) => s + w.total, 0);
-    const recommendedSummary =
-      winners
-        .filter((w) => w.winner)
-        .map(
-          (w) =>
-            `${w.item.desc} → ${w.winner!.supplier_name} (₱${fmt(
-              w.winner!.unit_price,
-            )}/unit)`,
-        )
-        .join("; ") || "—";
+  const openReleaseModal = useCallback(
+    (u: CanvassUserRow) => {
+      if (!sessionId) {
+        Alert.alert("Not ready", "Session not initialized yet.");
+        return;
+      }
+      if (!u.division_id) {
+        Alert.alert("Missing division", "This canvasser has no division set.");
+        return;
+      }
+      setReleaseTarget(u);
+      setRfqCount("1");
+      setQPrefix("");
+      setQStart("");
+      setReleaseModalOpen(true);
+    },
+    [sessionId],
+  );
 
+  const confirmReleaseRFQs = useCallback(async () => {
+    if (!sessionId || !releaseTarget?.division_id) return;
+    const count = Math.max(0, parseInt(rfqCount || "0", 10) || 0);
+    if (count <= 0) {
+      Alert.alert("Invalid count", "Enter how many RFQs to release.");
+      return;
+    }
+    const startNum = parseInt(qStart || "0", 10);
+    if (!qPrefix.trim() || !Number.isFinite(startNum) || startNum <= 0) {
+      Alert.alert(
+        "Quotation numbers required",
+        "Provide a prefix and a starting number to generate Quotation Nos.",
+      );
+      return;
+    }
+
+    try {
+      const now = new Date().toISOString();
+      const existing = await fetchAssignmentsForSession(sessionId);
+      const maxIdx = existing
+        .filter(
+          (a: any) =>
+            Number(a.division_id) === Number(releaseTarget.division_id) &&
+            (releaseTarget.id
+              ? Number(a.canvasser_id) === Number(releaseTarget.id)
+              : true),
+        )
+        .reduce((m, a: any) => Math.max(m, Number(a.rfq_index ?? 0) || 0), 0);
+
+      const rows = Array.from({ length: count }).map((_, i) => ({
+        division_id: releaseTarget.division_id!,
+        canvasser_id: releaseTarget.id,
+        released_at: now,
+        rfq_index: maxIdx + i + 1,
+        quotation_no: `${qPrefix.trim()}${startNum + i}`,
+      }));
+
+      await insertAssignmentsForDivisions(sessionId, rows);
+      setReleaseModalOpen(false);
+      setReleaseTarget(null);
+
+      const fresh = await fetchAssignmentsForSession(sessionId);
+      setAssignments(fresh as any);
+    } catch (e: any) {
+      Alert.alert(
+        "Release failed",
+        e?.message ?? "Could not release RFQs for this canvasser.",
+      );
+    }
+  }, [sessionId, releaseTarget, rfqCount, qPrefix, qStart]);
+
+  const buildResolutionData = (): BACResolutionData => {
     const chairperson =
       members.find((m) => m.designation.includes("Chairperson"))?.name ??
       "BAC Chairperson";
@@ -786,8 +891,6 @@ export default function BACView({
       .map((m) => m.name);
     const approver =
       members.find((m) => m.designation.includes("PARPO"))?.name ?? "PARPO II";
-    const totalCost =
-      winnersTotal || liveItems.reduce((s, i) => s + i.qty * i.unitCost, 0);
     return {
       resolutionNo: resNo || "—",
       resolvedDate: new Date().toLocaleDateString("en-PH", {
@@ -795,25 +898,40 @@ export default function BACView({
         day: "numeric",
         year: "numeric",
       }),
-      location: "HL Bldg. Carnation St. Triangulo Naga City",
-      prEntries: [
-        {
-          prNo: pr.prNo,
-          date: pr.date,
-          estimatedCost: totalCost.toLocaleString("en-PH", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          }),
-          endUser: pr.officeSection,
-          procMode: mode,
-        },
-      ],
-      whereasText:
-        pr.purpose +
-        (recommendedSummary && recommendedSummary !== "—"
-          ? `\n\nRecommended suppliers (per item, lowest quote): ${recommendedSummary}.`
-          : ""),
-      requestingOffice: pr.officeSection,
+      location:
+        resolutionLocation || "HL Bldg. Carnation St. Triangulo Naga City",
+      prEntries:
+        resolutionPRRows.length > 0
+          ? resolutionPRRows.map((r) => ({
+              prNo: r.prNo,
+              date: r.date,
+              estimatedCost: (
+                Number(r.estimatedCost || "0") || 0
+              ).toLocaleString("en-PH", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }),
+              endUser: r.endUser,
+              procMode: r.procMode,
+            }))
+          : [
+              {
+                prNo: pr.prNo,
+                date: pr.date,
+                estimatedCost: (
+                  liveItems.reduce((s, i) => s + i.qty * i.unitCost, 0) || 0
+                ).toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+                endUser: pr.officeSection,
+                procMode: mode,
+              },
+            ],
+      whereas1: resolutionWhereas1,
+      whereas2: resolutionWhereas2,
+      whereas3: resolutionWhereas3,
+      nowThereforeText: resolutionNowTherefore,
       provincialOffice: "DARPO-CAMARINES SUR I",
       bacChairperson: chairperson,
       bacViceChairperson: viceChair,
@@ -832,7 +950,7 @@ export default function BACView({
       if (!prId) return;
       const session = await ensureCanvassSession(prId);
       setSessionId(session.id);
-      const [{ items }, quotes, asgns] = await Promise.all([
+      const [{ header, items }, quotes, asgns] = await Promise.all([
         fetchPRWithItemsById(prId),
         fetchQuotesForSession(session.id),
         fetchAssignmentsForSession(session.id),
@@ -849,6 +967,10 @@ export default function BACView({
       );
       setCanvassEntries(quotes as any);
       setAssignments(asgns as any);
+      const divId =
+        header?.division_id != null ? Number(header.division_id) : null;
+      setResolutionDivisionId(Number.isFinite(divId as number) ? divId : null);
+      if (divId) setDivisionPRPool(await fetchCanvassablePRsByDivision(divId));
     } catch {
     } finally {
       setRefreshing(false);
@@ -883,17 +1005,66 @@ export default function BACView({
               </Text>
             </View>
           </View>
-          <View className="bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
-            <View className="flex-row items-center gap-1">
-              <MaterialIcons name="schedule" size={14} color="#92400e" />
-              <Text className="text-[10.5px] font-bold text-amber-800">
-                7-day window
-              </Text>
+          <View className="items-end gap-2">
+            <View className="bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
+              <View className="flex-row items-center gap-1">
+                <MaterialIcons name="schedule" size={14} color="#92400e" />
+                <Text className="text-[10.5px] font-bold text-amber-800">
+                  7-day window
+                </Text>
+              </View>
             </View>
+            <TouchableOpacity
+              onPress={() => setStandaloneResOpen(true)}
+              activeOpacity={0.85}
+              className="flex-row items-center gap-1.5 bg-white/10 px-2.5 py-1.5 rounded-lg border border-white/15"
+            >
+              <MaterialIcons name="gavel" size={13} color="#ffffff" />
+              <Text className="text-[10.5px] font-bold text-white/90">
+                Open Standalone BAC Resolution
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <StageStrip current={stage} completed={done} onNavigate={goToStage} />
       </View>
+
+      <Modal
+        visible={standaloneResOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setStandaloneResOpen(false)}
+      >
+        <View className="flex-1 bg-gray-50">
+          <View className="bg-white border-b border-gray-100 px-4 pt-4 pb-3">
+            <View className="flex-row items-center justify-between">
+              <TouchableOpacity
+                onPress={() => setStandaloneResOpen(false)}
+                activeOpacity={0.8}
+                className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center"
+              >
+                <MaterialIcons name="close" size={18} color="#6b7280" />
+              </TouchableOpacity>
+              <View className="items-center flex-1 px-3">
+                <Text className="text-[11px] text-gray-400 font-semibold">
+                  Standalone
+                </Text>
+                <Text className="text-[13px] font-extrabold text-gray-900">
+                  BAC Resolution
+                </Text>
+              </View>
+              <View style={{ width: 36 }} />
+            </View>
+          </View>
+
+          <BACResolutionModule
+            currentUserId={currentUser?.id ?? null}
+            divisionId={
+              resolutionDivisionId ?? currentUser?.division_id ?? null
+            }
+          />
+        </View>
+      </Modal>
 
       <ScrollView
         className="flex-1"
@@ -1083,8 +1254,6 @@ export default function BACView({
           <PRReceptionStep
             pr={pr}
             liveItems={liveItems}
-            bacNo={bacNo}
-            onBacNoChange={setBacNo}
             currentUser={currentUser}
             isCompleted={isViewingCompleted}
             onResubmit={() =>
@@ -1122,11 +1291,6 @@ export default function BACView({
                   </View>
                 ) : (
                   canvassUsers.map((user) => {
-                    const st = canvassStatuses[user.id] ?? {
-                      status: "pending",
-                      releaseDate: "",
-                      returnDate: "",
-                    };
                     const roleLabel =
                       user.role_id === 7 ? "Canvasser" : "End User";
                     const roleBg =
@@ -1136,11 +1300,7 @@ export default function BACView({
                     return (
                       <View
                         key={user.id}
-                        className={`flex-row items-center justify-between p-2.5 mb-1.5 rounded-2xl border ${
-                          st.status !== "pending"
-                            ? "bg-emerald-50 border-emerald-200"
-                            : "bg-white border-gray-200"
-                        }`}
+                        className="flex-row items-center justify-between p-2.5 mb-1.5 rounded-2xl border bg-white border-gray-200"
                       >
                         <View className="w-16 bg-emerald-100 px-1.5 py-0.5 rounded-md">
                           <Text
@@ -1167,49 +1327,22 @@ export default function BACView({
                             </Text>
                           </View>
                         </View>
-                        <View
-                          className={`px-2 py-0.5 rounded-full mr-2 ${
-                            st.status === "pending"
-                              ? "bg-amber-100"
-                              : st.status === "released"
-                                ? "bg-emerald-100"
-                                : "bg-blue-100"
-                          }`}
-                        >
-                          <Text
-                            className={`text-[10px] font-bold ${
-                              st.status === "pending"
-                                ? "text-amber-800"
-                                : st.status === "released"
-                                  ? "text-emerald-700"
-                                  : "text-blue-700"
-                            }`}
-                          >
-                            {st.status === "pending"
-                              ? "Pending"
-                              : st.status === "released"
-                                ? "Released"
-                                : "Returned"}
-                          </Text>
-                        </View>
-                        {st.status !== "returned" && (
+                        {user.role_id === 7 ? (
                           <TouchableOpacity
-                            onPress={async () =>
-                              await toggleUserStatus(user.id)
-                            }
+                            onPress={() => openReleaseModal(user)}
                             activeOpacity={0.8}
-                            className={`px-2.5 py-1 rounded-lg ${
-                              st.status === "pending"
-                                ? "bg-emerald-600"
-                                : "bg-blue-600"
-                            }`}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600"
                           >
                             <Text className="text-[11px] font-bold text-white">
-                              {st.status === "pending"
-                                ? "📤 Release"
-                                : "📥 Receive"}
+                              Release RFQs
                             </Text>
                           </TouchableOpacity>
+                        ) : (
+                          <View className="px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200">
+                            <Text className="text-[11px] font-bold text-gray-400">
+                              —
+                            </Text>
+                          </View>
                         )}
                       </View>
                     );
@@ -1759,8 +1892,12 @@ export default function BACView({
                     </Field>
                   </View>
                   <View className="flex-1">
-                    <Field label="PR Reference">
-                      <Input value={pr.prNo} readonly />
+                    <Field label="Resolved At" required>
+                      <Input
+                        value={resolutionLocation}
+                        onChange={setResolutionLocation}
+                        placeholder="Location of resolution signing"
+                      />
                     </Field>
                   </View>
                 </View>
@@ -1772,119 +1909,227 @@ export default function BACView({
                     onSelect={setMode}
                   />
                 </Field>
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={() => setResolutionSource("valid")}
+                    activeOpacity={0.85}
+                    className={`px-3 py-2 rounded-xl border ${resolutionSource === "valid" ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                  >
+                    <Text
+                      className={`text-[11px] font-bold ${resolutionSource === "valid" ? "text-emerald-700" : "text-gray-500"}`}
+                    >
+                      Choose Valid PRs
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setResolutionSource("manual")}
+                    activeOpacity={0.85}
+                    className={`px-3 py-2 rounded-xl border ${resolutionSource === "manual" ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                  >
+                    <Text
+                      className={`text-[11px] font-bold ${resolutionSource === "manual" ? "text-emerald-700" : "text-gray-500"}`}
+                    >
+                      Manual PR Entry
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View className="mt-3">
+                  <Field label="WHEREAS #1" required>
+                    <Input
+                      value={resolutionWhereas1}
+                      onChange={setResolutionWhereas1}
+                    />
+                  </Field>
+                  <Field label="WHEREAS #2" required>
+                    <Input
+                      value={resolutionWhereas2}
+                      onChange={setResolutionWhereas2}
+                    />
+                  </Field>
+                  <Field label="WHEREAS #3" required>
+                    <Input
+                      value={resolutionWhereas3}
+                      onChange={setResolutionWhereas3}
+                    />
+                  </Field>
+                  <Field label="NOW THEREFORE / RESOLVED text" required>
+                    <Input
+                      value={resolutionNowTherefore}
+                      onChange={setResolutionNowTherefore}
+                    />
+                  </Field>
+                </View>
               </View>
             </Card>
 
             <Card>
-              <View className="px-4 pt-3 pb-2">
-                <View className="flex-row items-center gap-2 mb-3">
-                  <Text className="text-[9.5px] font-bold tracking-widest uppercase text-gray-400">
-                    Signatories
-                  </Text>
-                  <View className="bg-emerald-100 px-2 py-0.5 rounded-md">
-                    <Text className="text-[10px] font-bold text-emerald-700">
-                      {members.filter((m) => m.signed).length}/{members.length}{" "}
-                      signed
-                    </Text>
+              <View className="px-4 pt-3 pb-3">
+                <Divider label="Resolution PR Table Entries" />
+                {resolutionSource === "valid" && (
+                  <View className="mb-2">
+                    {divisionPRPool
+                      .filter(
+                        (p: any) =>
+                          Number(p.division_id) ===
+                          Number(resolutionDivisionId),
+                      )
+                      .slice(0, 12)
+                      .map((p: any) => {
+                        const exists = resolutionPRRows.some(
+                          (r) => r.prNo === p.pr_no,
+                        );
+                        return (
+                          <TouchableOpacity
+                            key={p.id}
+                            onPress={() =>
+                              setResolutionPRRows((prev) => {
+                                if (exists)
+                                  return prev.filter((r) => r.prNo !== p.pr_no);
+                                return [
+                                  ...prev,
+                                  {
+                                    key: `pool-${p.id}`,
+                                    prId: Number(p.id),
+                                    prNo: p.pr_no,
+                                    date: p.created_at
+                                      ? new Date(
+                                          p.created_at,
+                                        ).toLocaleDateString("en-PH")
+                                      : "",
+                                    estimatedCost: String(p.total_cost ?? 0),
+                                    endUser: p.office_section ?? "",
+                                    procMode: mode,
+                                  },
+                                ];
+                              })
+                            }
+                            className={`px-3 py-2 rounded-xl border mb-1 ${exists ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                          >
+                            <Text className="text-[11.5px] font-semibold text-gray-700">
+                              {p.pr_no} · {p.office_section ?? "—"}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                   </View>
-                  <View className="flex-1 h-px bg-gray-200" />
-                </View>
-                {members.map((m, idx) => (
+                )}
+                {resolutionPRRows.map((row) => (
                   <View
-                    key={m.name}
-                    className={`flex-row items-center justify-between p-3 mb-2 rounded-2xl border ${
-                      m.signed
-                        ? "bg-emerald-50 border-emerald-200"
-                        : "bg-white border-gray-200"
-                    }`}
+                    key={row.key}
+                    className="border border-gray-200 rounded-xl p-2 mb-2"
                   >
-                    <View className="flex-row items-center gap-2.5 flex-1">
-                      <View
-                        className={`w-8 h-8 rounded-lg items-center justify-center border ${
-                          m.signed
-                            ? "bg-emerald-500 border-emerald-500"
-                            : "bg-gray-100 border-gray-200"
-                        }`}
-                      >
-                        {m.signed ? (
-                          <MaterialIcons
-                            name="check"
-                            size={16}
-                            color="#ffffff"
+                    <View className="flex-row gap-2.5">
+                      <View className="flex-1">
+                        <Field label="PR Number" required>
+                          <Input
+                            value={row.prNo}
+                            onChange={(v) =>
+                              setResolutionPRRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === row.key ? { ...x, prNo: v } : x,
+                                ),
+                              )
+                            }
                           />
-                        ) : (
-                          <Text className="text-[12px] font-bold text-gray-500">
-                            {m.name[0]}
-                          </Text>
-                        )}
+                        </Field>
                       </View>
-                      <View>
-                        <Text
-                          className={`text-[13px] font-semibold ${
-                            m.signed ? "text-emerald-800" : "text-gray-800"
-                          }`}
-                        >
-                          {m.name}
-                        </Text>
-                        <Text className="text-[11px] text-gray-400">
-                          {m.designation}
-                        </Text>
+                      <View className="flex-1">
+                        <Field label="Date" required>
+                          <Input
+                            value={row.date}
+                            onChange={(v) =>
+                              setResolutionPRRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === row.key ? { ...x, date: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
                       </View>
                     </View>
-                    {m.signed ? (
-                      <View className="items-end">
-                        <View className="flex-row items-center gap-1">
-                          <MaterialIcons
-                            name="verified"
-                            size={14}
-                            color="#10b981"
+                    <View className="flex-row gap-2.5">
+                      <View className="flex-1">
+                        <Field label="Estimated Cost (Php)" required>
+                          <Input
+                            value={row.estimatedCost}
+                            onChange={(v) =>
+                              setResolutionPRRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === row.key
+                                    ? { ...x, estimatedCost: v }
+                                    : x,
+                                ),
+                              )
+                            }
+                            numeric
                           />
-                          <Text className="text-[11.5px] font-semibold text-emerald-600">
-                            Signed
-                          </Text>
-                        </View>
-                        <Text className="text-[10px] text-gray-400">
-                          at {m.signedAt}
-                        </Text>
+                        </Field>
                       </View>
-                    ) : (
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() =>
-                          setMembers((ms) =>
-                            ms.map((mb, i) =>
-                              i !== idx
-                                ? mb
-                                : {
-                                    ...mb,
-                                    signed: true,
-                                    signedAt: new Date().toLocaleTimeString(
-                                      "en-PH",
-                                      {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      },
-                                    ),
-                                  },
+                      <View className="flex-1">
+                        <Field label="End User" required>
+                          <Input
+                            value={row.endUser}
+                            onChange={(v) =>
+                              setResolutionPRRows((prev) =>
+                                prev.map((x) =>
+                                  x.key === row.key ? { ...x, endUser: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                    </View>
+                    <Field label="Recommended Procurement Mode" required>
+                      <Input
+                        value={row.procMode}
+                        onChange={(v) =>
+                          setResolutionPRRows((prev) =>
+                            prev.map((x) =>
+                              x.key === row.key ? { ...x, procMode: v } : x,
                             ),
                           )
                         }
-                        className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white"
+                      />
+                    </Field>
+                    <View className="items-end">
+                      <TouchableOpacity
+                        onPress={() =>
+                          setResolutionPRRows((prev) =>
+                            prev.filter((x) => x.key !== row.key),
+                          )
+                        }
                       >
-                        <View className="flex-row items-center gap-1.5">
-                          <MaterialIcons
-                            name="edit"
-                            size={14}
-                            color="#6b7280"
-                          />
-                          <Text className="text-[12px] font-semibold text-gray-500">
-                            Sign
-                          </Text>
-                        </View>
+                        <Text className="text-[11px] font-bold text-red-500">
+                          Remove
+                        </Text>
                       </TouchableOpacity>
-                    )}
+                    </View>
                   </View>
                 ))}
+                <TouchableOpacity
+                  onPress={() =>
+                    setResolutionPRRows((prev) => [
+                      ...prev,
+                      {
+                        key: `manual-${Date.now()}-${prev.length}`,
+                        prId: null,
+                        prNo: "",
+                        date: "",
+                        estimatedCost: "",
+                        endUser: "",
+                        procMode: mode,
+                      },
+                    ])
+                  }
+                  activeOpacity={0.85}
+                  className="px-3 py-2 rounded-xl border border-dashed border-gray-300"
+                >
+                  <Text className="text-[11.5px] font-bold text-gray-600 text-center">
+                    + Add PR Row
+                  </Text>
+                </TouchableOpacity>
               </View>
             </Card>
 
@@ -1899,14 +2144,7 @@ export default function BACView({
                   })
                 }
               />
-            ) : (
-              !allSigned && (
-                <Banner
-                  type="warning"
-                  text="All BAC members and PARPO II must sign before proceeding."
-                />
-              )
-            )}
+            ) : null}
 
             {!!resNo && (
               <View className="flex-row justify-center mb-3">
@@ -1939,7 +2177,18 @@ export default function BACView({
               done={done}
               onPrev={goToStage}
               onNext={goToStage}
-              canSubmit={!isViewingCompleted && allSigned && !!resNo && !!mode}
+              canSubmit={
+                !isViewingCompleted &&
+                allSigned &&
+                !!resNo &&
+                !!mode &&
+                !!resolutionLocation &&
+                !!resolutionWhereas1 &&
+                !!resolutionWhereas2 &&
+                !!resolutionWhereas3 &&
+                !!resolutionNowTherefore &&
+                resolutionPRRows.length > 0
+              }
               submitLabel="Resolve & Complete BAC Workflow"
               onSubmit={handleStep7}
             />
@@ -1951,7 +2200,7 @@ export default function BACView({
           <AAAView
             sessionId={sessionId}
             pr={pr}
-            bacNo={bacNo}
+            bacNo={firstQuotationNo}
             resolutionNo={resNo}
             mode={mode}
             onComplete={onComplete}
@@ -1986,12 +2235,89 @@ export default function BACView({
         entries={canvassEntries}
         assignments={assignments}
         users={canvassUsers}
-        bacNo={bacNo}
         chairperson={
           members.find((m) => m.designation.includes("Chairperson"))?.name ??
           "BAC Chairperson"
         }
       />
+
+      {/* ── Release RFQs Modal ── */}
+      <Modal
+        visible={releaseModalOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setReleaseModalOpen(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/40"
+          onPress={() => setReleaseModalOpen(false)}
+        />
+        <View className="absolute left-0 right-0 bottom-0 bg-white rounded-t-3xl overflow-hidden">
+          <View className="px-5 pt-4 pb-3 border-b border-gray-100">
+            <Text className="text-[13px] font-extrabold text-gray-900">
+              Release RFQs
+            </Text>
+            <Text className="text-[11px] text-gray-500 mt-0.5">
+              Assign Quotation Nos. before releasing to the canvasser.
+            </Text>
+          </View>
+          <View className="px-5 pt-3 pb-4">
+            <Field label="Canvasser">
+              <Input value={releaseTarget?.username ?? "—"} readonly />
+            </Field>
+            <View className="flex-row gap-2.5">
+              <View className="flex-1">
+                <Field label="How many RFQs to release?" required>
+                  <Input
+                    value={rfqCount}
+                    onChange={setRfqCount}
+                    placeholder="e.g. 3"
+                    numeric
+                  />
+                </Field>
+              </View>
+              <View className="flex-1">
+                <Field label="Starting number" required>
+                  <Input
+                    value={qStart}
+                    onChange={setQStart}
+                    placeholder="e.g. 79"
+                    numeric
+                  />
+                </Field>
+              </View>
+            </View>
+            <Field label="Quotation No. prefix" required>
+              <Input
+                value={qPrefix}
+                onChange={setQPrefix}
+                placeholder="e.g. 2026-02-"
+              />
+            </Field>
+
+            <View className="flex-row items-center justify-end gap-2 mt-2">
+              <TouchableOpacity
+                onPress={() => setReleaseModalOpen(false)}
+                activeOpacity={0.8}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+              >
+                <Text className="text-[12px] font-bold text-gray-600">
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmReleaseRFQs}
+                activeOpacity={0.85}
+                className="px-4 py-2.5 rounded-xl bg-[#064E3B]"
+              >
+                <Text className="text-[12px] font-bold text-white">
+                  Release
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

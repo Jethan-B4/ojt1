@@ -263,6 +263,8 @@ export async function insertAssignmentsForDivisions(
     division_id: number;
     canvasser_id?: number;
     released_at?: string;
+    quotation_no?: string | null;
+    rfq_index?: number | null;
   }>,
 ) {
   const sid = String(sessionId);
@@ -271,6 +273,8 @@ export async function insertAssignmentsForDivisions(
     session_id: sid,
     division_id: a.division_id,
     canvasser_id: a.canvasser_id ?? null,
+    quotation_no: a.quotation_no ?? null,
+    rfq_index: a.rfq_index ?? null,
     released_at: a.released_at ?? new Date().toISOString(),
     status: "released" as const,
   }));
@@ -278,6 +282,26 @@ export async function insertAssignmentsForDivisions(
     .from("canvasser_assignments")
     .insert(rows)
     .select();
+  if (error) throw error;
+  return data;
+}
+
+export async function markAssignmentReturnedById(
+  sessionId: string | number,
+  assignmentId: number,
+  returned_at?: string,
+) {
+  const sid = String(sessionId);
+  const { data, error } = await supabase
+    .from("canvasser_assignments")
+    .update({
+      returned_at: returned_at ?? new Date().toISOString(),
+      status: "returned",
+    })
+    .eq("session_id", sid)
+    .eq("id", assignmentId)
+    .select()
+    .single();
   if (error) throw error;
   return data;
 }

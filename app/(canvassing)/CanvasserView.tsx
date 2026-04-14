@@ -30,18 +30,14 @@ import {
   ensureCanvassSession,
   fetchAssignmentsForSession,
   fetchQuotesForSession,
-  fetchQuotesForSubmission,
   fetchUsersByRole,
-  markAssignmentReturned,
-  replaceSupplierQuotesForSubmission,
-  updateCanvassStage,
+  markAssignmentReturnedById,
 } from "@/lib/supabase/canvassing";
 import { supabase } from "@/lib/supabase/client";
-import { fetchPRIdByNo, fetchPRWithItemsById } from "@/lib/supabase/pr";
+import { fetchPRIdByNo, fetchPRWithItemsById, insertRemark } from "@/lib/supabase/pr";
 import type {
   CanvassingPR,
   CanvassingPRItem,
-  SupplierQ,
 } from "@/types/canvassing";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -77,16 +73,26 @@ const prTotal = (items: CanvassingPRItem[]) =>
 
 type Tab = "progress" | "my_rfq";
 
-const mkSupplier = (id: number): SupplierQ => ({
-  id,
-  name: "",
-  address: "",
-  contact: "",
-  tin: "",
-  days: "",
-  prices: {},
-  remarks: "",
-});
+function pickMyAssignment(asgns: any[], currentUser: any) {
+  const bySelf = (asgns ?? []).filter(
+    (a) => Number(a.canvasser_id) === Number(currentUser?.id),
+  );
+  const byDiv = (asgns ?? []).filter(
+    (a) => Number(a.division_id) === Number(currentUser?.division_id),
+  );
+  const pool = bySelf.length ? bySelf : byDiv;
+  const released = pool.filter((a) => String(a.status) === "released");
+  const candidates = released.length ? released : pool;
+  const sorted = [...candidates].sort((a, b) => {
+    const ai = Number(a.rfq_index ?? 0) || 0;
+    const bi = Number(b.rfq_index ?? 0) || 0;
+    if (ai !== bi) return ai - bi;
+    const ad = Date.parse(String(a.released_at ?? "")) || 0;
+    const bd = Date.parse(String(b.released_at ?? "")) || 0;
+    return bd - ad;
+  });
+  return sorted[0] ?? null;
+}
 
 // ─── Winner calculation ───────────────────────────────────────────────────────
 
@@ -167,30 +173,6 @@ function Field({
       </Text>
       {children}
     </View>
-  );
-}
-
-function Input({
-  value,
-  placeholder,
-  numeric,
-  onChange,
-}: {
-  value: string;
-  placeholder?: string;
-  numeric?: boolean;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <TextInput
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor="#9ca3af"
-      keyboardType={numeric ? "decimal-pad" : "default"}
-      className="rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-gray-800"
-      style={{ borderWidth: 1.5, borderColor: "#e5e7eb" }}
-    />
   );
 }
 
@@ -533,19 +515,23 @@ export default function CanvasserView({
   onBack?: () => void;
 }) {
   const { currentUser } = useAuth();
+  const hideLowestOffers = true;
 
   const [activeTab, setActiveTab] = useState<Tab>("my_rfq");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [assigned, setAssigned] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [liveItems, setLiveItems] = useState<CanvassingPRItem[]>(pr.items);
-  const [supps, setSupps] = useState<SupplierQ[]>([mkSupplier(1)]);
   const [assignments, setAssignments] = useState<CanvasserAssignmentRow[]>([]);
   const [allEntries, setAllEntries] = useState<CanvassEntryRow[]>([]);
   const [allUsers, setAllUsers] = useState<CanvassUserRow[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDataOverride, setPreviewDataOverride] =
     useState<CanvassPreviewData | null>(null);
+  const [myAssignmentId, setMyAssignmentId] = useState<number | null>(null);
+  const [myQuotationNo, setMyQuotationNo] = useState<string>("—");
+  const [returnRemark, setReturnRemark] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -565,13 +551,11 @@ export default function CanvasserView({
           .select("*")
           .eq("session_id", session.id);
 
-        const mine = (asgns ?? []).find(
-          (a: any) =>
-            a.canvasser_id === (currentUser?.id ?? -1) ||
-            a.division_id === (currentUser?.division_id ?? -1),
-        );
+        const mine = pickMyAssignment(asgns ?? [], currentUser);
+        setMyAssignmentId(mine?.id ?? null);
+        setMyQuotationNo(mine?.quotation_no ?? "—");
         setAssigned(
-          Boolean(mine && (mine.status === "released" || !mine.returned_at)),
+          Boolean(mine && String(mine.status) === "released"),
         );
 
         const { items } = await fetchPRWithItemsById(prId);
@@ -586,37 +570,7 @@ export default function CanvasserView({
           })),
         );
 
-        // Load only this canvasser's own previously-submitted quotes
-        const myAssignmentId =
-          (asgns ?? []).find(
-            (a: any) =>
-              a.canvasser_id === (currentUser?.id ?? -1) ||
-              a.division_id === (currentUser?.division_id ?? -1),
-          )?.id ?? null;
-        const existing = await fetchQuotesForSubmission(
-          session.id,
-          myAssignmentId,
-        );
-        if (existing.length > 0) {
-          const supplierMap = new Map<string, SupplierQ>();
-          let nextId = 1;
-          (existing as any[]).forEach((e) => {
-            const name = e.supplier_name || `Supplier ${nextId}`;
-            if (!supplierMap.has(name)) {
-              supplierMap.set(name, {
-                ...mkSupplier(nextId++),
-                name,
-                tin: e.tin_no ?? "",
-                days: e.delivery_days ?? "",
-              });
-            }
-            const sp = supplierMap.get(name)!;
-            sp.prices[parseInt(String(e.item_no))] = String(e.unit_price ?? "");
-          });
-          const list = Array.from(supplierMap.values());
-          setSupps(list.length ? list : [mkSupplier(1)]);
-          setSubmitted(true);
-        }
+        setSubmitted(Boolean(mine && String(mine.status) === "returned"));
 
         const [asgnsAll, entries, users] = await Promise.all([
           fetchAssignmentsForSession(session.id),
@@ -624,6 +578,9 @@ export default function CanvasserView({
           fetchUsersByRole(CANVASS_ROLE_IDS),
         ]);
         setAssignments(asgnsAll);
+        const mine2 = pickMyAssignment(asgnsAll as any[], currentUser);
+        setMyAssignmentId(mine2?.id ?? null);
+        setMyQuotationNo(mine2?.quotation_no ?? "—");
         setAllEntries(entries);
         setAllUsers(users);
       } catch {
@@ -631,7 +588,7 @@ export default function CanvasserView({
         setLoading(false);
       }
     })();
-  }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
+  }, [pr.prNo, currentUser]);
 
   const onRefresh = useCallback(async () => {
     try {
@@ -644,13 +601,11 @@ export default function CanvasserView({
         .from("canvasser_assignments")
         .select("*")
         .eq("session_id", session.id);
-      const mine = (asgns ?? []).find(
-        (a: any) =>
-          a.canvasser_id === (currentUser?.id ?? -1) ||
-          a.division_id === (currentUser?.division_id ?? -1),
-      );
+      const mine = pickMyAssignment(asgns ?? [], currentUser);
+      setMyAssignmentId(mine?.id ?? null);
+      setMyQuotationNo(mine?.quotation_no ?? "—");
       setAssigned(
-        Boolean(mine && (mine.status === "released" || !mine.returned_at)),
+        Boolean(mine && String(mine.status) === "released"),
       );
       const { items } = await fetchPRWithItemsById(prId);
       setLiveItems(
@@ -663,46 +618,23 @@ export default function CanvasserView({
           unitCost: i.unit_price,
         })),
       );
-      const existing = await fetchQuotesForSubmission(
-        session.id,
-        mine?.id ?? null,
-      );
-      if (existing.length > 0) {
-        const supplierMap = new Map<string, SupplierQ>();
-        let nextId = 1;
-        (existing as any[]).forEach((e) => {
-          const name = e.supplier_name || `Supplier ${nextId}`;
-          if (!supplierMap.has(name)) {
-            supplierMap.set(name, {
-              ...mkSupplier(nextId++),
-              name,
-              tin: e.tin_no ?? "",
-              days: e.delivery_days ?? "",
-            });
-          }
-          const sp = supplierMap.get(name)!;
-          sp.prices[parseInt(String(e.item_no))] = String(e.unit_price ?? "");
-        });
-        const list = Array.from(supplierMap.values());
-        setSupps(list.length ? list : [mkSupplier(1)]);
-        setSubmitted(true);
-      } else {
-        setSubmitted(false);
-        setSupps([mkSupplier(1)]);
-      }
+      setSubmitted(Boolean(mine && String(mine.status) === "returned"));
       const [asgnsAll, entries, users] = await Promise.all([
         fetchAssignmentsForSession(session.id),
         fetchQuotesForSession(session.id),
         fetchUsersByRole(CANVASS_ROLE_IDS),
       ]);
       setAssignments(asgnsAll);
+      const mine2 = pickMyAssignment(asgnsAll as any[], currentUser);
+      setMyAssignmentId(mine2?.id ?? null);
+      setMyQuotationNo(mine2?.quotation_no ?? "—");
       setAllEntries(entries);
       setAllUsers(users);
     } catch {
     } finally {
       setRefreshing(false);
     }
-  }, [pr.prNo, currentUser?.id, currentUser?.division_id]);
+  }, [pr.prNo, currentUser]);
   // ── Realtime subscriptions ───────────────────────────────────────────────────
   useEffect(() => {
     if (!sessionId) return;
@@ -737,7 +669,13 @@ export default function CanvasserView({
         },
         async () => {
           try {
-            setAssignments(await fetchAssignmentsForSession(sessionId));
+            const fresh = await fetchAssignmentsForSession(sessionId);
+            setAssignments(fresh);
+            const mine = pickMyAssignment(fresh as any[], currentUser);
+            setMyAssignmentId(mine?.id ?? null);
+            setMyQuotationNo(mine?.quotation_no ?? "—");
+            setAssigned(Boolean(mine && String(mine.status) === "released"));
+            setSubmitted(Boolean(mine && String(mine.status) === "returned"));
           } catch {}
         },
       )
@@ -747,96 +685,102 @@ export default function CanvasserView({
       supabase.removeChannel(entriesChannel);
       supabase.removeChannel(assignChannel);
     };
-  }, [sessionId]);
+  }, [sessionId, currentUser]);
 
   // ── Submit handler ───────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const rows = supps
-        .flatMap((sp) =>
-          liveItems.map((it) => {
-            const up = parseFloat(sp.prices[it.id] || "0") || 0;
-            return {
-              item_no: it.id,
-              description: it.desc,
-              unit: it.unit,
-              quantity: it.qty,
-              supplier_name: sp.name || `Supplier ${sp.id}`,
-              tin_no: sp.tin || null,
-              delivery_days: sp.days || null,
-              unit_price: up,
-              total_price: up * it.qty,
-              is_winning: null as any,
-            };
-          }),
-        )
-        .filter((r) => r.unit_price > 0);
-
-      if (rows.length === 0) {
+      if (!myAssignmentId) {
         Alert.alert(
-          "No quotes",
-          "Enter at least one unit price before submitting.",
+          "No assignment",
+          "You don't have an active RFQ assignment for this PR.",
         );
         return;
       }
-
-      const myAssignmentId =
-        assignments.find((a) => a.division_id === currentUser?.division_id)
-          ?.id ?? null;
-      await replaceSupplierQuotesForSubmission(sessionId, myAssignmentId, rows);
-      if (currentUser?.division_id)
-        await markAssignmentReturned(sessionId, currentUser.division_id);
-      try {
-        await updateCanvassStage(sessionId, "collect_canvass");
-      } catch {}
+      const prId = await fetchPRIdByNo(pr.prNo);
+      if (!prId) throw new Error("PR not found");
+      if (!returnRemark.trim()) {
+        Alert.alert("Remarks required", "Please enter your return remarks.");
+        return;
+      }
+      setSubmitting(true);
+      await insertRemark(
+        prId,
+        currentUser?.id ?? null,
+        `[Canvasser Return][RFQ ${myQuotationNo || myAssignmentId}] ${returnRemark.trim()}`,
+        null,
+      );
+      await markAssignmentReturnedById(sessionId, myAssignmentId);
 
       setSubmitted(true);
       setActiveTab("progress");
-      Alert.alert("Submitted", "Your quotations have been submitted to BAC.");
+      setReturnRemark("");
+      Alert.alert("Returned", "Filled-out RFQ has been returned to BAC.");
     } catch (e: any) {
-      Alert.alert("Submit failed", e?.message ?? "Could not submit canvass");
+      Alert.alert("Return failed", e?.message ?? "Could not return RFQ");
+    } finally {
+      setSubmitting(false);
     }
-  }, [sessionId, liveItems, supps, currentUser, assignments]);
+  }, [
+    sessionId,
+    myAssignmentId,
+    pr.prNo,
+    returnRemark,
+    currentUser?.id,
+    myQuotationNo,
+  ]);
 
   // ── Build RFQ preview data ────────────────────────────────────────────────────
-  const buildPreviewData = useCallback((): CanvassPreviewData => {
-    const deadline = new Date();
-    deadline.setDate(deadline.getDate() + 7);
-    return {
-      prNo: pr.prNo,
-      quotationNo: "—",
-      date: pr.date,
-      deadline: deadline.toLocaleDateString("en-PH", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-      bacChairperson: "ATTY. JAIME G. RESOCO, JR.",
-      officeSection: pr.officeSection,
-      purpose: pr.purpose,
-      items: liveItems.map((item, i) => {
-        let bestSupplier = "";
-        let bestPrice = 0;
-        supps.forEach((sp) => {
-          const p = parseFloat(sp.prices[item.id] || "0") || 0;
-          if (p > 0 && (bestPrice === null || p < bestPrice)) {
-            bestPrice = p;
-            bestSupplier = sp.name;
-          }
-        });
-        return {
+  const buildPreviewDataForAssignment = useCallback(
+    (assignment?: CanvasserAssignmentRow | null): CanvassPreviewData => {
+      const issuedDate = assignment?.released_at
+        ? new Date(assignment.released_at)
+        : new Date();
+      const deadline = new Date(issuedDate);
+      deadline.setDate(deadline.getDate() + 7);
+      const quotationNo =
+        (assignment as any)?.quotation_no ??
+        `RFQ #${(assignment as any)?.rfq_index ?? assignment?.id ?? "—"}`;
+      return {
+        prNo: pr.prNo,
+        quotationNo,
+        date: issuedDate.toLocaleDateString("en-PH", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }),
+        deadline: deadline.toLocaleDateString("en-PH", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }),
+        bacChairperson: "ATTY. JAIME G. RESOCO, JR.",
+        officeSection: pr.officeSection,
+        purpose: pr.purpose,
+        assignedTo: currentUser?.fullname ?? "—",
+        assignedDivision:
+          allUsers.find((u) => Number(u.id) === Number(currentUser?.id))
+            ?.division_name ?? "—",
+        items: liveItems.map((item, i) => ({
           itemNo: i + 1,
-          description: item.desc + (bestSupplier ? ` (${bestSupplier})` : ""),
+          description: item.desc,
           qty: item.qty,
           unit: item.unit,
-          unitPrice:
-            bestPrice !== null && bestPrice > 0 ? bestPrice.toFixed(2) : "",
-        };
-      }),
-      canvasserNames: currentUser?.fullname ? [currentUser.fullname] : [],
-    };
-  }, [pr, liveItems, supps, currentUser]);
+          unitPrice: "",
+        })),
+        canvasserNames: currentUser?.fullname ? [currentUser.fullname] : [],
+      };
+    },
+    [pr, liveItems, currentUser, allUsers],
+  );
+
+  const buildPreviewData = useCallback((): CanvassPreviewData => {
+    const mine = assignments.find(
+      (a) => Number(a.id) === Number(myAssignmentId),
+    );
+    return buildPreviewDataForAssignment(mine ?? null);
+  }, [assignments, myAssignmentId, buildPreviewDataForAssignment]);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const userById = useMemo(
@@ -854,18 +798,11 @@ export default function CanvasserView({
   );
   const returnedCount = returnedAssignments.length;
   const totalCount = assignments.length;
-
-  const hasQuoteEntered = supps.some((sp) =>
-    liveItems.some((it) => (parseFloat(sp.prices[it.id] || "0") || 0) > 0),
+  const myAssignments = assignments.filter(
+    (a) =>
+      Number(a.canvasser_id) === Number(currentUser?.id) ||
+      Number(a.division_id) === Number(currentUser?.division_id),
   );
-
-  const quotedTotal = supps.reduce((sum, sp) => {
-    const t = liveItems.reduce((s, it) => {
-      const up = parseFloat(sp.prices[it.id] || "0") || 0;
-      return s + up * it.qty;
-    }, 0);
-    return sum + t;
-  }, 0);
 
   // ── Render ─────────────────────────────────────────────────────────────────────
   if (loading) {
@@ -1005,8 +942,8 @@ export default function CanvasserView({
                   </Text>
                 </View>
               )}
-              {/* Draft dot on My RFQ tab when quote is entered but not submitted */}
-              {tab.key === "my_rfq" && !submitted && hasQuoteEntered && (
+              {/* Pending dot on My RFQ tab while assigned and not returned */}
+              {tab.key === "my_rfq" && assigned && !submitted && (
                 <View className="bg-amber-400 rounded-full w-2 h-2" />
               )}
             </TouchableOpacity>
@@ -1142,7 +1079,7 @@ export default function CanvasserView({
           )}
 
           {/* Lowest-offer abstract */}
-          {allEntries.length > 0 && (
+          {!hideLowestOffers && allEntries.length > 0 && (
             <>
               <View className="flex-row items-center gap-2 mb-2 mt-1">
                 <Text className="text-[9.5px] font-bold tracking-widest uppercase text-gray-400">
@@ -1183,12 +1120,14 @@ export default function CanvasserView({
                 );
                 const makePreview = (): CanvassPreviewData => ({
                   prNo: pr.prNo,
-                  quotationNo: "—",
+                  quotationNo: (a as any).quotation_no ?? "—",
                   date: new Date().toLocaleDateString("en-PH"),
                   deadline: "—",
                   bacChairperson: "ATTY. JAIME G. RESOCO, JR.",
                   officeSection: pr.officeSection,
                   purpose: pr.purpose,
+                  assignedTo: user?.username ?? "—",
+                  assignedDivision: user?.division_name ?? "—",
                   items: liveItems.map((item, idx) => {
                     const entry = cardEntries.find(
                       (e) => e.item_no === item.id,
@@ -1266,10 +1205,10 @@ export default function CanvasserView({
               <MaterialIcons name="check-circle" size={17} color="#065f46" />
               <View className="flex-1">
                 <Text className="text-[12.5px] font-bold text-emerald-800">
-                  Submitted to BAC
+                  Returned to BAC
                 </Text>
                 <Text className="text-[11px] text-emerald-600 mt-0.5">
-                  You can edit your prices and re-submit below.
+                  This RFQ is already marked as returned.
                 </Text>
               </View>
             </View>
@@ -1278,168 +1217,98 @@ export default function CanvasserView({
           {/* PR line-items reference */}
           <ItemsTable items={liveItems} />
 
-          {/* Quotation entry */}
           <Card>
             <View className="px-4 pt-3 pb-3">
-              <Divider label="Enter Supplier Quotations" />
-              {supps.map((sp, sIdx) => (
-                <View
-                  key={sp.id}
-                  className="border border-gray-200 rounded-2xl mb-3 overflow-hidden"
-                >
-                  <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
-                    <Text className="text-[13.5px] font-semibold text-gray-800">
-                      Supplier {sIdx + 1}
-                      {sp.name ? ` · ${sp.name}` : ""}
-                    </Text>
-                    {supps.length > 1 && (
-                      <TouchableOpacity
-                        onPress={() =>
-                          setSupps((s) => s.filter((x) => x.id !== sp.id))
-                        }
-                        hitSlop={8}
-                        className="p-1.5 rounded-lg border border-gray-200"
-                      >
-                        <MaterialIcons name="close" size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <View className="p-3 gap-2">
-                    <Field label="Supplier Name" required>
-                      <Input
-                        value={sp.name}
-                        placeholder="Business / trade name"
-                        onChange={(v) =>
-                          setSupps((s) =>
-                            s.map((x) =>
-                              x.id === sp.id ? { ...x, name: v } : x,
-                            ),
-                          )
-                        }
-                      />
-                    </Field>
-
-                    <View className="flex-row gap-2.5">
-                      <View className="flex-1">
-                        <Field label="TIN No.">
-                          <Input
-                            value={sp.tin}
-                            placeholder="000-000-000"
-                            onChange={(v) =>
-                              setSupps((s) =>
-                                s.map((x) =>
-                                  x.id === sp.id ? { ...x, tin: v } : x,
-                                ),
-                              )
-                            }
-                          />
-                        </Field>
+              <Divider label="My Assigned RFQs" />
+              {myAssignments.length === 0 ? (
+                <Text className="text-[11.5px] text-gray-400">
+                  No RFQ assignments yet.
+                </Text>
+              ) : (
+                myAssignments.map((a) => {
+                  const active = Number(a.id) === Number(myAssignmentId);
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setMyAssignmentId(Number(a.id));
+                        setMyQuotationNo((a as any).quotation_no ?? "—");
+                        setSubmitted(String(a.status) === "returned");
+                        setReturnRemark("");
+                      }}
+                      className={`flex-row items-center justify-between px-3 py-2.5 rounded-xl mb-1.5 border ${
+                        active
+                          ? "bg-emerald-50 border-emerald-300"
+                          : "bg-white border-gray-200"
+                      }`}
+                    >
+                      <View>
+                        <Text className="text-[12.5px] font-bold text-gray-800" style={{ fontFamily: MONO }}>
+                          {(a as any).quotation_no ?? `RFQ #${(a as any).rfq_index ?? a.id}`}
+                        </Text>
+                        <Text className="text-[10.5px] text-gray-400">
+                          Released{" "}
+                          {a.released_at
+                            ? new Date(a.released_at).toLocaleDateString("en-PH")
+                            : "—"}
+                        </Text>
                       </View>
-                      <View className="flex-1">
-                        <Field label="Delivery (days)">
-                          <Input
-                            value={sp.days}
-                            placeholder="e.g. 7"
-                            numeric
-                            onChange={(v) =>
-                              setSupps((s) =>
-                                s.map((x) =>
-                                  x.id === sp.id ? { ...x, days: v } : x,
-                                ),
-                              )
-                            }
-                          />
-                        </Field>
-                      </View>
-                    </View>
-
-                    <Divider label="Unit Prices Quoted (₱)" />
-                    {liveItems.map((item) => {
-                      const price = parseFloat(sp.prices[item.id] || "0") || 0;
-                      return (
-                        <View
-                          key={item.id}
-                          className="flex-row items-center gap-2 py-1.5"
-                          style={{
-                            borderBottomWidth: 1,
-                            borderBottomColor: "#f3f4f6",
+                      <View className="flex-row items-center gap-2">
+                        <TouchableOpacity
+                          onPress={() => {
+                            setPreviewDataOverride(
+                              buildPreviewDataForAssignment(a),
+                            );
+                            setPreviewOpen(true);
                           }}
+                          activeOpacity={0.8}
+                          className="w-9 h-9 rounded-xl bg-white border border-gray-200 items-center justify-center"
+                        >
+                          <MaterialIcons
+                            name="description"
+                            size={16}
+                            color="#064E3B"
+                          />
+                        </TouchableOpacity>
+                        <View
+                          className={`px-2 py-0.5 rounded-full ${a.status === "returned" ? "bg-emerald-100" : "bg-amber-100"}`}
                         >
                           <Text
-                            className="flex-[2] text-[12px] text-gray-700"
-                            numberOfLines={1}
+                            className={`text-[9.5px] font-bold ${a.status === "returned" ? "text-emerald-700" : "text-amber-700"}`}
                           >
-                            {item.desc}
-                          </Text>
-                          <Text className="text-[11.5px] text-gray-400 w-9 text-center">
-                            {item.unit}
-                          </Text>
-                          <Text className="text-[11.5px] text-gray-600 w-7 text-right">
-                            {item.qty}
-                          </Text>
-                          <View className="w-20">
-                            <Input
-                              value={sp.prices[item.id] ?? ""}
-                              numeric
-                              placeholder="0.00"
-                              onChange={(v) =>
-                                setSupps((s) =>
-                                  s.map((x) =>
-                                    x.id === sp.id
-                                      ? {
-                                          ...x,
-                                          prices: { ...x.prices, [item.id]: v },
-                                        }
-                                      : x,
-                                  ),
-                                )
-                              }
-                            />
-                          </View>
-                          <Text
-                            className={`w-20 text-[11.5px] font-semibold text-right ${
-                              price > 0 ? "text-[#064E3B]" : "text-gray-300"
-                            }`}
-                          >
-                            {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
+                            {a.status === "returned" ? "Returned" : "Released"}
                           </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity
-                onPress={() =>
-                  setSupps((s) => [...s, mkSupplier(s.length + 1)])
-                }
-                activeOpacity={0.8}
-                className="flex-row items-center justify-center gap-2 py-3 rounded-2xl"
-                style={{
-                  borderWidth: 2,
-                  borderStyle: "dashed",
-                  borderColor: "#d1d5db",
-                }}
-              >
-                <Text className="text-[13px] font-semibold text-[#064E3B]">
-                  + Add Supplier Quote
-                </Text>
-              </TouchableOpacity>
-
-              {/* Quoted total preview */}
-              {hasQuoteEntered && (
-                <View className="flex-row justify-between items-center bg-emerald-50 rounded-xl px-3 py-2 mt-1 border border-emerald-200">
-                  <Text className="text-[11px] font-semibold text-emerald-700">
-                    Your quoted total
-                  </Text>
-                  <Text className="text-[13px] font-extrabold text-[#064E3B]">
-                    ₱
-                    <Text style={{ fontFamily: MONO }}>{fmt(quotedTotal)}</Text>
-                  </Text>
-                </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
               )}
+            </View>
+          </Card>
+
+          {/* Assigned RFQ + remarks */}
+          <Card>
+            <View className="px-4 pt-3 pb-3">
+              <Divider label="Assigned RFQ" />
+              <View className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 mb-3">
+                <Text className="text-[10px] text-gray-500">Quotation No.</Text>
+                <Text className="text-[14px] font-extrabold text-[#064E3B]" style={{ fontFamily: MONO }}>
+                  {myQuotationNo || "—"}
+                </Text>
+              </View>
+              <Field label="Return Remarks" required>
+                <TextInput
+                  value={returnRemark}
+                  onChangeText={setReturnRemark}
+                  placeholder="Describe where/when canvassing was conducted and any notes on the returned RFQ."
+                  placeholderTextColor="#9ca3af"
+                  multiline
+                  className="rounded-xl bg-white px-3 py-2.5 text-[12.5px] text-gray-800"
+                  style={{ borderWidth: 1.5, borderColor: "#e5e7eb", minHeight: 88, textAlignVertical: "top" }}
+                />
+              </Field>
             </View>
           </Card>
 
@@ -1455,29 +1324,27 @@ export default function CanvasserView({
             >
               <MaterialIcons name="description" size={14} color="#064E3B" />
               <Text className="text-[12.5px] font-bold text-[#064E3B]">
-                View RFQ
+                View / Print / Download
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleSubmit}
-              disabled={!assigned || !hasQuoteEntered}
+              disabled={!assigned || submitted || !returnRemark.trim() || submitting}
               activeOpacity={0.8}
               className={`flex-row items-center gap-1.5 flex-[2] justify-center py-2.5 rounded-xl ${
-                !assigned || !hasQuoteEntered
+                !assigned || submitted || !returnRemark.trim() || submitting
                   ? "bg-gray-300"
-                  : submitted
-                    ? "bg-emerald-600"
-                    : "bg-[#064E3B]"
+                  : "bg-[#064E3B]"
               }`}
             >
               <MaterialIcons
-                name={submitted ? "refresh" : "send"}
+                name={submitting ? "hourglass-empty" : "assignment-return"}
                 size={14}
                 color="#fff"
               />
               <Text className="text-[12.5px] font-bold text-white">
-                {submitted ? "Re-submit to BAC" : "Submit to BAC"}
+                {submitting ? "Returning..." : "Return Filled-Out RFQ to BAC"}
               </Text>
             </TouchableOpacity>
           </View>

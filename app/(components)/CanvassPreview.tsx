@@ -32,6 +32,8 @@ export interface CanvassPreviewData {
   canvasserNames:  string[];         // names listed at bottom-left
   supplierName?:   string;
   supplierAddress?: string;
+  assignedTo?:     string;
+  assignedDivision?: string;
 }
 
 // ─── CSS shared with PRPreview style ─────────────────────────────────────────
@@ -75,6 +77,8 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
     quotationNo, date, deadline, bacChairperson,
     items, canvasserNames,
     supplierName = "", supplierAddress = "",
+    assignedTo = "",
+    assignedDivision = "",
   } = data;
 
   // Pad item rows to at least 8 lines (form always has blank rows)
@@ -140,6 +144,13 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
               Quotation No. ${quotationNo}
             </td>
           </tr>
+          ${
+            assignedTo || assignedDivision
+              ? `<tr><td></td><td style="text-align:right; padding:2px 4px; font-size:7.5pt; color:#444;">
+              Assigned: ${assignedTo || "—"}${assignedDivision ? ` (${assignedDivision})` : ""}
+            </td></tr>`
+              : ""
+          }
         </table>
       </td>
     </tr>
