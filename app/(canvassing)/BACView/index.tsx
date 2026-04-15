@@ -186,6 +186,9 @@ export default function BACView({
   const [prExpanded, setPrExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resolutionPreviewOpen, setResolutionPreviewOpen] = useState(false);
+  const [collectionMode, setCollectionMode] = useState<"encode" | "skip">(
+    "encode",
+  );
   const [linkedResolution, setLinkedResolution] = useState<any | null>(null);
   const [linkedResolutionLoading, setLinkedResolutionLoading] = useState(false);
   const [linkedResolutionHydrated, setLinkedResolutionHydrated] =
@@ -367,7 +370,7 @@ export default function BACView({
               supplierMap.set(name, {
                 id: nextId++,
                 name,
-                address: "",
+                address: (e as any).supplier_address ?? "",
                 contact: "",
                 tin: e.tin_no ?? "",
                 days: e.delivery_days ?? "",
@@ -479,28 +482,41 @@ export default function BACView({
     try {
       const prId = await fetchPRIdByNo(pr.prNo);
       if (!prId) throw new Error("PR not found");
-      const quotes: any[] = [];
-      supps.forEach((sp) => {
-        liveItems.forEach((item) => {
-          const up = parseFloat(sp.prices[item.id] || "0") || 0;
-          if (up > 0)
-            quotes.push({
-              item_no: item.id,
-              description: item.desc,
-              unit: item.unit,
-              quantity: item.qty,
-              supplier_name: sp.name || `Supplier ${sp.id}`,
-              tin_no: sp.tin || null,
-              delivery_days: sp.days || null,
-              unit_price: up,
-              total_price: up * item.qty,
-              is_winning: null,
-            });
+      if (collectionMode === "encode") {
+        if (selectedReturnId == null) {
+          throw new Error(
+            "Select an RFQ return to attach the encoded quotes to.",
+          );
+        }
+        const quotes: any[] = [];
+        supps.forEach((sp) => {
+          liveItems.forEach((item) => {
+            const up = parseFloat(sp.prices[item.id] || "0") || 0;
+            if (up > 0)
+              quotes.push({
+                item_no: item.id,
+                description: item.desc,
+                unit: item.unit,
+                quantity: item.qty,
+                supplier_name: sp.name || `Supplier ${sp.id}`,
+                supplier_address: sp.address || null,
+                tin_no: sp.tin || null,
+                delivery_days: sp.days || null,
+                unit_price: up,
+                total_price: up * item.qty,
+                is_winning: null,
+              });
+          });
         });
-      });
-      // Always use replace (delete-then-insert) so that re-encoding or editing
-      // never accumulates duplicate rows in canvass_entries.
-      await replaceSupplierQuotesForSubmission(sessionId, null, quotes);
+        // Always use replace (delete-then-insert) so that re-encoding or editing
+        // never accumulates duplicate rows in canvass_entries.
+        await replaceSupplierQuotesForSubmission(sessionId, null, quotes);
+        await replaceSupplierQuotesForSubmission(
+          sessionId,
+          Number(selectedReturnId),
+          quotes,
+        );
+      }
       await updatePRStatus(prId, 11);
       await updateCanvassStage(sessionId, "aaa_preparation");
       fetchQuotesForSession(sessionId)
@@ -519,7 +535,18 @@ export default function BACView({
         e?.message ?? "Could not save supplier quotations",
       );
     }
-  }, [sessionId, pr.prNo, supps, liveItems, advance, onComplete, resNo, mode]);
+  }, [
+    sessionId,
+    pr.prNo,
+    supps,
+    liveItems,
+    advance,
+    onComplete,
+    resNo,
+    mode,
+    collectionMode,
+    selectedReturnId,
+  ]);
 
   const handleStep7 = useCallback(async () => {
     if (!sessionId || !resNo) return;
@@ -652,8 +679,14 @@ export default function BACView({
     [canvassUsers],
   );
 
-  const firstQuotationNo =
-    assignments.find((a: any) => (a as any).quotation_no)?.quotation_no ?? "";
+  useEffect(() => {
+    if (stage !== "collect_canvass") return;
+    if (collectionMode !== "encode") return;
+    if (selectedReturnId != null) return;
+    const returned = assignments.filter((a) => a.status === "returned");
+    if (returned.length === 0) return;
+    setSelectedReturnId(Number(returned[0].id));
+  }, [stage, collectionMode, selectedReturnId, assignments]);
 
   const hasAssignmentId = React.useMemo(
     () => canvassEntries.some((e: any) => e.assignment_id !== undefined),
@@ -686,7 +719,7 @@ export default function BACView({
         supplierMap.set(name, {
           id: nextId++,
           name,
-          address: "",
+          address: (e as any).supplier_address ?? "",
           contact: "",
           tin: (e as any).tin_no ?? "",
           days: (e as any).delivery_days ?? "",
@@ -745,6 +778,7 @@ export default function BACView({
           unit: e.unit,
           quantity: e.quantity,
           supplier_name: e.supplier_name,
+          supplier_address: (e as any).supplier_address ?? null,
           tin_no: (e as any).tin_no ?? null,
           delivery_days: (e as any).delivery_days ?? null,
           unit_price: e.unit_price,
@@ -1718,6 +1752,42 @@ export default function BACView({
 
             <Card>
               <View className="px-4 pt-3 pb-3">
+                <Divider label="Collection Action" />
+                <View className="flex-row gap-2 mb-3">
+                  <TouchableOpacity
+                    onPress={() => setCollectionMode("encode")}
+                    activeOpacity={0.85}
+                    className={`px-3 py-2 rounded-xl border ${collectionMode === "encode" ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                  >
+                    <Text
+                      className={`text-[11px] font-bold ${collectionMode === "encode" ? "text-emerald-700" : "text-gray-500"}`}
+                    >
+                      Encode Returned RFQ Details
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setCollectionMode("skip")}
+                    activeOpacity={0.85}
+                    className={`px-3 py-2 rounded-xl border ${collectionMode === "skip" ? "bg-amber-50 border-amber-300" : "bg-white border-gray-200"}`}
+                  >
+                    <Text
+                      className={`text-[11px] font-bold ${collectionMode === "skip" ? "text-amber-700" : "text-gray-500"}`}
+                    >
+                      Skip Encoding · Proceed to Abstract of Awards
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {collectionMode === "skip" && (
+                  <View className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2">
+                    <Text className="text-[11.5px] font-semibold text-amber-800">
+                      Encoding is skipped.
+                    </Text>
+                    <Text className="text-[10.5px] text-amber-700 mt-0.5">
+                      Submit to continue to Abstract of Awards using currently
+                      available RFQ return data.
+                    </Text>
+                  </View>
+                )}
                 <View className="flex-row items-center justify-between gap-3 mb-1">
                   <Divider label="Supplier Quotations" />
                   {selectedReturnId != null && (
@@ -1744,155 +1814,175 @@ export default function BACView({
                     </TouchableOpacity>
                   )}
                 </View>
-                {supps.map((sp, sIdx) => (
-                  <View
-                    key={sp.id}
-                    className="border border-gray-200 rounded-2xl mb-3 overflow-hidden"
-                  >
-                    <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
-                      <Text className="text-[13.5px] font-semibold text-gray-800">
-                        Supplier {sIdx + 1}
-                        {sp.name ? ` · ${sp.name}` : ""}
-                      </Text>
-                      {supps.length > 1 && (
-                        <TouchableOpacity
-                          onPress={() =>
-                            setSupps((s) => s.filter((x) => x.id !== sp.id))
-                          }
-                          hitSlop={8}
-                          className="p-1.5 rounded-lg border border-gray-200"
-                        >
-                          <MaterialIcons
-                            name="close"
-                            size={16}
-                            color="#ef4444"
-                          />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                    <View className="p-3 gap-2">
-                      <Field label="Supplier Name" required>
-                        <Input
-                          value={sp.name}
-                          placeholder="Business / trade name"
-                          onChange={(v) =>
-                            setSupps((s) =>
-                              s.map((x) =>
-                                x.id === sp.id ? { ...x, name: v } : x,
-                              ),
-                            )
-                          }
-                        />
-                      </Field>
-                      <View className="flex-row gap-2.5">
-                        <View className="flex-1">
-                          <Field label="TIN No.">
-                            <Input
-                              value={sp.tin}
-                              placeholder="000-000-000"
-                              onChange={(v) =>
-                                setSupps((s) =>
-                                  s.map((x) =>
-                                    x.id === sp.id ? { ...x, tin: v } : x,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                        </View>
-                        <View className="flex-1">
-                          <Field label="Delivery (days)">
-                            <Input
-                              value={sp.days}
-                              placeholder="e.g. 7"
-                              numeric
-                              onChange={(v) =>
-                                setSupps((s) =>
-                                  s.map((x) =>
-                                    x.id === sp.id ? { ...x, days: v } : x,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                        </View>
-                      </View>
-                      <Divider label="Unit Prices Quoted (₱)" />
-                      {liveItems.map((item) => {
-                        const price =
-                          parseFloat(sp.prices[item.id] || "0") || 0;
-                        return (
-                          <View
-                            key={item.id}
-                            className="flex-row items-center gap-2 py-1.5"
-                            style={{
-                              borderBottomWidth: 1,
-                              borderBottomColor: "#f3f4f6",
-                            }}
+                {collectionMode === "encode" &&
+                  supps.map((sp, sIdx) => (
+                    <View
+                      key={sp.id}
+                      className="border border-gray-200 rounded-2xl mb-3 overflow-hidden"
+                    >
+                      <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
+                        <Text className="text-[13.5px] font-semibold text-gray-800">
+                          Supplier {sIdx + 1}
+                          {sp.name ? ` · ${sp.name}` : ""}
+                        </Text>
+                        {supps.length > 1 && (
+                          <TouchableOpacity
+                            onPress={() =>
+                              setSupps((s) => s.filter((x) => x.id !== sp.id))
+                            }
+                            hitSlop={8}
+                            className="p-1.5 rounded-lg border border-gray-200"
                           >
-                            <Text
-                              className="flex-[2] text-[12px] text-gray-700"
-                              numberOfLines={1}
-                            >
-                              {item.desc}
-                            </Text>
-                            <Text className="text-[11.5px] text-gray-400 w-9 text-center">
-                              {item.unit}
-                            </Text>
-                            <Text className="text-[11.5px] text-gray-600 w-7 text-right">
-                              {item.qty}
-                            </Text>
-                            <View className="w-20">
+                            <MaterialIcons
+                              name="close"
+                              size={16}
+                              color="#ef4444"
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <View className="p-3 gap-2">
+                        <Field label="Supplier Name" required>
+                          <Input
+                            value={sp.name}
+                            placeholder="Business / trade name"
+                            onChange={(v) =>
+                              setSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, name: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                        <View className="flex-row gap-2.5">
+                          <View className="flex-1">
+                            <Field label="Address">
                               <Input
-                                value={sp.prices[item.id] ?? ""}
-                                numeric
-                                placeholder="0.00"
+                                value={sp.address}
+                                placeholder="Supplier address"
                                 onChange={(v) =>
                                   setSupps((s) =>
                                     s.map((x) =>
-                                      x.id === sp.id
-                                        ? {
-                                            ...x,
-                                            prices: {
-                                              ...x.prices,
-                                              [item.id]: v,
-                                            },
-                                          }
-                                        : x,
+                                      x.id === sp.id ? { ...x, address: v } : x,
                                     ),
                                   )
                                 }
                               />
-                            </View>
-                            <Text
-                              className={`w-20 text-[11.5px] font-semibold text-right ${
-                                price > 0 ? "text-[#064E3B]" : "text-gray-300"
-                              }`}
-                            >
-                              {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
-                            </Text>
+                            </Field>
                           </View>
-                        );
-                      })}
+                        </View>
+                        <View className="flex-row gap-2.5">
+                          <View className="flex-1">
+                            <Field label="TIN No.">
+                              <Input
+                                value={sp.tin}
+                                placeholder="000-000-000"
+                                onChange={(v) =>
+                                  setSupps((s) =>
+                                    s.map((x) =>
+                                      x.id === sp.id ? { ...x, tin: v } : x,
+                                    ),
+                                  )
+                                }
+                              />
+                            </Field>
+                          </View>
+                          <View className="flex-1">
+                            <Field label="Delivery (days)">
+                              <Input
+                                value={sp.days}
+                                placeholder="e.g. 7"
+                                numeric
+                                onChange={(v) =>
+                                  setSupps((s) =>
+                                    s.map((x) =>
+                                      x.id === sp.id ? { ...x, days: v } : x,
+                                    ),
+                                  )
+                                }
+                              />
+                            </Field>
+                          </View>
+                        </View>
+                        <Divider label="Unit Prices Quoted (₱)" />
+                        {liveItems.map((item) => {
+                          const price =
+                            parseFloat(sp.prices[item.id] || "0") || 0;
+                          return (
+                            <View
+                              key={item.id}
+                              className="flex-row items-center gap-2 py-1.5"
+                              style={{
+                                borderBottomWidth: 1,
+                                borderBottomColor: "#f3f4f6",
+                              }}
+                            >
+                              <Text
+                                className="flex-[2] text-[12px] text-gray-700"
+                                numberOfLines={1}
+                              >
+                                {item.desc}
+                              </Text>
+                              <Text className="text-[11.5px] text-gray-400 w-9 text-center">
+                                {item.unit}
+                              </Text>
+                              <Text className="text-[11.5px] text-gray-600 w-7 text-right">
+                                {item.qty}
+                              </Text>
+                              <View className="w-20">
+                                <Input
+                                  value={sp.prices[item.id] ?? ""}
+                                  numeric
+                                  placeholder="0.00"
+                                  onChange={(v) =>
+                                    setSupps((s) =>
+                                      s.map((x) =>
+                                        x.id === sp.id
+                                          ? {
+                                              ...x,
+                                              prices: {
+                                                ...x.prices,
+                                                [item.id]: v,
+                                              },
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </View>
+                              <Text
+                                className={`w-20 text-[11.5px] font-semibold text-right ${
+                                  price > 0 ? "text-[#064E3B]" : "text-gray-300"
+                                }`}
+                              >
+                                {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
                     </View>
-                  </View>
-                ))}
-                <TouchableOpacity
-                  onPress={() =>
-                    setSupps((s) => [...s, mkSupplier(s.length + 1)])
-                  }
-                  activeOpacity={0.8}
-                  className="flex-row items-center justify-center gap-2 py-3 rounded-2xl"
-                  style={{
-                    borderWidth: 2,
-                    borderStyle: "dashed",
-                    borderColor: "#d1d5db",
-                  }}
-                >
-                  <Text className="text-[13px] font-semibold text-[#064E3B]">
-                    + Add Supplier Quote
-                  </Text>
-                </TouchableOpacity>
+                  ))}
+                {collectionMode === "encode" && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setSupps((s) => [...s, mkSupplier(s.length + 1)])
+                    }
+                    activeOpacity={0.8}
+                    className="flex-row items-center justify-center gap-2 py-3 rounded-2xl"
+                    style={{
+                      borderWidth: 2,
+                      borderStyle: "dashed",
+                      borderColor: "#d1d5db",
+                    }}
+                  >
+                    <Text className="text-[13px] font-semibold text-[#064E3B]">
+                      + Add Supplier Quote
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </Card>
 
@@ -1908,19 +1998,6 @@ export default function BACView({
                 }
               />
             )}
-
-            <View className="flex-row justify-center mb-3">
-              <TouchableOpacity
-                onPress={() => setPreviewOpen(true)}
-                activeOpacity={0.8}
-                className="flex-row items-center gap-2 px-5 py-2.5 rounded-xl border border-[#064E3B] bg-[#064E3B]"
-              >
-                <MaterialIcons name="description" size={16} color="#ffffff" />
-                <Text className="text-[13px] font-bold text-white">
-                  Preview RFQ Form
-                </Text>
-              </TouchableOpacity>
-            </View>
 
             {currentUser?.id && prId && (
               <View className="px-4 mb-3">
@@ -1939,7 +2016,11 @@ export default function BACView({
               onPrev={goToStage}
               onNext={goToStage}
               canSubmit={!isViewingCompleted}
-              submitLabel="Encoded · AAA Preparation"
+              submitLabel={
+                collectionMode === "encode"
+                  ? "Encoded · AAA Preparation"
+                  : "Proceed · AAA Preparation"
+              }
               onSubmit={handleStep9}
             />
           </View>
@@ -2084,43 +2165,43 @@ export default function BACView({
                       .filter((p: any) => Number(p.status_id) > 8)
                       .slice(0, 20)
                       .map((p: any) => {
-                      const exists = resolutionPRRows.some(
-                        (r) => r.prNo === p.pr_no,
-                      );
-                      return (
-                        <TouchableOpacity
-                          key={p.id}
-                          onPress={() =>
-                            setResolutionPRRows((prev) => {
-                              if (exists)
-                                return prev.filter((r) => r.prNo !== p.pr_no);
-                              return [
-                                ...prev,
-                                {
-                                  key: `pool-${p.id}`,
-                                  prId: Number(p.id),
-                                  prNo: p.pr_no,
-                                  date: p.created_at
-                                    ? new Date(p.created_at).toLocaleDateString(
-                                        "en-PH",
-                                      )
-                                    : "",
-                                  estimatedCost: String(p.total_cost ?? 0),
-                                  endUser: p.office_section ?? "",
-                                  procMode: mode,
-                                },
-                              ];
-                            })
-                          }
-                          className={`px-3 py-2 rounded-xl border mb-1 ${exists ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
-                        >
-                          <Text className="text-[11.5px] font-semibold text-gray-700">
-                            {p.pr_no} · {p.office_section ?? "—"} · Status{" "}
-                            {p.status_id}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                        const exists = resolutionPRRows.some(
+                          (r) => r.prNo === p.pr_no,
+                        );
+                        return (
+                          <TouchableOpacity
+                            key={p.id}
+                            onPress={() =>
+                              setResolutionPRRows((prev) => {
+                                if (exists)
+                                  return prev.filter((r) => r.prNo !== p.pr_no);
+                                return [
+                                  ...prev,
+                                  {
+                                    key: `pool-${p.id}`,
+                                    prId: Number(p.id),
+                                    prNo: p.pr_no,
+                                    date: p.created_at
+                                      ? new Date(
+                                          p.created_at,
+                                        ).toLocaleDateString("en-PH")
+                                      : "",
+                                    estimatedCost: String(p.total_cost ?? 0),
+                                    endUser: p.office_section ?? "",
+                                    procMode: mode,
+                                  },
+                                ];
+                              })
+                            }
+                            className={`px-3 py-2 rounded-xl border mb-1 ${exists ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200"}`}
+                          >
+                            <Text className="text-[11.5px] font-semibold text-gray-700">
+                              {p.pr_no} · {p.office_section ?? "—"} · Status{" "}
+                              {p.status_id}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                   </View>
                 )}
                 {resolutionPRRows.map((row) => (
@@ -2310,7 +2391,6 @@ export default function BACView({
           <AAAView
             sessionId={sessionId}
             pr={pr}
-            bacNo={firstQuotationNo}
             resolutionNo={resNo}
             mode={mode}
             onComplete={onComplete}

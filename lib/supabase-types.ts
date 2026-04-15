@@ -37,6 +37,7 @@ export interface CanvassEntryRow {
   unit: string;
   quantity: number;
   supplier_name: string;
+  supplier_address?: string | null;
   tin_no?: string | null;
   delivery_days?: string | null;
   unit_price: number;

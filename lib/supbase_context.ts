@@ -62,6 +62,7 @@ CREATE TABLE public.canvass_entries (
   unit text,
   quantity bigint,
   supplier_name text,
+  supplier_address text,
   unit_price double precision,
   total_price double precision,
   is_winning boolean,

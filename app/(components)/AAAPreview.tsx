@@ -21,7 +21,7 @@ import { WebView } from "react-native-webview";
 
 export interface AAAPreviewData {
   /** Reference block (top-right) */
-  bacNo:         string;
+  rfqNo:         string;
   prNo:          string;
   resolutionNo:  string;
   date:          string;
@@ -70,10 +70,10 @@ export function buildAAAPreviewHTML(d: AAAPreviewData): string {
   // ── Top-right reference block ────────────────────────────────────────────
   const refBlock = `
     <table class="ref-table">
-      <tr><td class="ref-td">${d.bacNo}</td></tr>
-      <tr><td class="ref-td">${d.prNo}</td></tr>
-      <tr><td class="ref-td">${d.resolutionNo}</td></tr>
-      <tr><td class="ref-td">${d.date}</td></tr>
+      <tr><td class="ref-label">RFQ No.</td><td class="ref-td">${d.rfqNo}</td></tr>
+      <tr><td class="ref-label">PR No.</td><td class="ref-td">${d.prNo}</td></tr>
+      <tr><td class="ref-label">Resolution No.</td><td class="ref-td">${d.resolutionNo}</td></tr>
+      <tr><td class="ref-label">Date</td><td class="ref-td">${d.date}</td></tr>
     </table>`;
 
   // ── Supplier column headers ──────────────────────────────────────────────
@@ -182,11 +182,19 @@ export function buildAAAPreviewHTML(d: AAAPreviewData): string {
       margin-bottom: 6px;
     }
     .ref-table { border-collapse: collapse; }
+    .ref-label {
+      font-size: 8pt;
+      text-align: left;
+      padding: 0 6px 0 0;
+      white-space: nowrap;
+      color: #374151;
+    }
     .ref-td {
       font-size: 8.5pt;
       text-align: right;
       padding: 0 2px;
       border-bottom: 1px solid #000;
+      min-width: 120px;
     }
 
     /* Title */

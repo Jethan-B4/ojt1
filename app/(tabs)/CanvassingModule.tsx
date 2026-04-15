@@ -64,7 +64,6 @@ export default function CanvassingModule({
   // If explicitly opening AAA stage for BAC, hydrate session meta and render AAAView
   const [aaaProps, setAAAProps] = React.useState<{
     sessionId: string;
-    bacNo: string;
     resolutionNo: string;
     mode: string;
   } | null>(null);
@@ -80,7 +79,6 @@ export default function CanvassingModule({
           // leave resolutionNo blank here — AAAView can proceed with read-only refs.
           setAAAProps({
             sessionId: session.id,
-            bacNo: session.bac_no ?? "",
             resolutionNo: "",
             mode: session.status ?? "SVP/Canvass",
           });
@@ -128,7 +126,6 @@ export default function CanvassingModule({
       <AAAView
         sessionId={aaaProps.sessionId}
         pr={pr}
-        bacNo={aaaProps.bacNo}
         resolutionNo={aaaProps.resolutionNo}
         mode={aaaProps.mode}
         onComplete={onComplete}

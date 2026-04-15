@@ -236,16 +236,41 @@ export async function replaceSupplierQuotesForSubmission(
     if (error) throw error;
     return data ?? [];
   } catch (e: any) {
-    // Backward compatibility when assignment_id column isn't deployed yet.
+    // Backward compatibility when legacy columns aren't deployed yet.
     const msg = String(e?.message ?? "");
-    if (msg.toLowerCase().includes("assignment_id")) {
+    const lower = msg.toLowerCase();
+    const missingAssignmentId = lower.includes("assignment_id");
+    const missingSupplierAddress = lower.includes("supplier_address");
+    if (missingAssignmentId || missingSupplierAddress) {
+      const cleanedQuotes = missingSupplierAddress
+        ? quotes.map(({ supplier_address, ...rest }) => rest)
+        : quotes;
+
+      // Legacy schema: assignment_id not yet present
+      // (optionally combined with missing supplier_address).
+      if (missingAssignmentId) {
       const { error: delError } = await supabase
         .from("canvass_entries")
         .delete()
         .eq("session_id", sid);
       if (delError) throw delError;
-      if (quotes.length === 0) return [];
-      const rows = quotes.map((q) => ({ ...q, session_id: sid }));
+        if (cleanedQuotes.length === 0) return [];
+        const rows = cleanedQuotes.map((q) => ({ ...q, session_id: sid }));
+      const { data, error } = await supabase
+        .from("canvass_entries")
+        .insert(rows)
+        .select();
+      if (error) throw error;
+      return data ?? [];
+      }
+
+      // assignment_id exists, but supplier_address is not deployed.
+      if (cleanedQuotes.length === 0) return [];
+      const rows = cleanedQuotes.map((q) => ({
+        ...q,
+        session_id: sid,
+        assignment_id: assignmentId,
+      }));
       const { data, error } = await supabase
         .from("canvass_entries")
         .insert(rows)
@@ -384,6 +409,8 @@ export async function fetchAssignmentsWithDetails(sessionId: string | number) {
     session_id: r.session_id,
     division_id: r.division_id,
     canvasser_id: r.canvasser_id ?? null,
+    quotation_no: r.quotation_no ?? null,
+    rfq_index: r.rfq_index ?? null,
     released_at: r.released_at ?? null,
     returned_at: r.returned_at ?? null,
     status: r.status,

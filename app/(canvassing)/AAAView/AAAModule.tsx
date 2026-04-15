@@ -2,7 +2,7 @@
  * AAAView — Step 10: Abstract of Price Quotations preparation.
  *
  * Input fields mirror the sample DAR document:
- *   • Top-right reference block  → BAC No. (read-only), PR No. (read-only),
+ *   • Top-right reference block  → RFQ No. (read-only), PR No. (read-only),
  *                                   Resolution No. (read-only), Date (today, read-only)
  *   • AAA No.                    → editable, required
  *   • Particulars / Job Order    → editable — the description text shown as the
@@ -28,7 +28,10 @@ import {
   insertAAAForSession,
   updateAAAForSession,
 } from "@/lib/supabase/aaa";
-import { fetchBACResolutionForSession } from "@/lib/supabase/bac";
+import {
+  fetchBACResolutionForPR,
+  fetchBACResolutionForSession,
+} from "@/lib/supabase/bac";
 import {
   fetchAssignmentsWithDetails,
   fetchCanvassSessionById,
@@ -49,6 +52,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -70,7 +74,6 @@ import StageRemarkBox from "../StageRemarkBox";
 interface AAAViewProps {
   sessionId: string;
   pr: CanvassingPR;
-  bacNo: string;
   resolutionNo: string;
   mode: string;
   onComplete?: (payload: any) => void;
@@ -83,6 +86,15 @@ interface EntryRow {
   unit_price: number;
   is_winning?: boolean | null;
 }
+
+type SupplierDraft = {
+  id: number;
+  name: string;
+  address: string;
+  tin: string;
+  days: string;
+  prices: Record<number, string>;
+};
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 
@@ -632,7 +644,6 @@ function AbstractTable({
 export default function AAAView({
   sessionId,
   pr,
-  bacNo: bacNoProp,
   resolutionNo: resolutionNoProp,
   mode: modeProp,
   onComplete,
@@ -645,7 +656,7 @@ export default function AAAView({
   const [particulars, setParticulars] = useState("");
 
   // ── Read-only reference fields (hydrated from DB) ───────────────────────────
-  const [bacNo, setBacNo] = useState(bacNoProp);
+  const [rfqNo, setRfqNo] = useState("");
   const [resolutionNo, setResolutionNo] = useState(resolutionNoProp);
   const [date, setDate] = useState(
     new Date().toLocaleDateString("en-PH", {
@@ -682,6 +693,42 @@ export default function AAAView({
 
   // ── RFQ review modal ─────────────────────────────────────────────────────────
   const [rfqReviewOpen, setRfqReviewOpen] = useState(false);
+  const [rfqEditOpen, setRfqEditOpen] = useState(false);
+  const [rfqEditAssignment, setRfqEditAssignment] =
+    useState<EnrichedAssignmentRow | null>(null);
+  const [rfqEditSupps, setRfqEditSupps] = useState<SupplierDraft[]>([
+    { id: 1, name: "", address: "", tin: "", days: "", prices: {} },
+  ]);
+  const [rfqEditSaving, setRfqEditSaving] = useState(false);
+
+  const getRFQNoForAssignment = useCallback(
+    async (assignmentId: number) => {
+      const local = allAssignments.find(
+        (x) => Number(x.id) === Number(assignmentId),
+      );
+      if (local) {
+        return String(
+          (local as any).quotation_no ??
+            `RFQ #${(local as any).rfq_index ?? assignmentId}`,
+        );
+      }
+      try {
+        const fresh = await fetchAssignmentsWithDetails(sessionId);
+        setAllAssignments(fresh);
+        setReturns(fresh.filter((a) => a.status === "returned"));
+        const matched = fresh.find(
+          (x) => Number(x.id) === Number(assignmentId),
+        );
+        return String(
+          (matched as any)?.quotation_no ??
+            `RFQ #${(matched as any)?.rfq_index ?? assignmentId}`,
+        );
+      } catch {
+        return `RFQ #${assignmentId}`;
+      }
+    },
+    [allAssignments, sessionId],
+  );
 
   // ── Load all data ────────────────────────────────────────────────────────────
   const loadEntries = useCallback(async () => {
@@ -728,8 +775,7 @@ export default function AAAView({
         }
 
         // Session meta
-        const sess = await fetchCanvassSessionById(sessionId);
-        if (sess?.bac_no) setBacNo(sess.bac_no);
+        await fetchCanvassSessionById(sessionId);
 
         // Assignments — store all, expose "returned" subset separately
         const asgn = await fetchAssignmentsWithDetails(sessionId);
@@ -737,7 +783,10 @@ export default function AAAView({
         setReturns(asgn.filter((a) => a.status === "returned"));
 
         // Resolution — hydrate both the display No. and the full record
-        const res = await fetchBACResolutionForSession(sessionId);
+        const resByPr = resolvedPrId
+          ? await fetchBACResolutionForPR(resolvedPrId)
+          : null;
+        const res = resByPr ?? (await fetchBACResolutionForSession(sessionId));
         if (res?.resolution_no) setResolutionNo(res.resolution_no);
         if (res) {
           setBacResolution({
@@ -786,6 +835,7 @@ export default function AAAView({
 
         await replaceSupplierQuotesForSubmission(sessionId, null, payload);
         setSourceReturnId(assignmentId);
+        setRfqNo(await getRFQNoForAssignment(assignmentId));
         await loadEntries();
       } catch (e: any) {
         Alert.alert("Error", e?.message ?? "Could not apply selected RFQ.");
@@ -793,7 +843,112 @@ export default function AAAView({
         setApplyingSource(false);
       }
     },
-    [sessionId, loadEntries],
+    [sessionId, loadEntries, getRFQNoForAssignment],
+  );
+
+  const openRFQEditor = useCallback(
+    async (a: EnrichedAssignmentRow) => {
+      setRfqEditAssignment(a);
+      setRfqEditOpen(true);
+      try {
+        const rows = await fetchQuotesForSubmission(sessionId, Number(a.id));
+        if (!rows || rows.length === 0) {
+          setRfqEditSupps([{ id: 1, name: "", address: "", tin: "", days: "", prices: {} }]);
+          return;
+        }
+
+        const byName = new Map<string, any[]>();
+        rows.forEach((r: any) => {
+          const n = String(r.supplier_name ?? "").trim() || "Supplier";
+          const arr = byName.get(n) ?? [];
+          arr.push(r);
+          byName.set(n, arr);
+        });
+
+        const supps: SupplierDraft[] = Array.from(byName.entries()).map(
+          ([name, rs], idx) => {
+            const head = rs[0] ?? {};
+            const prices: Record<number, string> = {};
+            liveItems.forEach((it) => {
+              const row = rs.find(
+                (x: any) => Number(x.item_no) === Number(it.id),
+              );
+              const v = row?.unit_price;
+              prices[it.id] =
+                v === null || v === undefined ? "" : String(v);
+            });
+            return {
+              id: idx + 1,
+              name,
+              address: String(head.supplier_address ?? ""),
+              tin: String(head.tin_no ?? ""),
+              days: String(head.delivery_days ?? ""),
+              prices,
+            };
+          },
+        );
+        setRfqEditSupps(supps.length ? supps : [{ id: 1, name: "", address: "", tin: "", days: "", prices: {} }]);
+      } catch {
+        setRfqEditSupps([{ id: 1, name: "", address: "", tin: "", days: "", prices: {} }]);
+      }
+    },
+    [sessionId, liveItems],
+  );
+
+  const saveRFQEdits = useCallback(
+    async (useAsSource: boolean) => {
+      const a = rfqEditAssignment;
+      if (!a) return;
+      const assignmentId = Number(a.id);
+      const hasNamed = rfqEditSupps.some((s) => s.name.trim().length > 0);
+      if (!hasNamed) {
+        Alert.alert("Missing supplier", "Enter at least one Supplier Name.");
+        return;
+      }
+      setRfqEditSaving(true);
+      try {
+        const quotes: any[] = [];
+        rfqEditSupps.forEach((sp) => {
+          const sName = sp.name.trim();
+          if (!sName) return;
+          liveItems.forEach((item) => {
+            const raw = (sp.prices?.[item.id] ?? "").trim();
+            const parsed =
+              raw === "" ? null : (parseFloat(raw.replace(/,/g, "")) || 0);
+            quotes.push({
+              item_no: item.id,
+              description: item.desc,
+              unit: item.unit,
+              quantity: item.qty,
+              supplier_name: sName,
+              supplier_address: sp.address.trim() || null,
+              tin_no: sp.tin.trim() || null,
+              delivery_days: sp.days.trim() || null,
+              unit_price: parsed === null ? null : parsed,
+              total_price: parsed === null ? null : parsed * item.qty,
+              is_winning: null,
+            });
+          });
+        });
+        await replaceSupplierQuotesForSubmission(sessionId, assignmentId, quotes);
+        setSourceReturnId(assignmentId);
+        setRfqNo(await getRFQNoForAssignment(assignmentId));
+        if (useAsSource) await applySource(assignmentId);
+        setRfqEditOpen(false);
+      } catch (e: any) {
+        Alert.alert("Save failed", e?.message ?? "Could not update RFQ.");
+      } finally {
+        setRfqEditSaving(false);
+      }
+    },
+    [
+      rfqEditAssignment,
+      rfqEditSupps,
+      liveItems,
+      sessionId,
+      applySource,
+      getRFQNoForAssignment,
+    ],
   );
 
   useEffect(() => {
@@ -830,7 +985,16 @@ export default function AAAView({
             }
           }),
         );
-        if (best != null && bestScore > 0) setSourceReturnId(best);
+        if (best != null && bestScore > 0) {
+          setSourceReturnId(best);
+          const chosen = returns.find((r) => Number(r.id) === Number(best));
+          setRfqNo(
+            String(
+              (chosen as any)?.quotation_no ??
+                `RFQ #${(chosen as any)?.rfq_index ?? best}`,
+            ),
+          );
+        }
       } catch {}
     })();
   }, [sourceReturnId, returns, entries, sessionId]);
@@ -895,7 +1059,7 @@ export default function AAAView({
 
       onComplete?.({
         pr_no: pr.prNo,
-        bac_no: bacNo,
+        bac_no: rfqNo,
         resolution_no: resolutionNo,
         aaa_no: aaaNo,
       });
@@ -913,14 +1077,14 @@ export default function AAAView({
     aaaNo,
     particulars,
     currentUser?.id,
-    bacNo,
+    rfqNo,
     resolutionNo,
     onComplete,
   ]);
 
   // ── Preview data ──────────────────────────────────────────────────────────────
   const buildPreviewData = (): AAAPreviewData => ({
-    bacNo,
+    rfqNo,
     prNo: pr.prNo,
     resolutionNo,
     date,
@@ -1012,11 +1176,11 @@ export default function AAAView({
         <Card>
           <View className="px-4 pt-3 pb-3">
             <Divider label="Document References" />
-            {/* Row 1: BAC No + Resolution No */}
+            {/* Row 1: RFQ No + Resolution No */}
             <View className="flex-row gap-2.5">
               <View className="flex-1">
-                <Field label="BAC No.">
-                  <Input value={bacNo} readonly />
+                <Field label="RFQ No.">
+                  <Input value={rfqNo} readonly />
                 </Field>
               </View>
               <View className="flex-1">
@@ -1103,7 +1267,7 @@ export default function AAAView({
                     <TouchableOpacity
                       key={r.id}
                       activeOpacity={0.85}
-                      onPress={() => setSourceReturnId(rid)}
+                      onPress={() => void openRFQEditor(r)}
                       className={`px-3 py-2 rounded-xl border ${
                         active
                           ? "bg-emerald-50 border-emerald-200"
@@ -1146,6 +1310,250 @@ export default function AAAView({
             </View>
           </Card>
         )}
+
+        <Modal
+          visible={rfqEditOpen}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setRfqEditOpen(false)}
+        >
+          <View className="flex-1 bg-gray-50">
+            <View className="bg-white border-b border-gray-100 px-4 pt-4 pb-3">
+              <View className="flex-row items-center justify-between">
+                <TouchableOpacity
+                  onPress={() => setRfqEditOpen(false)}
+                  activeOpacity={0.8}
+                  className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center"
+                >
+                  <MaterialIcons name="close" size={18} color="#6b7280" />
+                </TouchableOpacity>
+                <View className="items-center flex-1 px-3">
+                  <Text className="text-[11px] text-gray-400 font-semibold">
+                    RFQ Editor
+                  </Text>
+                  <Text className="text-[13px] font-extrabold text-gray-900">
+                    {(rfqEditAssignment as any)?.quotation_no ??
+                      `RFQ #${(rfqEditAssignment as any)?.rfq_index ?? rfqEditAssignment?.id ?? "—"}`}
+                  </Text>
+                </View>
+                <View style={{ width: 36 }} />
+              </View>
+            </View>
+
+            <ScrollView
+              className="flex-1"
+              contentContainerStyle={{ padding: 14, paddingBottom: 120 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {rfqEditSupps.map((sp, sIdx) => (
+                <View
+                  key={sp.id}
+                  className="border border-gray-200 rounded-2xl mb-3 overflow-hidden bg-white"
+                >
+                  <View className="flex-row items-center justify-between px-3 py-2.5 bg-gray-50">
+                    <Text className="text-[13.5px] font-semibold text-gray-800">
+                      Supplier {sIdx + 1}
+                      {sp.name ? ` · ${sp.name}` : ""}
+                    </Text>
+                    {rfqEditSupps.length > 1 && (
+                      <TouchableOpacity
+                        onPress={() =>
+                          setRfqEditSupps((s) => s.filter((x) => x.id !== sp.id))
+                        }
+                        hitSlop={8}
+                        className="p-1.5 rounded-lg border border-gray-200"
+                      >
+                        <MaterialIcons name="close" size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View className="p-3 gap-2">
+                    <Field label="Supplier Name" required>
+                      <Input
+                        value={sp.name}
+                        placeholder="Business / trade name"
+                        onChange={(v) =>
+                          setRfqEditSupps((s) =>
+                            s.map((x) =>
+                              x.id === sp.id ? { ...x, name: v } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <View className="flex-row gap-2.5">
+                      <View className="flex-1">
+                        <Field label="Address">
+                          <Input
+                            value={sp.address}
+                            placeholder="Supplier address"
+                            onChange={(v) =>
+                              setRfqEditSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, address: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                    </View>
+                    <View className="flex-row gap-2.5">
+                      <View className="flex-1">
+                        <Field label="TIN No.">
+                          <Input
+                            value={sp.tin}
+                            placeholder="000-000-000"
+                            onChange={(v) =>
+                              setRfqEditSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, tin: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                      <View className="flex-1">
+                        <Field label="Delivery (days)">
+                          <Input
+                            value={sp.days}
+                            placeholder="e.g. 7"
+                            numeric
+                            onChange={(v) =>
+                              setRfqEditSupps((s) =>
+                                s.map((x) =>
+                                  x.id === sp.id ? { ...x, days: v } : x,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                      </View>
+                    </View>
+                    <Divider label="Unit Prices Quoted (₱)" />
+                    {liveItems.map((item) => {
+                      const raw = sp.prices?.[item.id] ?? "";
+                      const price =
+                        parseFloat(String(raw).replace(/,/g, "")) || 0;
+                      return (
+                        <View
+                          key={item.id}
+                          className="flex-row items-center gap-2 py-1.5"
+                          style={{
+                            borderBottomWidth: 1,
+                            borderBottomColor: "#f3f4f6",
+                          }}
+                        >
+                          <Text
+                            className="flex-[2] text-[12px] text-gray-700"
+                            numberOfLines={1}
+                          >
+                            {item.desc}
+                          </Text>
+                          <Text className="text-[11.5px] text-gray-400 w-9 text-center">
+                            {item.unit}
+                          </Text>
+                          <Text className="text-[11.5px] text-gray-600 w-7 text-right">
+                            {item.qty}
+                          </Text>
+                          <View className="w-20">
+                            <Input
+                              value={raw}
+                              numeric
+                              placeholder="0.00"
+                              onChange={(v) =>
+                                setRfqEditSupps((s) =>
+                                  s.map((x) =>
+                                    x.id === sp.id
+                                      ? {
+                                          ...x,
+                                          prices: { ...x.prices, [item.id]: v },
+                                        }
+                                      : x,
+                                  ),
+                                )
+                              }
+                            />
+                          </View>
+                          <Text
+                            className={`w-20 text-[11.5px] font-semibold text-right ${
+                              price > 0 ? "text-[#064E3B]" : "text-gray-300"
+                            }`}
+                          >
+                            {price > 0 ? `₱${fmt(price * item.qty)}` : "—"}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                onPress={() =>
+                  setRfqEditSupps((s) => [
+                    ...s,
+                    {
+                      id: s.length + 1,
+                      name: "",
+                      address: "",
+                      tin: "",
+                      days: "",
+                      prices: {},
+                    },
+                  ])
+                }
+                activeOpacity={0.8}
+                className="flex-row items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-gray-300 bg-white"
+              >
+                <MaterialIcons name="add" size={18} color="#6b7280" />
+                <Text className="text-[12px] font-bold text-gray-600">
+                  Add Supplier
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            <View className="absolute left-0 right-0 bottom-0 bg-white border-t border-gray-100 px-4 py-3">
+              <View className="flex-row items-center gap-2">
+                <TouchableOpacity
+                  onPress={() => setRfqEditOpen(false)}
+                  activeOpacity={0.85}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+                  disabled={rfqEditSaving}
+                >
+                  <Text className="text-[12px] font-bold text-gray-700 text-center">
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void saveRFQEdits(false)}
+                  activeOpacity={0.85}
+                  className={`flex-1 px-4 py-2.5 rounded-xl ${
+                    rfqEditSaving ? "bg-gray-300" : "bg-gray-900"
+                  }`}
+                  disabled={rfqEditSaving}
+                >
+                  <Text className="text-[12px] font-bold text-white text-center">
+                    Save
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void saveRFQEdits(true)}
+                  activeOpacity={0.85}
+                  className={`flex-1 px-4 py-2.5 rounded-xl ${
+                    rfqEditSaving ? "bg-gray-300" : "bg-[#064E3B]"
+                  }`}
+                  disabled={rfqEditSaving}
+                >
+                  <Text className="text-[12px] font-bold text-white text-center">
+                    Save & Use
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {prId && currentUser?.id && (
           <View className="mb-3">
@@ -1221,7 +1629,7 @@ export default function AAAView({
         entries={entries as any}
         assignments={rfqModalAssignments as any}
         users={rfqModalUsers as any}
-        bacNo={bacNo}
+        bacNo={rfqNo}
         chairperson="BAC Chairperson"
       />
     </KeyboardAvoidingView>
