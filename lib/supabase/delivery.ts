@@ -211,3 +211,15 @@ export async function upsertDVByDelivery(
   return data;
 }
 
+export async function fetchDeliveryStatuses(): Promise<
+  { id: number; status_name: string }[]
+> {
+  const { data, error } = await supabase
+    .from("status")
+    .select("id, status_name")
+    .gte("id", 16)
+    .lte("id", 22)
+    .order("id", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as { id: number; status_name: string }[];
+}
