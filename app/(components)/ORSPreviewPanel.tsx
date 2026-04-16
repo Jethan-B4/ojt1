@@ -159,73 +159,58 @@ export function buildORSHtml(data: ORSPreviewData): string {
 <title>ORS ${orsNo}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 10px; color: #111; padding: 20px; }
-  h1 { font-size: 15px; text-align: center; margin-bottom: 1px; letter-spacing: 1px; }
-  .subtitle { font-size: 9px; text-align: center; color: #555; margin-bottom: 10px; }
-  table { width: 100%; border-collapse: collapse; }
-  td, th { border: 1px solid #888; padding: 4px 6px; vertical-align: middle; }
-  .label { background: #f0f0f0; font-weight: bold; white-space: nowrap; width: 130px; }
-  .num { text-align: right; font-family: 'Courier New', monospace; }
-  .section-header { background: #064E3B; color: #fff; font-size: 9px; font-weight: bold;
-                    letter-spacing: 1px; text-transform: uppercase; padding: 4px 6px; }
-  .tbl-head th { background: #1a4d2e; color: #fff; font-size: 9px; text-align: center; }
-  .sig-block { text-align: center; padding-top: 6px; font-size: 9px; }
-  .sig-name { font-weight: bold; font-size: 10px; border-top: 1px solid #333;
-              display: inline-block; min-width: 160px; padding-top: 3px; margin-top: 20px; }
-  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 20px;
-                 font-weight: bold; font-size: 9px;
-                 background: ${sBg}; color: ${sColor};
-                 border: 1px solid ${sColor}; }
-  .mono { font-family: 'Courier New', monospace; }
+  body { font-family: "Times New Roman", serif; font-size: 9.5pt; color: #000; padding: 18px; }
+  h1 { font-size: 12pt; text-align: center; margin-bottom: 2px; }
+  .subtitle { font-size: 8.5pt; text-align: center; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td, th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; }
+  .nob { border: none !important; }
+  .num { text-align: right; font-family: "Courier New", monospace; }
+  .bold { font-weight: bold; }
+  .small { font-size: 8pt; }
+  .center { text-align: center; }
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-weight: bold; font-size: 8pt; background: ${sBg}; color: ${sColor}; border: 1px solid ${sColor}; }
 </style>
 </head>
 <body>
   <h1>OBLIGATION REQUEST AND STATUS</h1>
   <p class="subtitle">Appendix 11</p>
 
-  <!-- Top meta row -->
+  <table class="nob" style="margin-bottom:6px">
+    <tr><td class="nob center bold">OBLIGATION REQUEST AND STATUS</td></tr>
+    <tr><td class="nob center small">Appendix 11</td></tr>
+  </table>
+
   <table style="margin-bottom:8px">
     <tr>
-      <td class="label">Entity Name</td>
-      <td colspan="3">${entityName}</td>
-      <td class="label" style="width:90px">Fund Cluster</td>
-      <td class="mono">${fundCluster}</td>
+      <td class="bold" style="width:20%">Entity Name</td>
+      <td style="width:46%">${entityName}</td>
+      <td class="bold" style="width:17%">Fund Cluster :</td>
+      <td style="width:17%">${fundCluster}</td>
     </tr>
     <tr>
-      <td class="label">Serial No.</td>
-      <td class="mono" style="font-weight:bold">${orsNo}</td>
-      <td class="label">PR No.</td>
-      <td class="mono">${prNo}</td>
-      <td class="label">Date</td>
+      <td class="bold">Serial No. :</td>
+      <td class="num bold">${orsNo}</td>
+      <td class="bold">Date :</td>
       <td>${dateCreated}</td>
     </tr>
     <tr>
-      <td class="label">Office / Division</td>
-      <td colspan="3">${divisionName}</td>
-      <td class="label">Fiscal Year</td>
-      <td>${fiscalYear}</td>
-    </tr>
-    <tr>
-      <td class="label">Responsibility Center</td>
-      <td colspan="3">${responsibilityCenter}</td>
-      <td class="label">Status</td>
-      <td><span class="status-pill">${status}</span></td>
+      <td class="bold">Office</td>
+      <td>${divisionName}</td>
+      <td class="bold">Responsibility Center</td>
+      <td>${responsibilityCenter}</td>
     </tr>
   </table>
 
-  <!-- Obligation details -->
   <table style="margin-bottom:8px">
-    <tr>
-      <td colspan="6" class="section-header">A. Obligation Details</td>
-    </tr>
-    <thead class="tbl-head">
+    <thead>
       <tr>
-        <th style="width:120px">Particulars</th>
-        <th style="width:80px">MFO / PAP</th>
-        <th style="width:100px">UACS Object Code</th>
-        <th style="width:100px">Amount (₱)</th>
-        <th>Payee</th>
-        <th>Address</th>
+        <th class="small">Particulars</th>
+        <th class="small">MFO/PAP</th>
+        <th class="small">UACS Object Code</th>
+        <th class="small">Amount</th>
+        <th class="small">Payee</th>
+        <th class="small">Address</th>
       </tr>
     </thead>
     <tbody>
@@ -249,19 +234,16 @@ export function buildORSHtml(data: ORSPreviewData): string {
 
   ${notes ? `<div style="border:1px solid #ddd;border-radius:4px;padding:6px 8px;margin-bottom:8px;font-size:9px;color:#555"><strong>Notes:</strong> ${notes}</div>` : ""}
 
-  <!-- Certification A -->
   <table style="margin-bottom:8px">
     <tr>
-      <td class="section-header" colspan="2">
-        B. Charges to appropriation / allotment are necessary, lawful and under my direct supervision
-      </td>
+      <td colspan="2" class="small bold">A. Charges to appropriation/allotment are necessary, lawful and under my direct supervision; and</td>
     </tr>
     <tr>
       <td style="width:50%;padding:16px 10px">
         <div class="sig-block">
           <div class="sig-name">${preparedByName || "________________________________"}</div><br/>
           <span>${preparedByDesig}</span><br/>
-          <span style="color:#666">Head, Requesting Office / Authorized Representative</span><br/>
+          <span style="color:#666">Head, Requesting Office/Authorized Representative</span><br/>
           <span style="color:#999">Date: ______________________</span>
         </div>
       </td>
@@ -269,17 +251,16 @@ export function buildORSHtml(data: ORSPreviewData): string {
         <div class="sig-block">
           <div class="sig-name">${approvedByName || "________________________________"}</div><br/>
           <span>${approvedByDesig}</span><br/>
-          <span style="color:#666">Head, Budget Division / Authorized Representative</span><br/>
+          <span style="color:#666">Head, Budget Division/Unit/Authorized Representative</span><br/>
           <span style="color:#999">Date: ______________________</span>
         </div>
       </td>
     </tr>
   </table>
 
-  <!-- Certification C -->
   <table style="margin-bottom:8px">
     <tr>
-      <td class="section-header">C. Allotment available and obligated for the purpose indicated above</td>
+      <td class="small bold">C. Certified: Allotment available and obligated for the purpose indicated above</td>
     </tr>
     <tr>
       <td style="padding:12px 10px">
@@ -292,21 +273,20 @@ export function buildORSHtml(data: ORSPreviewData): string {
     </tr>
   </table>
 
-  <!-- Status of Obligation -->
   <table>
     <tr>
-      <td colspan="8" class="section-header">D. Status of Obligation</td>
+      <td colspan="8" class="small bold">STATUS OF OBLIGATION</td>
     </tr>
-    <thead class="tbl-head">
+    <thead>
       <tr>
-        <th>Date</th>
-        <th>Particulars</th>
-        <th>ORS / JEV / Check / ADA / TRA No.</th>
-        <th>Obligation (a)</th>
-        <th>Payable (b)</th>
-        <th>Not Yet Due (a-b)</th>
-        <th>Due &amp; Demandable (c)</th>
-        <th>Balance (b-c)</th>
+        <th class="small">Date</th>
+        <th class="small">Particulars</th>
+        <th class="small">ORS/JEV/Check/ADA/TRA No.</th>
+        <th class="small">Obligation (a)</th>
+        <th class="small">Payable (b)</th>
+        <th class="small">Not Yet Due (a-b)</th>
+        <th class="small">Due and Demandable (c)</th>
+        <th class="small">Balance (b-c)</th>
       </tr>
     </thead>
     <tbody>

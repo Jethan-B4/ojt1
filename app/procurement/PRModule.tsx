@@ -1,6 +1,7 @@
 import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -14,13 +15,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import BACView from "../(canvassing)/BACView/index";
-import CanvasserView from "../(canvassing)/CanvasserView";
-import EndUserView from "../(canvassing)/EndUserView";
-import BACResolutionModule from "../(components)/BACResolutionModule";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
 import { CreatePRModal, PRSubmitPayload } from "../(modals)/CreatePRModal";
+import DeletePRModal from "../(modals)/DeletePRModal";
 import EditPRModal, {
   type PREditPayload,
   type PREditRecord,
@@ -41,7 +39,6 @@ import {
   updatePRStatus,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
-import { useRealtime } from "../RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,10 +62,11 @@ type PRRecord = ReturnType<typeof toPRDisplay> & {
  *   4  = Processing (Budget)
  *   5  = Processing (PARPO)
  *   6  = Canvassing (Reception)    ← BAC receives & assigns canvass number
+ *   7  = BAC Resolution
  *   8  = Canvassing (Releasing)    ← RFQ released to canvassers
  *   9  = Canvassing (Collection)   ← BAC collecting filled canvass sheets
- *   10 = BAC Resolution
- *   11 = AAA Issuance
+ *   10 = Abstract of Awards
+ *   11 = PO (Creation)
  */
 const STATUS_CFG: Record<
   number,
@@ -95,6 +93,12 @@ const STATUS_CFG: Record<
     dot: "#22c55e",
     label: "Canvass · Reception",
   },
+  7: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "BAC Resolution",
+  },
   8: {
     bg: "#ecfdf5",
     text: "#065f46",
@@ -108,12 +112,17 @@ const STATUS_CFG: Record<
     label: "Canvass · Collection",
   },
   10: {
-    bg: "#faf5ff",
-    text: "#6b21a8",
-    dot: "#9333ea",
-    label: "BAC Resolution",
+    bg: "#fdf4ff",
+    text: "#86198f",
+    dot: "#c026d3",
+    label: "Abstract of Awards",
   },
-  11: { bg: "#fdf4ff", text: "#86198f", dot: "#c026d3", label: "AAA Issuance" },
+  11: {
+    bg: "#eff6ff",
+    text: "#1e40af",
+    dot: "#3b82f6",
+    label: "PO (Creation)",
+  },
 };
 
 function statusCfgFor(id: number) {
@@ -214,8 +223,6 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   onCreatePress: () => void;
   canCreate?: boolean;
-  createLabel?: string;
-  createIcon?: keyof typeof MaterialIcons.glyphMap;
   filterActive: boolean;
   onFilterToggle: () => void;
 }> = ({
@@ -223,14 +230,12 @@ const SearchBar: React.FC<{
   onChange,
   onCreatePress,
   canCreate = true,
-  createLabel = "Create",
-  createIcon = "add",
   filterActive,
   onFilterToggle,
 }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
-      <MaterialIcons name="search" size={16} color="#9ca3af" />
+      <Text className="text-gray-400 text-sm">🔍</Text>
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -241,7 +246,7 @@ const SearchBar: React.FC<{
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChange("")} hitSlop={8}>
-          <MaterialIcons name="close" size={16} color="#9ca3af" />
+          <Text className="text-gray-400 text-sm">✕</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -267,8 +272,10 @@ const SearchBar: React.FC<{
         className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
         style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
       >
-        <MaterialIcons name={createIcon} size={18} color="#ffffff" />
-        <Text className="text-white text-[13px] font-bold">{createLabel}</Text>
+        <Text className="text-white text-[18px] leading-none font-light">
+          +
+        </Text>
+        <Text className="text-white text-[13px] font-bold">Create</Text>
       </Pressable>
     )}
   </View>
@@ -550,8 +557,11 @@ const RecordCard: React.FC<{
           {record.date}
         </Text>
         <View className="flex-1" />
-        <Text className="text-[12.5px] font-bold text-gray-700">
-          ₱<Text style={{ fontFamily: MONO }}>{fmt(record.totalCost)}</Text>
+        <Text
+          className="text-[12.5px] font-bold text-gray-700"
+          style={{ fontFamily: MONO }}
+        >
+          ₱{fmt(record.totalCost)}
         </Text>
       </View>
       {/* ── Latest status flag from remarks ── */}
@@ -620,9 +630,9 @@ const RecordCard: React.FC<{
             <TouchableOpacity
               onPress={() => onProcess(record)}
               activeOpacity={0.8}
-              className="flex-1 bg-[#064E3B] rounded-xl py-2 items-center"
+              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
             >
-              <Text className="text-white text-[12px] font-bold">Open</Text>
+              <Text className="text-white text-[12px] font-bold">Process</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -637,13 +647,9 @@ const RecordCard: React.FC<{
           <TouchableOpacity
             onPress={() => onProcess(record)}
             activeOpacity={0.8}
-            className={`flex-1 rounded-xl py-2 items-center ${
-              record.statusId >= 6 ? "bg-[#064E3B]" : "bg-violet-600"
-            }`}
+            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
           >
-            <Text className="text-white text-[12px] font-bold">
-              {record.statusId >= 6 ? "Open" : "Process"}
-            </Text>
+            <Text className="text-white text-[12px] font-bold">Process</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -651,35 +657,35 @@ const RecordCard: React.FC<{
           activeOpacity={0.8}
           className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
         >
-          <MaterialIcons name="more-horiz" size={20} color="#ffffff" />
+          <Text className="text-white text-[11px] font-bold tracking-widest">
+            •••
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-// ─── MoreSheet ────────────────────────────────────────────────────────────────
-
-interface PRMoreSheetProps {
+const MoreSheet: React.FC<{
   visible: boolean;
   record: PRRecord | null;
   roleId: number;
   onClose: () => void;
   onRemarks: () => void;
-  /** Admin-only: open the Cancel PR confirmation modal. */
+  onEdit: () => void;
   onCancel: () => void;
-}
-
-const PRMoreSheet: React.FC<PRMoreSheetProps> = ({
+  onDelete: () => void;
+}> = ({
   visible,
   record,
   roleId,
   onClose,
   onRemarks,
+  onEdit,
   onCancel,
+  onDelete,
 }) => {
   if (!record) return null;
-  const cfg = statusCfgFor(record.statusId);
 
   type Action = {
     icon: keyof typeof MaterialIcons.glyphMap;
@@ -702,18 +708,39 @@ const PRMoreSheet: React.FC<PRMoreSheetProps> = ({
         onRemarks();
       },
     },
-    // Admin-only: Cancel PR
+    {
+      icon: "edit",
+      label: "Edit PR",
+      sublabel: "Modify PR details and line items",
+      color: "#b45309",
+      bg: "#fffbeb",
+      onPress: () => {
+        onClose();
+        onEdit();
+      },
+    },
     ...(roleId === 1
       ? ([
           {
             icon: "cancel",
             label: "Cancel PR",
-            sublabel: "Void this PR and cancel any linked canvass session",
+            sublabel: "Void this PR and stop further processing",
             color: "#b91c1c",
             bg: "#fff1f2",
             onPress: () => {
               onClose();
               onCancel();
+            },
+          },
+          {
+            icon: "delete-forever",
+            label: "Delete PR",
+            sublabel: "Permanently remove PR and linked records",
+            color: "#7f1d1d",
+            bg: "#fee2e2",
+            onPress: () => {
+              onClose();
+              onDelete();
             },
           },
         ] as Action[])
@@ -737,12 +764,9 @@ const PRMoreSheet: React.FC<PRMoreSheetProps> = ({
             className="bg-white rounded-t-3xl overflow-hidden"
             style={{ paddingBottom: 32 }}
           >
-            {/* Drag handle */}
             <View className="items-center pt-3 pb-1">
               <View className="w-10 h-1 rounded-full bg-gray-200" />
             </View>
-
-            {/* PR identity header */}
             <View className="px-5 pt-2 pb-4 border-b border-gray-100">
               <Text
                 className="text-[15px] font-extrabold text-gray-900"
@@ -756,66 +780,50 @@ const PRMoreSheet: React.FC<PRMoreSheetProps> = ({
               >
                 {record.officeSection}
               </Text>
-              <View
-                className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
-                style={{ backgroundColor: cfg.bg }}
-              >
-                <View
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: cfg.dot }}
-                />
-                <Text
-                  className="text-[10.5px] font-bold"
-                  style={{ color: cfg.text }}
-                >
-                  {cfg.label}
-                </Text>
-              </View>
             </View>
-
-            {/* Action rows */}
-            <View className="px-4 pt-3 gap-2">
+            <View className="px-5 pt-4">
               {actions.map((a) => (
                 <TouchableOpacity
                   key={a.label}
+                  activeOpacity={0.85}
                   onPress={a.onPress}
-                  activeOpacity={0.8}
-                  className="flex-row items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-gray-100"
-                  style={{ backgroundColor: a.bg }}
+                  className="flex-row items-center gap-3 rounded-2xl p-3 mb-2 border"
+                  style={{ backgroundColor: a.bg, borderColor: a.color + "30" }}
                 >
                   <View
-                    className="w-9 h-9 rounded-xl items-center justify-center"
-                    style={{ backgroundColor: a.color + "18" }}
+                    className="w-10 h-10 rounded-2xl items-center justify-center"
+                    style={{ backgroundColor: a.color + "15" }}
                   >
-                    <MaterialIcons name={a.icon} size={18} color={a.color} />
+                    <MaterialIcons name={a.icon} size={20} color={a.color} />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-[13.5px] font-bold text-gray-800">
+                    <Text
+                      className="text-[13px] font-extrabold"
+                      style={{ color: a.color }}
+                    >
                       {a.label}
                     </Text>
-                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                    <Text className="text-[11px] text-gray-500 mt-0.5">
                       {a.sublabel}
                     </Text>
                   </View>
                   <MaterialIcons
                     name="chevron-right"
                     size={18}
-                    color="#d1d5db"
+                    color="#9ca3af"
                   />
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                onPress={onClose}
+                activeOpacity={0.85}
+                className="mt-2 px-4 py-3 rounded-2xl bg-gray-100"
+              >
+                <Text className="text-[12px] font-bold text-gray-700 text-center">
+                  Close
+                </Text>
+              </TouchableOpacity>
             </View>
-
-            {/* Dismiss */}
-            <TouchableOpacity
-              onPress={onClose}
-              activeOpacity={0.8}
-              className="mx-4 mt-3 py-3 rounded-2xl bg-gray-100 items-center"
-            >
-              <Text className="text-[13.5px] font-bold text-gray-500">
-                Dismiss
-              </Text>
-            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </TouchableOpacity>
@@ -840,9 +848,9 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 export default function PRModule({
   initialSubTab,
 }: { initialSubTab?: SubTab } = {}) {
+  const navigation = useNavigation();
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
-  const { tick } = useRealtime();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(
     initialSubTab ?? "all",
@@ -877,30 +885,26 @@ export default function PRModule({
     null,
   );
   const [cancelVisible, setCancelVisible] = useState(false);
-  // CancelPRModal state — admin only (flat fields mirror POModule pattern)
-  const [cancelPrId, setCancelPrId] = useState<string | null>(null);
-  const [cancelPrNo, setCancelPrNo] = useState<string | null>(null);
+  const [cancelRecord, setCancelRecord] = useState<{
+    id: string;
+    prNo: string;
+  } | null>(null);
+  const [deleteVisible, setDeleteVisible] = useState(false);
+  const [deleteRecord, setDeleteRecord] = useState<{
+    id: string;
+    prNo: string;
+  } | null>(null);
 
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
-  // RemarkSheet state — opened from PRMoreSheet's Remarks action
   const [remarkRecord, setRemarkRecord] = useState<PRRecord | null>(null);
   const [remarkVisible, setRemarkVisible] = useState(false);
 
   // Create PR modal state
   const [prModalOpen, setPrModalOpen] = useState(false);
-  const [bacResolutionOpen, setBacResolutionOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  // ── Inline canvassing view state ────────────────────────────────────────────
-  // When set, the canvass/AAA subtab renders the appropriate canvassing view
-  // inline rather than showing the card list. Cleared by the view's onBack.
-  const [selectedCanvassPR, setSelectedCanvassPR] = useState<PRRecord | null>(
-    null,
-  );
-  const [canvassModalOpen, setCanvassModalOpen] = useState(false);
 
   // Load PR status lookup table once — labels come from DB, not hardcoded strings.
   useEffect(() => {
@@ -913,32 +917,22 @@ export default function PRModule({
   const loadPRs = useCallback(async () => {
     try {
       let rows: PRRow[] = [];
-      // role_id 1 (Admin), PROCESS_ROLES (2-5), role_id 7 (Canvasser), and role_id 8 (Supply) see all PRs.
-      // Canvassers see all PRs but only those in the canvassing phase (status_id >= 6) —
-      // enforced by subtab filtering below, not by the fetch.
+      // role_id 1 (Admin), PROCESS_ROLES (2-5), and role_id 8 (Supply) see all PRs.
       const canSeeAll =
-        roleId === 1 ||
-        roleId === 7 ||
-        roleId === 8 ||
-        PROCESS_ROLES.has(roleId);
+        roleId === 1 || roleId === 8 || PROCESS_ROLES.has(roleId);
 
-      // Fetch the full dataset — subtab filtering is done client-side by status_id ranges.
       const allRows = canSeeAll
         ? await fetchPurchaseRequests()
         : await fetchPurchaseRequestsByDivision(currentUser?.division_id ?? -1);
 
       if (activeSubTab === "all") {
-        // All subtab: show everything
         rows = allRows;
       } else if (activeSubTab === "pr") {
-        // Purchase Request: status_id 1–5
         rows = allRows.filter((r) => r.status_id >= 1 && r.status_id <= 5);
       } else if (activeSubTab === "canvass") {
-        // Canvass: status_id 6–10
-        rows = allRows.filter((r) => r.status_id >= 6 && r.status_id <= 10);
+        rows = allRows.filter((r) => r.status_id >= 6 && r.status_id <= 9);
       } else if (activeSubTab === "abstract_of_awards") {
-        // Abstract of Awards: status_id = 11
-        rows = allRows.filter((r) => r.status_id === 11);
+        rows = allRows.filter((r) => r.status_id === 10);
       } else {
         rows = [];
       }
@@ -960,7 +954,7 @@ export default function PRModule({
 
   useEffect(() => {
     loadPRs();
-  }, [loadPRs, tick]);
+  }, [loadPRs]);
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -972,12 +966,8 @@ export default function PRModule({
   // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
   const handleOpenCreate = useCallback(() => {
-    if (roleId === 3) {
-      setBacResolutionOpen(true);
-      return;
-    }
     setPrModalOpen(true);
-  }, [roleId]);
+  }, []);
 
   const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
     setSaving(true);
@@ -1052,12 +1042,6 @@ export default function PRModule({
     );
   }, []);
 
-  /** Remove the cancelled PR from the local list immediately and reset pagination. */
-  const handlePRCancelled = useCallback((id: string) => {
-    setRecords((prev) => prev.filter((r) => r.id !== id));
-    setPage(1);
-  }, []);
-
   const filtered = records
     .filter((r) => {
       const q = searchQuery.toLowerCase();
@@ -1087,108 +1071,17 @@ export default function PRModule({
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
-  // ── Helper: shape a PRRecord into the CanvassingPR expected by canvassing views ──
-  function toCanvassingPR(r: PRRecord) {
-    return {
-      prNo: r.prNo,
-      officeSection: r.officeSection,
-      purpose: r.purpose ?? "",
-      totalCost: r.totalCost,
-      date: r.date,
-      isHighValue: (r as any).isHighValue ?? false,
-      // responsibilityCode maps from resp_code on the DB row; PRRecord does not
-      // carry it, and no canvassing view reads it from pr — safe to default "".
-      responsibilityCode:
-        (r as any).responsibilityCode ?? (r as any).respCode ?? "",
-      items: [], // each view re-fetches live items from DB via prNo
-    };
-  }
-
   return (
     <View className="flex-1 bg-gray-50">
-      <SubTabRow
-        active={activeSubTab}
-        onSelect={(tab) => {
-          setActiveSubTab(tab);
-          setPage(1);
-          setStatusFilter(null);
-          setSectionFilter("All");
-          setSearchQuery("");
-          setFilterOpen(false);
-          setSelectedCanvassPR(null);
-          setCanvassModalOpen(false);
-        }}
-      />
-
-      <Modal
-        visible={canvassModalOpen && !!selectedCanvassPR}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => {
-          setCanvassModalOpen(false);
-          setSelectedCanvassPR(null);
-        }}
-      >
-        <View className="flex-1 bg-gray-50">
-          <View className="bg-white border-b border-gray-100 px-4 pt-4 pb-3">
-            <View className="flex-row items-center justify-between">
-              <TouchableOpacity
-                onPress={() => {
-                  setCanvassModalOpen(false);
-                  setSelectedCanvassPR(null);
-                }}
-                activeOpacity={0.8}
-                className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center"
-              >
-                <MaterialIcons name="close" size={18} color="#6b7280" />
-              </TouchableOpacity>
-              <View className="items-center flex-1 px-3">
-                <Text className="text-[11px] text-gray-400 font-semibold">
-                  Canvassing
-                </Text>
-                <Text className="text-[13px] font-extrabold text-gray-900">
-                  {selectedCanvassPR?.prNo ?? ""}
-                </Text>
-              </View>
-              <View style={{ width: 36 }} />
-            </View>
-          </View>
-
-          {selectedCanvassPR &&
-            (() => {
-              const canvassingPR = toCanvassingPR(selectedCanvassPR);
-              const handleBack = () => {
-                setCanvassModalOpen(false);
-                setSelectedCanvassPR(null);
-              };
-
-              if (roleId === 3) {
-                return (
-                  <BACView
-                    pr={canvassingPR}
-                    onBack={handleBack}
-                    onComplete={handleBack}
-                  />
-                );
-              }
-              if (roleId === 7) {
-                return <CanvasserView pr={canvassingPR} onBack={handleBack} />;
-              }
-              return <EndUserView pr={canvassingPR} onBack={handleBack} />;
-            })()}
-        </View>
-      </Modal>
+      <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
       <SearchBar
         value={searchQuery}
         onChange={(t) => {
           setSearchQuery(t);
           setPage(1);
-          setPage(1);
         }}
         onCreatePress={handleOpenCreate}
-        canCreate={roleId === 6 || roleId === 3}
-        createLabel={roleId === 3 ? "Create BAC Resolution" : "Create PR"}
-        createIcon={roleId === 3 ? "gavel" : "add"}
+        canCreate={roleId === 6}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
@@ -1275,49 +1168,62 @@ export default function PRModule({
                 setEditVisible(true);
               }}
               onProcess={async (r) => {
-                // ── Canvassing-phase PRs (status 6–11): open canvassing modal ──
-                if (r.statusId >= 6 && r.statusId <= 11) {
-                  setSelectedCanvassPR(r);
-                  setCanvassModalOpen(true);
-                  return;
-                }
-
                 // End User initial processing: Pending (1) → Div. Head (2)
                 if (roleId === 6 && r.statusId === 1) {
-                  const doForward = async () => {
-                    try {
-                      setSaving(true);
-                      await updatePRStatus(r.id, 2);
-                      setRecords((prev) =>
-                        prev.map((x) =>
-                          x.id === r.id ? { ...x, statusId: 2 } : x,
-                        ),
-                      );
-                      Alert.alert(
-                        "Forwarded",
-                        "PR forwarded to Division Head.",
-                      );
-                    } catch (e: any) {
-                      Alert.alert(
-                        "Failed",
-                        e?.message ?? "Could not update PR status.",
-                      );
-                    } finally {
-                      setSaving(false);
-                    }
-                  };
-
                   Alert.alert(
-                    "Forward this PR?",
-                    "This will forward the Purchase Request to the Division Head for processing.",
+                    "Forward to Division Head",
+                    "Do you want to forward this PR to the Division Head for review?",
                     [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "Forward", onPress: () => void doForward() },
+                      {
+                        text: "Cancel",
+                        onPress: () => {},
+                        style: "cancel",
+                      },
+                      {
+                        text: "Confirm",
+                        onPress: async () => {
+                          try {
+                            setSaving(true);
+                            await updatePRStatus(r.id, 2);
+                            setRecords((prev) =>
+                              prev.map((x) =>
+                                x.id === r.id ? { ...x, statusId: 2 } : x,
+                              ),
+                            );
+                            Alert.alert(
+                              "Success",
+                              "PR forwarded to Division Head.",
+                            );
+                          } catch (e: any) {
+                            Alert.alert(
+                              "Failed",
+                              e?.message ?? "Could not update PR status.",
+                            );
+                          } finally {
+                            setSaving(false);
+                          }
+                        },
+                        style: "default",
+                      },
                     ],
                   );
                   return;
                 }
                 if (roleId === 1) {
+                  if (r.statusId >= 6 && r.statusId < 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
+                    return;
+                  }
+                  if (r.statusId === 11) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                    );
+                    return;
+                  }
                   const mapped =
                     r.statusId === 2 ||
                     r.statusId === 3 ||
@@ -1367,6 +1273,20 @@ export default function PRModule({
                     setProcessVisible(true);
                     return;
                   }
+                  if (r.statusId >= 6 && r.statusId <= 9) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
+                    return;
+                  }
+                  if (r.statusId === 10) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                    );
+                    return;
+                  }
                   Alert.alert(
                     "Not Available",
                     "This PR is not yet in the BAC step or canvassing phase.",
@@ -1374,16 +1294,18 @@ export default function PRModule({
                   return;
                 }
                 if (roleId === 7 || roleId === 6) {
-                  if (r.statusId >= 6 && r.statusId < 11) {
-                    // Already handled above in the canvassing-phase guard.
-                    // This branch is dead code but retained for safety.
-                    setSelectedCanvassPR(r);
-                    setCanvassModalOpen(true);
+                  if (r.statusId >= 6 && r.statusId <= 9) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo } as never,
+                    );
                     return;
                   }
-                  if (r.statusId === 11) {
-                    setSelectedCanvassPR(r);
-                    setCanvassModalOpen(true);
+                  if (r.statusId === 10) {
+                    (navigation as any).navigate(
+                      "Canvassing" as never,
+                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
+                    );
                     return;
                   }
                   Alert.alert(
@@ -1426,11 +1348,7 @@ export default function PRModule({
         </Text>
         <View className="flex-row items-center gap-1.5">
           {[
-            {
-              label: "prev",
-              page: Math.max(1, page - 1),
-              disabled: page === 1,
-            },
+            { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
             ...Array.from(
               { length: Math.min(5, totalPages) },
               (_, i) => i + 1,
@@ -1441,7 +1359,7 @@ export default function PRModule({
               active: p === page,
             })),
             {
-              label: "next",
+              label: "›",
               page: Math.min(totalPages, page + 1),
               disabled: page === totalPages,
             },
@@ -1459,43 +1377,17 @@ export default function PRModule({
                     : "bg-white border-gray-200"
               }`}
             >
-              {btn.label === "prev" ? (
-                <MaterialIcons
-                  name="chevron-left"
-                  size={18}
-                  color={
-                    (btn as any).active
-                      ? "#ffffff"
-                      : btn.disabled
-                        ? "#d1d5db"
-                        : "#6b7280"
-                  }
-                />
-              ) : btn.label === "next" ? (
-                <MaterialIcons
-                  name="chevron-right"
-                  size={18}
-                  color={
-                    (btn as any).active
-                      ? "#ffffff"
-                      : btn.disabled
-                        ? "#d1d5db"
-                        : "#6b7280"
-                  }
-                />
-              ) : (
-                <Text
-                  className={`text-[12px] font-bold ${
-                    (btn as any).active
-                      ? "text-white"
-                      : btn.disabled
-                        ? "text-gray-300"
-                        : "text-gray-500"
-                  }`}
-                >
-                  {btn.label}
-                </Text>
-              )}
+              <Text
+                className={`text-[12px] font-bold ${
+                  (btn as any).active
+                    ? "text-white"
+                    : btn.disabled
+                      ? "text-gray-300"
+                      : "text-gray-500"
+                }`}
+              >
+                {btn.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -1511,8 +1403,8 @@ export default function PRModule({
         }}
       />
 
-      {/* More / actions sheet — Remarks + admin Cancel PR */}
-      <PRMoreSheet
+      {/* More / Remarks sheet */}
+      <MoreSheet
         visible={moreVisible}
         record={moreRecord}
         roleId={roleId}
@@ -1521,21 +1413,27 @@ export default function PRModule({
           setMoreRecord(null);
         }}
         onRemarks={() => {
-          if (moreRecord) {
-            setRemarkRecord(moreRecord);
-            setRemarkVisible(true);
-          }
+          if (!moreRecord) return;
+          setRemarkRecord(moreRecord);
+          setRemarkVisible(true);
+        }}
+        onEdit={() => {
+          if (!moreRecord) return;
+          setEditRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
+          setEditVisible(true);
         }}
         onCancel={() => {
-          if (moreRecord) {
-            setCancelPrId(moreRecord.id);
-            setCancelPrNo(moreRecord.prNo);
-            setCancelVisible(true);
-          }
+          if (!moreRecord) return;
+          setCancelRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
+          setCancelVisible(true);
+        }}
+        onDelete={() => {
+          if (!moreRecord) return;
+          setDeleteRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
+          setDeleteVisible(true);
         }}
       />
 
-      {/* Remarks sheet — opened from PRMoreSheet's Remarks action */}
       <RemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
@@ -1577,21 +1475,28 @@ export default function PRModule({
           );
         }}
       />
-      {/* CancelPRModal — admin only */}
       <CancelPRModal
         visible={cancelVisible}
-        prId={cancelPrId}
-        prNo={cancelPrNo}
+        prId={cancelRecord?.id ?? null}
+        prNo={cancelRecord?.prNo ?? null}
         onClose={() => {
           setCancelVisible(false);
-          setCancelPrId(null);
-          setCancelPrNo(null);
+          setCancelRecord(null);
         }}
         onCancelled={(id) => {
-          handlePRCancelled(id);
-          setCancelVisible(false);
-          setCancelPrId(null);
-          setCancelPrNo(null);
+          setRecords((prev) => prev.filter((r) => r.id !== id));
+        }}
+      />
+      <DeletePRModal
+        visible={deleteVisible}
+        prId={deleteRecord?.id ?? null}
+        prNo={deleteRecord?.prNo ?? null}
+        onClose={() => {
+          setDeleteVisible(false);
+          setDeleteRecord(null);
+        }}
+        onDeleted={(id) => {
+          setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
 
@@ -1604,26 +1509,6 @@ export default function PRModule({
           currentUser={currentUser as any}
         />
       )}
-
-      {/* Standalone BAC Resolution modal (BAC role only) */}
-      <Modal
-        visible={bacResolutionOpen}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setBacResolutionOpen(false)}
-      >
-        <BACResolutionModule
-          currentUserId={currentUser?.id ?? null}
-          divisionId={currentUser?.division_id ?? null}
-        />
-        <TouchableOpacity
-          onPress={() => setBacResolutionOpen(false)}
-          activeOpacity={0.85}
-          className="absolute top-11 right-4 w-9 h-9 rounded-xl bg-white/90 items-center justify-center border border-gray-200"
-        >
-          <MaterialIcons name="close" size={18} color="#374151" />
-        </TouchableOpacity>
-      </Modal>
 
       {/* Saving overlay */}
       {saving && (

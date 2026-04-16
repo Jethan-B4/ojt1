@@ -34,7 +34,11 @@ import {
   type POItemRow,
   type PORow,
 } from "../../lib/supabase/po";
-import { fetchPRIdByNo, fetchPurchaseRequests } from "../../lib/supabase/pr";
+import {
+  fetchPRIdByNo,
+  fetchPRWithItemsById,
+  fetchPurchaseRequests,
+} from "../../lib/supabase/pr";
 
 export type POCreatePayload = PORow;
 
@@ -395,6 +399,32 @@ export default function CreatePOModal({
     if (pr.app_name) setOfficialName(pr.app_name);
     if (pr.app_desig) setOfficialDesig(pr.app_desig);
     setPrPickerOpen(false);
+    fetchPRWithItemsById(String(pr.id))
+      .then(({ items: prItems }) => {
+        const next = (prItems ?? []).map((it: any, idx: number) => ({
+          id: String(idx + 1),
+          stock_no: String(it.stock_no ?? ""),
+          unit: String(it.unit ?? ""),
+          description: String(it.description ?? ""),
+          quantity: String(it.quantity ?? ""),
+          unit_price: String(it.unit_price ?? ""),
+        }));
+        setItems(
+          next.length
+            ? next
+            : [
+                {
+                  id: "1",
+                  stock_no: "",
+                  unit: "",
+                  description: "",
+                  quantity: "",
+                  unit_price: "",
+                },
+              ],
+        );
+      })
+      .catch(() => {});
   }, []);
 
   const previewData: POPreviewData = useMemo(
@@ -463,6 +493,11 @@ export default function CreatePOModal({
   const submit = useCallback(async () => {
     setSaving(true);
     try {
+      if (!poNo.trim()) {
+        Alert.alert("Missing", "PO Number is required.");
+        return;
+      }
+
       let finalPrId = linkedPrId;
       if (!finalPrId && prNo.trim()) {
         finalPrId = await fetchPRIdByNo(prNo.trim());
@@ -484,6 +519,17 @@ export default function CreatePOModal({
         .filter(
           (it) => it.description.trim() || it.quantity > 0 || it.unit_price > 0,
         );
+      const hasValidItem = lineItems.some(
+        (it) =>
+          it.description.trim().length > 0 && it.quantity > 0 && it.unit_price > 0,
+      );
+      if (!hasValidItem) {
+        Alert.alert(
+          "Missing",
+          "Add at least one item with Description, Quantity, and Unit Price.",
+        );
+        return;
+      }
 
       const payload: POInsertPayload = {
         po_no: poNo.trim() || null,

@@ -10,10 +10,10 @@
  *   Field / StyledInput / SectionLabel — shared form micro-components
  *
  * Phase 2 swimlane ownership (public.status table):
- *   Supply  (8)  — 12 PO Creation → 13, 13 PO Allocation → 14, 17 PO PARPO → 18
- *   Budget  (4)  — 14 ORS Creation → 15, 15 ORS Processing → 16
+ *   Supply  (8)  — 11 PO Creation → 12, 12 PO Allocation → 13, 16 PO PARPO → 17
+ *   Budget  (4)  — 13 ORS Creation → 14, 14 ORS Processing → 15
  *   Accounting / PARPO — no dedicated role yet; handled via AdminModal
- *   Admin   (1)  — full override across all 7 steps (12–18)
+ *   Admin   (1)  — full override across all 7 steps (11–17)
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -30,6 +30,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  fetchOrsEntryByNo,
+  generateOrsNumber,
+  insertOrsEntry,
+  updateOrsEntry,
+} from "../../lib/supabase/budget";
 import { supabase } from "../../lib/supabase/client";
 import {
   fetchPOStatuses,
@@ -83,47 +89,47 @@ const ROLE_META: Record<
   number,
   { step: string; title: string; accentColor: string; nextStatusId: number }
 > = {
-  12: {
-    step: "Step 12",
+  11: {
+    step: "Step 11",
     title: "PO Creation",
     accentColor: "#0f766e",
+    nextStatusId: 12,
+  },
+  12: {
+    step: "Step 12",
+    title: "PO Allocation",
+    accentColor: "#7c3aed",
     nextStatusId: 13,
   },
   13: {
     step: "Step 13",
-    title: "PO Allocation",
-    accentColor: "#7c3aed",
+    title: "ORS Creation",
+    accentColor: "#b45309",
     nextStatusId: 14,
   },
   14: {
     step: "Step 14",
-    title: "ORS Creation",
-    accentColor: "#b45309",
+    title: "ORS Processing",
+    accentColor: "#1d4ed8",
     nextStatusId: 15,
   },
   15: {
     step: "Step 15",
-    title: "ORS Processing",
-    accentColor: "#1d4ed8",
+    title: "PO Accounting",
+    accentColor: "#854d0e",
     nextStatusId: 16,
   },
   16: {
     step: "Step 16",
-    title: "PO Accounting",
-    accentColor: "#854d0e",
+    title: "PO (PARPO)",
+    accentColor: "#86198f",
     nextStatusId: 17,
   },
   17: {
     step: "Step 17",
-    title: "PO (PARPO)",
-    accentColor: "#86198f",
-    nextStatusId: 18,
-  },
-  18: {
-    step: "Step 18",
     title: "PO (Serving)",
     accentColor: "#166534",
-    nextStatusId: 18,
+    nextStatusId: 17,
   },
 };
 
@@ -133,48 +139,48 @@ const PHASE2_STEPS: Record<
   number,
   { label: string; role: string; action: string }
 > = {
-  12: {
+  11: {
     label: "PO (Creation)",
     role: "Supply",
     action: "Advance to Allocation",
   },
-  13: {
+  12: {
     label: "PO (Allocation)",
     role: "Supply",
-    action: "Assign PO & Forward to Budget",
+    action: "Forward to Budget",
   },
-  14: { label: "ORS (Creation)", role: "Budget", action: "Finalize ORS" },
-  15: {
+  13: { label: "ORS (Creation)", role: "Budget", action: "Finalize ORS" },
+  14: {
     label: "ORS (Processing)",
     role: "Budget",
     action: "Forward to Accounting",
   },
-  16: {
+  15: {
     label: "PO (Accounting)",
     role: "Accounting",
     action: "Forward to PARPO",
   },
-  17: {
+  16: {
     label: "PO (PARPO)",
     role: "PARPO",
     action: "Forward to Supply (Serving)",
   },
-  18: { label: "PO (Serving)", role: "Supply", action: "Mark as Served" },
+  17: { label: "PO (Serving)", role: "Supply", action: "Mark as Served" },
 };
 
 // ─── canRoleProcessPO ─────────────────────────────────────────────────────────
 
 /**
  * Whether a given role can process a PO at the given status_id.
- *   Supply (8)  — 12→13, 13→14, 17→18
- *   Budget (4)  — 14→15, 15→16
+ *   Supply (8)  — 11→12, 12→13, 17 (Serving)
+ *   Budget (4)  — 13→14, 14→15
  *   Admin  (1)  — all statuses
  */
 export function canRoleProcessPO(roleId: number, statusId: number): boolean {
   if (roleId === 1) return true;
   if (roleId === 8)
-    return statusId === 12 || statusId === 13 || statusId === 17;
-  if (roleId === 4) return statusId === 14 || statusId === 15;
+    return statusId === 11 || statusId === 12 || statusId === 16 || statusId === 17;
+  if (roleId === 4) return statusId === 13 || statusId === 14;
   return false;
 }
 
@@ -265,7 +271,7 @@ function usePOFetch(
         onClose();
       })
       .finally(() => setLoading(false));
-  }, [visible, record]);
+  }, [visible, record, onClose]);
 
   return { header, statuses, loading };
 }
@@ -484,7 +490,8 @@ function ModalFooter({
       <TouchableOpacity
         onPress={onCancel}
         activeOpacity={0.7}
-        className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+        className="px-4 py-3 rounded-xl border border-gray-200 bg-white"
+        style={{ minHeight: 44 }}
       >
         <Text className="text-[13.5px] font-semibold text-gray-500">
           Cancel
@@ -494,10 +501,10 @@ function ModalFooter({
         onPress={onConfirm}
         disabled={disabled || saving}
         activeOpacity={0.8}
-        className={`flex-row items-center gap-2 px-5 py-2.5 rounded-xl ${
+        className={`flex-row items-center gap-2 px-5 py-3 rounded-xl ${
           disabled || saving ? "opacity-40" : ""
         }`}
-        style={{ backgroundColor: color }}
+        style={{ minHeight: 44, backgroundColor: color }}
       >
         {saving && <ActivityIndicator size="small" color="#fff" />}
         <Text className="text-[13.5px] font-bold text-white">
@@ -546,7 +553,7 @@ function DatePickerButton({
   );
 }
 
-// ─── Supply Modal (role_id = 8 · Steps 12, 13, 17) ───────────────────────────
+// ─── Supply Modal (role_id = 8 · Steps 11, 12, 17) ───────────────────────────
 
 function SupplyModal({
   visible,
@@ -581,8 +588,7 @@ function SupplyModal({
     if (!record) return;
     setSaving(true);
     try {
-      // At Allocation (13): write the assigned PO number back to the DB
-      if (statusId === 13 && poNo.trim()) {
+      if ((statusId === 11 || statusId === 12) && poNo.trim()) {
         await updatePO(record.id, { po_no: poNo.trim() });
       }
 
@@ -594,8 +600,9 @@ function SupplyModal({
         getStatusFlagId(statusFlag),
       );
 
-      // 12 → 13 · 13 → 14 · 17 → 18
-      const targetStatusId = statusId === 12 ? 13 : statusId === 13 ? 14 : 18;
+      const canSkipToBudget =
+        (statusId === 11 && poNo.trim()) || statusId === 12;
+      const targetStatusId = statusId === 17 ? 17 : canSkipToBudget ? 13 : 12;
 
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
@@ -608,11 +615,11 @@ function SupplyModal({
   };
 
   const confirmLabel =
-    statusId === 12
-      ? "Advance to Allocation"
-      : statusId === 13
-        ? "Assign PO & Forward to Budget"
-        : "Serve PO to Suppliers";
+    statusId === 17
+      ? "Mark as Served"
+      : statusId === 11 && !poNo.trim()
+        ? "Advance to Allocation"
+        : "Forward to Budget";
 
   if (!record) return null;
   return (
@@ -641,9 +648,9 @@ function SupplyModal({
 
               <SectionLabel>Supply Action</SectionLabel>
 
-              {/* PO number assignment — only at Allocation step */}
-              {statusId === 13 && (
-                <Field label="Assign PO Number" required>
+              {/* PO number assignment / review */}
+              {(statusId === 11 || statusId === 12) && (
+                <Field label="PO Number">
                   <StyledInput
                     value={poNo}
                     onChangeText={setPoNo}
@@ -680,11 +687,9 @@ function SupplyModal({
                   value={remarks}
                   onChangeText={setRemarks}
                   placeholder={
-                    statusId === 12
-                      ? "e.g. Abstract received and reviewed. Assigning PO number."
-                      : statusId === 13
-                        ? "e.g. PO prepared and numbered. Forwarding to Budget for ORS."
-                        : "e.g. PO served to supplier. Attachments photocopied for COA."
+                    statusId === 17
+                      ? "e.g. PO served to supplier. Attachments photocopied for COA."
+                      : "e.g. Forwarding PO documents to Budget for ORS creation."
                   }
                   multiline
                 />
@@ -696,7 +701,7 @@ function SupplyModal({
             onConfirm={handleSubmit}
             confirmLabel={confirmLabel}
             confirmingLabel="Processing…"
-            disabled={loading || (statusId === 13 && !poNo.trim())}
+            disabled={loading}
             saving={saving}
             color={meta.accentColor}
           />
@@ -712,7 +717,7 @@ function SupplyModal({
   );
 }
 
-// ─── Budget Modal (role_id = 4 · Steps 14, 15) ───────────────────────────────
+// ─── Budget Modal (role_id = 4 · Steps 13, 14) ───────────────────────────────
 
 function BudgetModal({
   visible,
@@ -731,8 +736,8 @@ function BudgetModal({
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const statusId = record?.statusId ?? 14;
-  const meta = ROLE_META[statusId] ?? ROLE_META[14];
+  const statusId = record?.statusId ?? 13;
+  const meta = ROLE_META[statusId] ?? ROLE_META[13];
 
   useEffect(() => {
     if (!visible) return;
@@ -758,11 +763,51 @@ function BudgetModal({
     if (!record) return;
     setSaving(true);
     try {
-      if (statusId === 14) {
+      if (statusId === 13) {
+        const finalOrsNo = orsNo.trim() || (await generateOrsNumber());
+        const amount = orsAmount.trim() ? Number(orsAmount) || 0 : 0;
+        const prId =
+          (header as any)?.pr_id != null ? String((header as any).pr_id) : null;
+        const prNo = String((header as any)?.pr_no ?? record.prNo ?? "");
+        const divisionId =
+          (header as any)?.division_id != null
+            ? Number((header as any).division_id)
+            : null;
+        const fiscalYear = new Date().getFullYear();
+
+        const existing = await fetchOrsEntryByNo(finalOrsNo).catch(() => null);
+        if (existing) {
+          await updateOrsEntry(existing.id, {
+            pr_id: prId,
+            pr_no: prNo || null,
+            division_id: divisionId,
+            fiscal_year: fiscalYear,
+            amount,
+            status: "Processing",
+            prepared_by: currentUser?.id ?? null,
+            notes: (existing as any).notes ?? null,
+          } as any);
+        } else {
+          await insertOrsEntry({
+            ors_no: finalOrsNo,
+            pr_id: prId,
+            pr_no: prNo || null,
+            division_id: divisionId,
+            fiscal_year: fiscalYear,
+            amount,
+            status: "Processing",
+            prepared_by: (currentUser?.id as any) ?? null,
+            approved_by: null,
+            notes: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as any);
+        }
+
         await updatePO(record.id, {
-          ors_no: orsNo.trim() || null,
+          ors_no: finalOrsNo,
           ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
-          ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
+          ors_amount: amount,
           funds_available: fundsAvailable.trim() || null,
         });
       }
@@ -775,8 +820,8 @@ function BudgetModal({
         getStatusFlagId(statusFlag),
       );
 
-      // 14 → 15 · 15 → 16
-      const targetStatusId = statusId === 14 ? 15 : 16;
+      // 13 → 14 · 14 → 15
+      const targetStatusId = statusId === 13 ? 14 : 15;
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
       onClose();
@@ -812,8 +857,8 @@ function BudgetModal({
             >
               {header && <POSummaryCard header={header} statuses={statuses} />}
 
-              {/* ORS Creation (14) — full ORS form */}
-              {statusId === 14 && (
+              {/* ORS Creation (13) — full ORS form */}
+              {statusId === 13 && (
                 <>
                   <SectionLabel>ORS Details</SectionLabel>
                   <Field label="ORS Number" required>
@@ -851,8 +896,8 @@ function BudgetModal({
                 </>
               )}
 
-              {/* ORS Processing (15) — forwarding note */}
-              {statusId === 15 && (
+              {/* ORS Processing (14) — forwarding note */}
+              {statusId === 14 && (
                 <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
                   <MaterialIcons name="send" size={16} color="#1d4ed8" />
                   <Text className="text-[12px] text-blue-800 flex-1">
@@ -874,7 +919,7 @@ function BudgetModal({
                   value={remarks}
                   onChangeText={setRemarks}
                   placeholder={
-                    statusId === 14
+                    statusId === 13
                       ? "e.g. ORS prepared and assigned ORS number. Forwarding for signature."
                       : "e.g. Budget officer signature obtained. Forwarding to Accounting."
                   }
@@ -887,11 +932,11 @@ function BudgetModal({
             onCancel={onClose}
             onConfirm={handleSubmit}
             confirmLabel={
-              statusId === 14 ? "Finalize ORS" : "Forward to Accounting"
+              statusId === 13 ? "Finalize ORS" : "Forward to Accounting"
             }
             confirmingLabel="Saving…"
             disabled={
-              loading || (statusId === 14 && (!orsNo.trim() || !orsDate.trim()))
+              loading || (statusId === 13 && (!orsNo.trim() || !orsDate.trim()))
             }
             saving={saving}
             color={meta.accentColor}
@@ -908,7 +953,174 @@ function BudgetModal({
   );
 }
 
-// ─── Admin Modal (role_id = 1 · full Phase 2 override, Steps 12–18) ──────────
+function ParpoModal({
+  visible,
+  record,
+  onClose,
+  onProcessed,
+}: Omit<ProcessPOModalProps, "roleId">) {
+  const { currentUser } = useAuth();
+  const { header, statuses, loading } = usePOFetch(visible, record, onClose);
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const meta = ROLE_META[16];
+
+  if (!record) return null;
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      await insertPORemark(
+        record.id,
+        header?.pr_id ?? null,
+        currentUser?.id ?? null,
+        remarks,
+        getStatusFlagId(statusFlag),
+      );
+      await updatePOStatus(record.id, 17);
+      onProcessed(record.id, 17);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not complete PARPO signoff.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
+          {loading ? (
+            <LoadingBody color={meta.accentColor} />
+          ) : (
+            <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+              {header && <POSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>PARPO Review</SectionLabel>
+              <View className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl px-4 py-3 mb-4">
+                <Text className="text-[12px] text-fuchsia-800">
+                  Review and confirm PARPO signoff. This will move PO to Serving.
+                </Text>
+              </View>
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="PARPO Remarks">
+                <StyledInput value={remarks} onChangeText={setRemarks} placeholder="e.g. PARPO reviewed and signed." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleSubmit}
+            confirmLabel="Confirm PARPO Signoff"
+            confirmingLabel="Processing…"
+            disabled={loading}
+            saving={saving}
+            color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker visible={flagOpen} selected={statusFlag} onSelect={setStatusFlag} onClose={() => setFlagOpen(false)} />
+    </>
+  );
+}
+
+function ServingModal({
+  visible,
+  record,
+  onClose,
+  onProcessed,
+}: Omit<ProcessPOModalProps, "roleId">) {
+  const { currentUser } = useAuth();
+  const { header, statuses, loading } = usePOFetch(visible, record, onClose);
+  const [remarks, setRemarks] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [servedToSupplier, setServedToSupplier] = useState(false);
+  const [copiedForCoa, setCopiedForCoa] = useState(false);
+  const meta = ROLE_META[17];
+
+  useEffect(() => {
+    if (!visible) return;
+    setServedToSupplier(false);
+    setCopiedForCoa(false);
+    setRemarks("");
+    setStatusFlag(null);
+  }, [visible]);
+
+  if (!record) return null;
+
+  const handleSubmit = async () => {
+    if (!servedToSupplier || !copiedForCoa) {
+      Alert.alert("Checklist required", "Confirm serving and COA copy checklist before proceeding.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await insertPORemark(
+        record.id,
+        header?.pr_id ?? null,
+        currentUser?.id ?? null,
+        remarks || "PO served to supplier; COA copies prepared.",
+        getStatusFlagId(statusFlag),
+      );
+      await updatePOStatus(record.id, 17);
+      onProcessed(record.id, 17);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not mark PO as served.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
+          {loading ? (
+            <LoadingBody color={meta.accentColor} />
+          ) : (
+            <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+              {header && <POSummaryCard header={header} statuses={statuses} />}
+              <SectionLabel>Serving Checklist</SectionLabel>
+              {[{key:"served",label:"PO served to supplier",val:servedToSupplier,set:setServedToSupplier},{key:"coa",label:"Signed PO and attachments photocopied for COA",val:copiedForCoa,set:setCopiedForCoa}].map((row:any)=>(
+                <TouchableOpacity key={row.key} onPress={() => row.set(!row.val)} activeOpacity={0.8} className="flex-row items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 bg-white mb-2">
+                  <MaterialIcons name={row.val ? "check-box" : "check-box-outline-blank"} size={18} color={row.val ? "#166534" : "#9ca3af"} />
+                  <Text className="text-[12.5px] text-gray-700 flex-1">{row.label}</Text>
+                </TouchableOpacity>
+              ))}
+              <Field label="Status Flag">
+                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+              </Field>
+              <Field label="Serving Notes">
+                <StyledInput value={remarks} onChangeText={setRemarks} placeholder="e.g. Served on-site, supplier acknowledged receipt." multiline />
+              </Field>
+            </ScrollView>
+          )}
+          <ModalFooter
+            onCancel={onClose}
+            onConfirm={handleSubmit}
+            confirmLabel="Confirm Serving"
+            confirmingLabel="Saving…"
+            disabled={loading}
+            saving={saving}
+            color={meta.accentColor}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+      <StatusFlagPicker visible={flagOpen} selected={statusFlag} onSelect={setStatusFlag} onClose={() => setFlagOpen(false)} />
+    </>
+  );
+}
+
+// ─── Admin Modal (role_id = 1 · full Phase 2 override, Steps 11–17) ──────────
 
 function AdminModal({
   visible,
@@ -929,14 +1141,14 @@ function AdminModal({
   const [flagOpen, setFlagOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const currentStatus = record?.statusId ?? 12;
+  const currentStatus = record?.statusId ?? 11;
   const [targetStatusId, setTargetStatusId] = useState<number>(
-    Math.min(currentStatus + 1, 18),
+    Math.min(currentStatus + 1, 17),
   );
 
   useEffect(() => {
     if (!visible || !record) return;
-    setTargetStatusId(Math.min(record.statusId + 1, 18));
+    setTargetStatusId(Math.min(record.statusId + 1, 17));
     setRemarks("");
     setStatusFlag(null);
     setPoNo("");
@@ -956,9 +1168,9 @@ function AdminModal({
       setFundsAvailable(String(header.funds_available));
   }, [header]);
 
-  const isOrsStep = currentStatus === 14;
+  const isOrsStep = currentStatus === 13;
   const isForwardingStep =
-    currentStatus === 15 || currentStatus === 16 || currentStatus === 17;
+    currentStatus === 14 || currentStatus === 15 || currentStatus === 16;
 
   const submitDisabled =
     saving || loading || (isOrsStep && (!orsNo.trim() || !orsDate.trim()));
@@ -975,7 +1187,7 @@ function AdminModal({
     if (!record) return;
     setSaving(true);
     try {
-      if (currentStatus === 13 && poNo.trim()) {
+      if (currentStatus === 12 && poNo.trim()) {
         await updatePO(record.id, { po_no: poNo.trim() });
       }
       if (isOrsStep) {
@@ -1068,7 +1280,7 @@ function AdminModal({
               {/* Target status picker */}
               <SectionLabel>Target Status</SectionLabel>
               <View className="flex-row flex-wrap gap-2 mb-1">
-                {([12, 13, 14, 15, 16, 17, 18] as const).map((sid) => {
+                {([11, 12, 13, 14, 15, 16, 17] as const).map((sid) => {
                   const m = PHASE2_STEPS[sid];
                   if (!m) return null;
                   const active = targetStatusId === sid;
@@ -1114,7 +1326,7 @@ function AdminModal({
               </Text>
 
               {/* PO No. field — Allocation step */}
-              {currentStatus === 13 && (
+              {currentStatus === 12 && (
                 <>
                   <SectionLabel>PO Details</SectionLabel>
                   <Field label="PO Number">
@@ -1128,8 +1340,8 @@ function AdminModal({
                 </>
               )}
 
-              {/* ORS fields — ORS Creation step or when target ≥ 15 */}
-              {(isOrsStep || targetStatusId >= 15) && (
+              {/* ORS fields — ORS Creation step or when target ≥ 13 */}
+              {(isOrsStep || targetStatusId >= 13) && (
                 <>
                   <SectionLabel>
                     ORS Details{isOrsStep ? " (required)" : " (optional)"}
@@ -1174,9 +1386,9 @@ function AdminModal({
                 <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
                   <MaterialIcons name="send" size={16} color="#1d4ed8" />
                   <Text className="text-[12px] text-blue-800 flex-1">
-                    {currentStatus === 15
+                    {currentStatus === 14
                       ? "Budget officer has signed the ORS. Forwarding to Accounting for incoming check processing."
-                      : currentStatus === 16
+                      : currentStatus === 15
                         ? "Accounting has verified document completeness. Forwarding to PARPO II for review and signature."
                         : "PARPO II has signed the PO. Handing off to Supply for serving to suppliers."}
                   </Text>
@@ -1231,6 +1443,10 @@ export default function ProcessPOModal({
   if (!rest.record) return null;
   if (roleId === 1) return <AdminModal {...rest} />;
   if (roleId === 4) return <BudgetModal {...rest} />;
-  if (roleId === 8) return <SupplyModal {...rest} />;
+  if (roleId === 8) {
+    if (rest.record.statusId === 16) return <ParpoModal {...rest} />;
+    if (rest.record.statusId === 17) return <ServingModal {...rest} />;
+    return <SupplyModal {...rest} />;
+  }
   return null;
 }

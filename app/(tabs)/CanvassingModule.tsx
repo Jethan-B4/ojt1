@@ -3,6 +3,7 @@
  * Stage 2 — Canvass & Resolution (Steps 6–10)
  *
  * Role switch:
+ *   role_id 1  →  BACView        (admin override — acts as BAC)
  *   role_id 3  →  BACView        (full Steps 6–10 editable workflow)
  *   role_id 7  →  CanvasserView  (quote entry for assigned division)
  *   all others →  EndUserView    (read-only stage tracker)
@@ -47,6 +48,7 @@ export default function CanvassingModule({
 }: CanvassingModuleProps) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
+  const actsAsBAC = roleId === 3 || roleId === 1;
 
   // Seed the PR shell with the prNo — each view hydrates items from Supabase.
   const prNoValue = prNo || "";
@@ -70,7 +72,7 @@ export default function CanvassingModule({
 
   React.useEffect(() => {
     (async () => {
-      if (roleId === 3 && targetStage === "aaa_preparation" && pr.prNo) {
+      if (actsAsBAC && targetStage === "aaa_preparation" && pr.prNo) {
         try {
           const prId = await fetchPRIdByNo(pr.prNo);
           if (!prId) return;
@@ -87,10 +89,10 @@ export default function CanvassingModule({
         setAAAProps(null);
       }
     })();
-  }, [roleId, targetStage, pr.prNo]);
+  }, [actsAsBAC, targetStage, pr.prNo]);
 
   if (!prNoValue) {
-    if (roleId === 3) {
+    if (actsAsBAC) {
       return (
         <BACResolutionModule
           currentUserId={currentUser?.id ?? null}
@@ -118,7 +120,7 @@ export default function CanvassingModule({
     );
   }
 
-  if (roleId === 3 && targetStage === "aaa_preparation") {
+  if (actsAsBAC && targetStage === "aaa_preparation") {
     if (!aaaProps) {
       return <EndUserView pr={pr} onBack={onBack} />;
     }
@@ -134,7 +136,7 @@ export default function CanvassingModule({
     );
   }
 
-  if (roleId === 3)
+  if (actsAsBAC)
     return <BACView pr={pr} onComplete={onComplete} onBack={onBack} />;
   if (roleId === 7) return <CanvasserView pr={pr} onBack={onBack} />;
   return <EndUserView pr={pr} onBack={onBack} />;

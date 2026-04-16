@@ -189,6 +189,7 @@ export default function BACView({
   const [collectionMode, setCollectionMode] = useState<"encode" | "skip">(
     "encode",
   );
+  const [rfqSaving, setRfqSaving] = useState(false);
   const [linkedResolution, setLinkedResolution] = useState<any | null>(null);
   const [linkedResolutionLoading, setLinkedResolutionLoading] = useState(false);
   const [linkedResolutionHydrated, setLinkedResolutionHydrated] =
@@ -440,7 +441,7 @@ export default function BACView({
       const session = await ensureCanvassSession(prId);
       setSessionId(session.id);
       await updateCanvassStage(session.id, "bac_resolution");
-      await updatePRStatus(prId, 6); // status_id 6 = Canvassing (Reception)
+      await updatePRStatus(prId, 7); // status_id 7 = BAC Resolution
       advance("pr_received");
     } catch (e: any) {
       Alert.alert(
@@ -463,7 +464,7 @@ export default function BACView({
         );
         return;
       }
-      await updatePRStatus(prId, 8);
+      await updatePRStatus(prId, 9);
       await updateCanvassStage(sessionId, "collect_canvass");
       fetchAssignmentsForSession(sessionId)
         .then(setAssignments)
@@ -517,7 +518,7 @@ export default function BACView({
           quotes,
         );
       }
-      await updatePRStatus(prId, 11);
+      await updatePRStatus(prId, 10);
       await updateCanvassStage(sessionId, "aaa_preparation");
       fetchQuotesForSession(sessionId)
         .then(setCanvassEntries)
@@ -646,7 +647,7 @@ export default function BACView({
         await insertBACResolution(sessionId, core);
       }
       // BAC Resolution now happens before RFQ release.
-      await updatePRStatus(prId, 10);
+      await updatePRStatus(prId, 8);
       await updateCanvassStage(sessionId, "release_canvass");
       advance("bac_resolution");
     } catch (e: any) {
@@ -795,6 +796,70 @@ export default function BACView({
     },
     [sessionId, entriesForAssignment, rebuildSuppsFromQuotes],
   );
+
+  const loadReturnForEditing = React.useCallback(
+    (assignmentId: number) => {
+      const src = entriesForAssignment(assignmentId);
+      setSelectedReturnId(assignmentId);
+      setCollectionMode("encode");
+      setSupps(rebuildSuppsFromQuotes(src as any));
+    },
+    [entriesForAssignment, rebuildSuppsFromQuotes],
+  );
+
+  const buildQuotesFromInputs = React.useCallback(() => {
+    const quotes: any[] = [];
+    supps.forEach((sp) => {
+      const supplierName = sp.name.trim();
+      if (!supplierName) return;
+      liveItems.forEach((item) => {
+        const raw = String(sp.prices[item.id] ?? "").trim();
+        const up = raw ? parseFloat(raw.replace(/,/g, "")) || 0 : 0;
+        if (up <= 0) return;
+        quotes.push({
+          item_no: item.id,
+          description: item.desc,
+          unit: item.unit,
+          quantity: item.qty,
+          supplier_name: supplierName,
+          supplier_address: sp.address.trim() || null,
+          tin_no: sp.tin.trim() || null,
+          delivery_days: sp.days.trim() || null,
+          unit_price: up,
+          total_price: up * item.qty,
+          is_winning: null,
+        });
+      });
+    });
+    return quotes;
+  }, [supps, liveItems]);
+
+  const saveSelectedReturnRFQ = React.useCallback(async () => {
+    if (!sessionId) return;
+    if (selectedReturnId == null) {
+      Alert.alert(
+        "Select an RFQ return",
+        "Choose a returned RFQ to save into.",
+      );
+      return;
+    }
+    const quotes = buildQuotesFromInputs();
+    setRfqSaving(true);
+    try {
+      await replaceSupplierQuotesForSubmission(
+        sessionId,
+        Number(selectedReturnId),
+        quotes,
+      );
+      const nextEntries = await fetchQuotesForSession(sessionId);
+      setCanvassEntries(nextEntries);
+      Alert.alert("Saved", "RFQ return details saved.");
+    } catch (e: any) {
+      Alert.alert("Save failed", e?.message ?? "Could not save RFQ return.");
+    } finally {
+      setRfqSaving(false);
+    }
+  }, [sessionId, selectedReturnId, buildQuotesFromInputs]);
 
   useEffect(() => {
     if (stage !== "collect_canvass") return;
@@ -1665,6 +1730,20 @@ export default function BACView({
                                 </Text>
                               </TouchableOpacity>
                               <TouchableOpacity
+                                onPress={() => loadReturnForEditing(aid)}
+                                activeOpacity={0.85}
+                                className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50"
+                              >
+                                <MaterialIcons
+                                  name="edit"
+                                  size={14}
+                                  color="#065f46"
+                                />
+                                <Text className="text-[11.5px] font-bold text-emerald-700">
+                                  Encode
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
                                 onPress={() => applyReturnAsBase(Number(a.id))}
                                 activeOpacity={0.85}
                                 className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-[#064E3B]"
@@ -1814,6 +1893,44 @@ export default function BACView({
                     </TouchableOpacity>
                   )}
                 </View>
+                {collectionMode === "encode" && (
+                  <View className="flex-row items-center gap-2 mb-3">
+                    <TouchableOpacity
+                      onPress={() => void saveSelectedReturnRFQ()}
+                      activeOpacity={0.85}
+                      disabled={rfqSaving || selectedReturnId == null}
+                      className={`flex-row items-center gap-1.5 px-3 py-2 rounded-xl ${
+                        rfqSaving || selectedReturnId == null
+                          ? "bg-gray-200"
+                          : "bg-[#064E3B]"
+                      }`}
+                    >
+                      <MaterialIcons
+                        name="save"
+                        size={14}
+                        color={
+                          rfqSaving || selectedReturnId == null
+                            ? "#6b7280"
+                            : "#ffffff"
+                        }
+                      />
+                      <Text
+                        className={`text-[11.5px] font-bold ${
+                          rfqSaving || selectedReturnId == null
+                            ? "text-gray-500"
+                            : "text-white"
+                        }`}
+                      >
+                        {rfqSaving ? "Saving…" : "Save RFQ Return"}
+                      </Text>
+                    </TouchableOpacity>
+                    {selectedReturnId == null && (
+                      <Text className="text-[10.5px] text-gray-400 flex-1">
+                        Select a returned RFQ above to save into.
+                      </Text>
+                    )}
+                  </View>
+                )}
                 {collectionMode === "encode" &&
                   supps.map((sp, sIdx) => (
                     <View

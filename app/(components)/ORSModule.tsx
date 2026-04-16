@@ -31,6 +31,7 @@ import {
     fetchOrsEntries,
     generateOrsNumber,
     insertOrsEntry,
+    updatePO,
     updateOrsEntry,
     type DivisionBudgetRow,
     type OrsEntryRow,
@@ -55,7 +56,7 @@ import ORSPreviewPanel, {
     buildORSHtml,
     type ORSPreviewData,
 } from "../(components)/ORSPreviewPanel";
-import CalendarModal from "../(modals)/CalendarModal";
+import CalendarPickerModal from "../(modals)/CalendarModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ function DatePickerButton({
         <MaterialIcons name="calendar-month" size={18} color="#9ca3af" />
       </TouchableOpacity>
 
-      <CalendarModal
+      <CalendarPickerModal
         visible={open}
         onClose={() => setOpen(false)}
         onSelectDate={(d) => {
@@ -334,8 +335,14 @@ export function OrsModal({
   // ── Validation + save ─────────────────────────────────────────────────────
 
   const handleSave = async () => {
-    if (!form.ors_no.trim()) {
-      Alert.alert("Required", "ORS No. is required.");
+    const missing: string[] = [];
+    if (!form.ors_no.trim()) missing.push("ORS No.");
+    if (!form.pr_no.trim()) missing.push("PR No.");
+    if (!form.division_id.trim()) missing.push("Division");
+    if (!form.particulars.trim()) missing.push("Particulars");
+    if (!form.responsibility_center.trim()) missing.push("Responsibility Center");
+    if (missing.length > 0) {
+      Alert.alert("Required Fields", `Please complete: ${missing.join(", ")}`);
       return;
     }
     const parsed = parseFloat(form.amount.replace(/,/g, ""));
@@ -446,6 +453,11 @@ export function OrsModal({
             >
               {/* ── Section: ORS Identity ── */}
               <SectionLabel>ORS Identity</SectionLabel>
+              <View className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3">
+                <Text className="text-[11px] text-blue-800">
+                  Start with identity fields, then complete obligation details and signatories.
+                </Text>
+              </View>
 
               <View className="flex-row gap-2.5 mb-3.5">
                 <View className="flex-1">
@@ -469,7 +481,7 @@ export function OrsModal({
 
               {/* PR No. */}
               <View className="mb-3.5">
-                <FieldLabel>PR No.</FieldLabel>
+                <FieldLabel required>PR No.</FieldLabel>
                 {lockedPrNo ? (
                   <View className="flex-row items-center gap-2 bg-gray-100 rounded-[10px] px-3 py-2.5 border border-gray-200">
                     <MaterialIcons name="link" size={13} color="#6b7280" />
@@ -519,7 +531,7 @@ export function OrsModal({
               <SectionLabel>Obligation Details</SectionLabel>
 
               <View className="mb-3.5">
-                <FieldLabel>Particulars / Purpose</FieldLabel>
+                <FieldLabel required>Particulars / Purpose</FieldLabel>
                 <StyledInput
                   value={form.particulars}
                   onChangeText={set("particulars")}
@@ -562,7 +574,7 @@ export function OrsModal({
                   />
                 </View>
                 <View className="flex-1">
-                  <FieldLabel>Division</FieldLabel>
+                  <FieldLabel required>Division</FieldLabel>
                   {/* Inline mini-picker scrollable */}
                   <ScrollView
                     horizontal
@@ -616,6 +628,11 @@ export function OrsModal({
               )}
 
               <Divider />
+              <View className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+                <Text className="text-[10.5px] text-amber-800">
+                  Use official MFO/PAP, UACS, and Responsibility Center values from budget records.
+                </Text>
+              </View>
 
               {/* ── Section: Status ── */}
               <SectionLabel>Status</SectionLabel>
@@ -1008,6 +1025,8 @@ export function ORSSection({
 
 export interface ORSInlinePanelProps {
   prNo: string;
+  prId?: string | number | null;
+  poId?: string | number | null;
   totalAmount?: number;
   canEdit: boolean;
   divisions?: DivisionBudgetRow[];
@@ -1017,6 +1036,8 @@ export interface ORSInlinePanelProps {
 
 export function ORSInlinePanel({
   prNo,
+  prId,
+  poId,
   totalAmount,
   canEdit,
   divisions: divisionsProp,
@@ -1078,19 +1099,32 @@ export function ORSInlinePanel({
   const handleSave = async (form: OrsForm, existing?: OrsEntryRow) => {
     const amount = parseFloat(form.amount.replace(/,/g, ""));
     const divId = form.division_id ? parseInt(form.division_id) : null;
+    const prIdValue =
+      prId == null
+        ? null
+        : typeof prId === "number"
+          ? prId
+          : Number.parseInt(String(prId), 10) || null;
     if (existing) {
       await updateOrsEntry(existing.id, {
         ors_no: form.ors_no.trim(),
+        pr_id: prIdValue as any,
         pr_no: prNo,
         amount,
         status: form.status,
         notes: form.notes.trim() || null,
       } as any);
+      if (poId != null) {
+        await updatePO(String(poId), {
+          ors_no: form.ors_no.trim(),
+          ors_amount: amount,
+        });
+      }
     } else {
       const autoNo = form.ors_no.trim() || (await generateOrsNumber());
       await insertOrsEntry({
         ors_no: autoNo,
-        pr_id: null,
+        pr_id: prIdValue as any,
         pr_no: prNo,
         division_id: divId,
         fiscal_year: fiscalYear,
@@ -1100,6 +1134,9 @@ export function ORSInlinePanel({
         approved_by: null,
         notes: form.notes.trim() || null,
       });
+      if (poId != null) {
+        await updatePO(String(poId), { ors_no: autoNo, ors_amount: amount });
+      }
     }
     await load();
   };

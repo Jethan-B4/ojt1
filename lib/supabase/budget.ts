@@ -99,6 +99,16 @@ export async function fetchOrsEntries(
   return (data ?? []) as OrsEntryRow[];
 }
 
+export async function fetchOrsEntryByNo(orsNo: string): Promise<OrsEntryRow | null> {
+  const { data, error } = await supabase
+    .from("ors_entries")
+    .select("*")
+    .eq("ors_no", orsNo)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as any) ?? null;
+}
+
 export async function insertOrsEntry(entry: Omit<OrsEntryRow, "id">): Promise<OrsEntryRow> {
   const { data, error } = await supabase.from("ors_entries").insert(entry).select().single();
   if (error) throw error;
@@ -129,4 +139,3 @@ export async function generateOrsNumber(): Promise<string> {
   const rand = Math.floor(Math.random() * 9000) + 1000;
   return `ORS-${y}-${rand}`;
 }
-

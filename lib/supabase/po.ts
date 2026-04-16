@@ -216,7 +216,7 @@ export async function updatePO(
 /**
  * Insert a new PO header + items (used by CreatePOModal).
  * Returns the full inserted row (including server-generated id).
- * Always starts at status_id 12 ("PO Creation") unless explicitly overridden.
+ * Always starts at status_id 12 ("PO Allocation") unless explicitly overridden.
  * 🔔 Fires notifyPOCreated after a successful insert.
  */
 export async function insertPurchaseOrder(
@@ -252,13 +252,13 @@ export async function insertPurchaseOrder(
  * Fetch PO-lifecycle status rows from public.status for label lookups.
  *
  * Full Phase 2 lifecycle (from public.status table):
- *   12 = PO (Creation)    — Supply receives Abstract, logs receipt
- *   13 = PO (Allocation)  — Supply assigns PO # and prepares document
- *   14 = ORS (Creation)   — Budget prepares ORS, assigns ORS number
- *   15 = ORS (Processing) — Budget officer signs; forwards to Accounting
- *   16 = PO (Accounting)  — Accounting incoming check / document completeness
- *   17 = PO (PARPO)       — PARPO II reviews and signs PO
- *   18 = PO (Serving)     — Supply serves PO to suppliers
+ *   11 = PO (Creation)    — Supply receives Abstract, logs receipt
+ *   12 = PO (Allocation)  — Supply assigns PO # and prepares document
+ *   13 = ORS (Creation)   — Budget prepares ORS, assigns ORS number
+ *   14 = ORS (Processing) — Budget officer signs; forwards to Accounting
+ *   15 = PO (Accounting)  — Accounting incoming check / document completeness
+ *   16 = PO (PARPO)       — PARPO II reviews and signs PO
+ *   17 = PO (Serving)     — Supply serves PO to suppliers
  */
 export async function fetchPOStatuses(): Promise<
   { id: number; status_name: string }[]
@@ -266,9 +266,9 @@ export async function fetchPOStatuses(): Promise<
   const { data, error } = await supabase
     .from("status")
     .select("id, status_name")
-    // PO lifecycle status IDs: 12 (PO Creation) → 18 (PO Serving)
-    .gte("id", 12)
-    .lte("id", 18)
+    // PO lifecycle status IDs: 11 (PO Creation) → 17 (PO Serving)
+    .gte("id", 11)
+    .lte("id", 17)
     .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as { id: number; status_name: string }[];

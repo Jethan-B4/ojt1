@@ -202,78 +202,127 @@ export function buildPOHtml(data: POPreviewData): string {
 <title>Purchase Order ${poNo}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 10px; color: #111; padding: 20px; }
-  h1 { font-size: 16px; text-align: center; margin-bottom: 2px; }
-  .subtitle { font-size: 10px; text-align: center; color: #555; margin-bottom: 12px; }
-  table { width: 100%; border-collapse: collapse; }
-  td, th { border: 1px solid #999; padding: 4px 6px; vertical-align: top; }
-  .label { background: #f0f0f0; font-weight: bold; width: 130px; }
-  .num { text-align: right; }
-  .items-head th { background: #064E3B; color: #fff; font-size: 9px; text-align: center; }
-  .total-row td { font-weight: bold; background: #f0fdf4; }
-  .sig-table td { border: none; border-top: 1px solid #999; text-align: center; padding-top: 6px; font-size: 9px; }
-  .words { font-size: 9px; font-style: italic; color: #444; padding: 4px 6px; border: 1px solid #ccc; margin-top: 6px; }
+  body { font-family: "Times New Roman", serif; font-size: 9.5pt; color: #000; padding: 18px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td, th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; }
+  .nob { border: none !important; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .bold { font-weight: bold; }
+  .num { text-align: right; font-family: "Courier New", monospace; }
+  .hdr th { font-size: 8.5pt; font-weight: bold; text-transform: uppercase; text-align: center; }
+  .small { font-size: 8pt; }
+  .mono { font-family: "Courier New", monospace; }
 </style>
 </head>
 <body>
-  <h1>PURCHASE ORDER</h1>
-  <p class="subtitle">Appendix 61 · ${officeSection}</p>
-
-  <table style="margin-bottom:10px">
-    <tr><td class="label">PO No.</td><td>${poNo}</td><td class="label">Date</td><td>${date}</td></tr>
-    <tr><td class="label">PR No.</td><td>${prNo}</td><td class="label">Fund Cluster</td><td>${fundCluster}</td></tr>
-    <tr><td class="label">Supplier</td><td colspan="3">${supplier}</td></tr>
-    <tr><td class="label">Address</td><td colspan="3">${address}</td></tr>
-    <tr><td class="label">TIN</td><td>${tin}</td><td class="label">Mode of Procurement</td><td>${procurementMode}</td></tr>
-    <tr><td class="label">Delivery Place</td><td>${deliveryPlace}</td><td class="label">Delivery Term</td><td>${deliveryTerm}</td></tr>
-    <tr><td class="label">Date of Delivery</td><td>${dateOfDelivery}</td><td class="label">Payment Term</td><td>${paymentTerm}</td></tr>
+  <table class="nob" style="margin-bottom:6px">
+    <tr><td class="nob right small">Appendix 61</td></tr>
+    <tr><td class="nob center bold" style="font-size:12pt">PURCHASE ORDER</td></tr>
   </table>
 
   <table style="margin-bottom:6px">
-    <tr><td class="label">ORS No.</td><td>${orsNo}</td><td class="label">ORS Date</td><td>${orsDate}</td></tr>
-    <tr><td class="label">Funds Available</td><td>${fundsAvailable}</td><td class="label">ORS Amount</td><td class="num">₱${fmtHtml(orsAmount)}</td></tr>
-  </table>
-
-  <table style="margin-bottom:10px">
-    <thead class="items-head">
-      <tr>
-        <th style="width:80px">Stock/Property No.</th>
-        <th style="width:55px">Unit</th>
-        <th>Description</th>
-        <th style="width:45px">Qty</th>
-        <th style="width:75px">Unit Cost</th>
-        <th style="width:80px">Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemRows || '<tr><td colspan="6" style="text-align:center;color:#999">No items</td></tr>'}
-      <tr class="total-row">
-        <td colspan="5" style="text-align:right">TOTAL</td>
-        <td class="num">₱${fmtHtml(totalAmount)}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="words">${toWords(totalAmount)}</div>
-
-  <table style="margin-top:16px">
     <tr>
-      <td style="width:50%;text-align:center;border:none">
-        <div style="margin-top:24px;border-top:1px solid #333;padding-top:4px">
-          <strong>${officialName || "______________________"}</strong><br/>
-          ${officialDesig || "Authorized Official"}<br/>
-          <span style="font-size:9px;color:#666">Signature over Printed Name / Designation</span>
-        </div>
-      </td>
-      <td style="width:50%;text-align:center;border:none">
-        <div style="margin-top:24px;border-top:1px solid #333;padding-top:4px">
-          <strong>${accountantName || "______________________"}</strong><br/>
-          ${accountantDesig || "Chief Accountant"}<br/>
-          <span style="font-size:9px;color:#666">Funds Available</span>
-        </div>
-      </td>
+      <td class="bold" style="width:12%">Supplier :</td>
+      <td style="width:38%">${supplier}</td>
+      <td class="bold" style="width:12%">P.O. No. :</td>
+      <td class="mono" style="width:38%">${poNo}</td>
+    </tr>
+    <tr>
+      <td class="bold">Address :</td>
+      <td>${address}</td>
+      <td class="bold">Date :</td>
+      <td>${date}</td>
+    </tr>
+    <tr>
+      <td class="bold">TIN :</td>
+      <td>${tin}</td>
+      <td class="bold">Mode of Procurement :</td>
+      <td>${procurementMode}</td>
+    </tr>
+    <tr><td colspan="4" class="small">Gentlemen:</td></tr>
+    <tr>
+      <td class="bold">Place of Delivery :</td>
+      <td>${deliveryPlace}</td>
+      <td class="bold">Delivery Term :</td>
+      <td>${deliveryTerm}</td>
+    </tr>
+    <tr>
+      <td class="bold">Date of Delivery :</td>
+      <td>${dateOfDelivery}</td>
+      <td class="bold">Payment Term :</td>
+      <td>${paymentTerm}</td>
     </tr>
   </table>
+
+  <table style="margin-bottom:6px">
+    <tr>
+      <td class="center small bold" style="width:18%">Stock/ Property No.</td>
+      <td class="center small bold" style="width:10%">Unit</td>
+      <td class="center small bold" style="width:38%">Description</td>
+      <td class="center small bold" style="width:10%">Quantity</td>
+      <td class="center small bold" style="width:12%">Unit Cost</td>
+      <td class="center small bold" style="width:12%">Amount</td>
+    </tr>
+    ${itemRows || '<tr><td colspan="6" class="center small">No items</td></tr>'}
+    <tr>
+      <td colspan="5" class="right bold">Total</td>
+      <td class="num bold">${fmtHtml(totalAmount)}</td>
+    </tr>
+  </table>
+
+  <table style="margin-bottom:6px">
+    <tr>
+      <td class="bold" style="width:18%">Fund Cluster :</td>
+      <td style="width:32%">${fundCluster}</td>
+      <td class="bold" style="width:18%">ORS No. :</td>
+      <td style="width:32%">${orsNo}</td>
+    </tr>
+    <tr>
+      <td class="bold">Funds Available :</td>
+      <td>${fundsAvailable}</td>
+      <td class="bold">Date of the ORS:</td>
+      <td>${orsDate}</td>
+    </tr>
+    <tr>
+      <td class="bold">Amount :</td>
+      <td class="num">${fmtHtml(orsAmount)}</td>
+      <td colspan="2"></td>
+    </tr>
+  </table>
+
+  <table style="margin-bottom:6px">
+    <tr>
+      <td class="small" style="height:36px">Please furnish this Office the following articles subject to the terms and conditions contained herein:</td>
+    </tr>
+  </table>
+
+  <table style="margin-bottom:6px">
+    <tr>
+      <td style="width:50%" class="center">
+        <div style="height:22px;"></div>
+        <div class="bold">${officialName || "___________________________"}</div>
+        <div class="small">Signature over Printed Name of Authorized Official</div>
+        <div class="small">${officialDesig || "Designation"}</div>
+      </td>
+      <td style="width:50%" class="center">
+        <div style="height:22px;"></div>
+        <div class="bold">${accountantName || "___________________________"}</div>
+        <div class="small">Signature over Printed Name of Chief Accountant/Head of Accounting Division/Unit</div>
+        <div class="small">${accountantDesig || ""}</div>
+      </td>
+    </tr>
+    <tr>
+      <td class="small">Conforme: Signature over Printed Name of Supplier</td>
+      <td class="small">Very truly yours,</td>
+    </tr>
+    <tr>
+      <td class="small">Date: ___________________</td>
+      <td class="small">(${toWords(totalAmount)})</td>
+    </tr>
+  </table>
+
+  <p class="small">In case of failure to make the full delivery within the time specified above, a penalty of one-tenth (1/10) of one percent for every day of delay shall be imposed on the undelivered item/s.</p>
 </body>
 </html>`;
 }

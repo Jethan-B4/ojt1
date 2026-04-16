@@ -10,18 +10,18 @@
  *   - Pull-to-refresh, saving overlay, empty state
  *
  * PO status lifecycle (public.status table) — full Phase 2:
- *   12 = PO (Creation)    ← every new PO starts here (Supply logs receipt)
- *   13 = PO (Allocation)  ← Supply assigns PO # and prepares document
- *   14 = ORS (Creation)   ← Budget prepares ORS
- *   15 = ORS (Processing) ← Budget officer signs; forwards to Accounting
- *   16 = PO (Accounting)  ← Accounting verifies document completeness
- *   17 = PO (PARPO)       ← PARPO II reviews and signs PO
- *   18 = PO (Serving)     ← Supply serves PO to suppliers
+ *   11 = PO (Creation)    ← every new PO starts here (Supply logs receipt)
+ *   12 = PO (Allocation)  ← Supply assigns PO # and prepares document
+ *   13 = ORS (Creation)   ← Budget prepares ORS
+ *   14 = ORS (Processing) ← Budget officer signs; forwards to Accounting
+ *   15 = PO (Accounting)  ← Accounting verifies document completeness
+ *   16 = PO (PARPO)       ← PARPO II reviews and signs PO
+ *   17 = PO (Serving)     ← Supply serves PO to suppliers
  *
  * Role permissions:
  *   role_id 1  = Admin   — sees all, can process (override all statuses), can edit
- *   role_id 4  = Budget  — sees all, can process 14→15 and 15→16 (ORS), can edit ORS
- *   role_id 8  = Supply  — sees all, can create, can process 12→13→14 and 17→18, can edit ≤ 13
+ *   role_id 4  = Budget  — sees all, can process 13→14 and 14→15 (ORS), can edit ORS
+ *   role_id 8  = Supply  — sees all, can create, can process 11→12→13 and 16→17, can edit ≤ 12
  *   All others           — view only
  */
 
@@ -45,6 +45,7 @@ import PORemarkSheet, {
 } from "../(components)/PORemarkSheet";
 import CancelPOModal from "../(modals)/CancelPOModal";
 import CreatePOModal, { type POCreatePayload } from "../(modals)/CreatePOModal";
+import DeletePOModal from "../(modals)/DeletePOModal";
 import EditPOModal, {
   type POEditPayload,
   type POEditRecord,
@@ -91,56 +92,56 @@ type SubTab = "all" | "po" | "ors" | "serving";
 
 /**
  * Visual config keyed by status_id — mirrors public.status table.
- * Full Phase 2 lifecycle (statuses 12–18):
- *   12 = PO (Creation)    — Supply receives Abstract, logs receipt
- *   13 = PO (Allocation)  — Supply assigns PO # and prepares document
- *   14 = ORS (Creation)   — Budget prepares ORS and assigns ORS number
- *   15 = ORS (Processing) — Budget officer signs; forwards to Accounting
- *   16 = PO (Accounting)  — Accounting verifies document completeness
- *   17 = PO (PARPO)       — PARPO II reviews and signs PO
- *   18 = PO (Serving)     — Supply serves PO to suppliers
+ * Full Phase 2 lifecycle (statuses 11–17):
+ *   11 = PO (Creation)    — Supply receives Abstract, logs receipt
+ *   12 = PO (Allocation)  — Supply assigns PO # and prepares document
+ *   13 = ORS (Creation)   — Budget prepares ORS and assigns ORS number
+ *   14 = ORS (Processing) — Budget officer signs; forwards to Accounting
+ *   15 = PO (Accounting)  — Accounting verifies document completeness
+ *   16 = PO (PARPO)       — PARPO II reviews and signs PO
+ *   17 = PO (Serving)     — Supply serves PO to suppliers
  */
 const PO_STATUS_CFG: Record<
   number,
   { bg: string; text: string; dot: string; label: string }
 > = {
-  12: {
+  11: {
     bg: "#f0fdfa",
     text: "#0f766e",
     dot: "#0d9488",
     label: "PO (Creation)",
   },
-  13: {
+  12: {
     bg: "#faf5ff",
     text: "#6b21a8",
     dot: "#9333ea",
     label: "PO (Allocation)",
   },
-  14: {
+  13: {
     bg: "#fff7ed",
     text: "#9a3412",
     dot: "#f97316",
     label: "ORS (Creation)",
   },
-  15: {
+  14: {
     bg: "#eff6ff",
     text: "#1e40af",
     dot: "#3b82f6",
     label: "ORS (Processing)",
   },
-  16: {
+  15: {
     bg: "#fefce8",
     text: "#854d0e",
     dot: "#ca8a04",
     label: "PO (Accounting)",
   },
-  17: {
+  16: {
     bg: "#fdf4ff",
     text: "#86198f",
     dot: "#c026d3",
     label: "PO (PARPO)",
   },
-  18: {
+  17: {
     bg: "#f0fdf4",
     text: "#166534",
     dot: "#16a34a",
@@ -159,8 +160,8 @@ function poCfgFor(id: number) {
   );
 }
 
-// ORS inline panel is shown when PO reaches ORS (Creation) status (status_id 14)
-const ORS_INLINE_STATUS = 14;
+// ORS inline panel is shown when PO reaches ORS (Creation) status (status_id 13)
+const ORS_INLINE_STATUS = 13;
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 const PAGE_SIZE = 7;
@@ -529,6 +530,8 @@ interface MoreSheetProps {
   onOverride: () => void;
   /** Admin-only: open the Cancel PO confirmation modal. */
   onCancel: () => void;
+  /** Admin-only: open the Delete PO confirmation modal. */
+  onDelete: () => void;
 }
 
 const MoreSheet: React.FC<MoreSheetProps> = ({
@@ -541,6 +544,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
   onEdit,
   onOverride,
   onCancel,
+  onDelete,
 }) => {
   if (!record) return null;
   const cfg = poCfgFor(record.statusId);
@@ -604,6 +608,17 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
             onPress: () => {
               onClose();
               onCancel();
+            },
+          },
+          {
+            icon: "delete-forever",
+            label: "Delete PO",
+            sublabel: "Permanently remove PO and linked records",
+            color: "#7f1d1d",
+            bg: "#fee2e2",
+            onPress: () => {
+              onClose();
+              onDelete();
             },
           },
         ] as Action[])
@@ -1040,6 +1055,9 @@ export default function POModule() {
   const [cancelPoId, setCancelPoId] = useState<string | null>(null);
   const [cancelPoNo, setCancelPoNo] = useState<string | null>(null);
   const [cancelVisible, setCancelVisible] = useState(false);
+  const [deletePoId, setDeletePoId] = useState<string | null>(null);
+  const [deletePoNo, setDeletePoNo] = useState<string | null>(null);
+  const [deleteVisible, setDeleteVisible] = useState(false);
 
   // ── Permissions ────────────────────────────────────────────────────────────
 
@@ -1052,12 +1070,12 @@ export default function POModule() {
   // Budget (4) and Admin (1) can edit ORS entries in the inline panel
   const canEditOrs = roleId === 1 || roleId === 4;
 
-  // Supply (8) can edit POs at status ≤ 13; Admin (1) can always edit;
-  // Budget (4) can edit ORS fields on POs at status 14–15
+  // Supply (8) can edit POs at status ≤ 12; Admin (1) can always edit;
+  // Budget (4) can edit ORS fields on POs at status 13–14
   const canEditPO = (statusId: number) =>
     roleId === 1 ||
-    (roleId === 8 && statusId <= 13) ||
-    (roleId === 4 && statusId >= 14 && statusId <= 15);
+    (roleId === 8 && statusId <= 12) ||
+    (roleId === 4 && statusId >= 13 && statusId <= 14);
 
   // ── One-time lookups ───────────────────────────────────────────────────────
 
@@ -1080,19 +1098,19 @@ export default function POModule() {
       if (activeSubTab === "all") {
         rows = allRows;
       } else if (activeSubTab === "po") {
-        // Purchase Order: status_id 12–13 (PO Creation, PO Allocation)
+        // Purchase Order: status_id 11–12 (PO Creation, PO Allocation)
         rows = allRows.filter(
-          (r) => r.status_id !== null && r.status_id >= 12 && r.status_id <= 13,
+          (r) => r.status_id !== null && r.status_id >= 11 && r.status_id <= 12,
         );
       } else if (activeSubTab === "ors") {
-        // ORS: status_id 14–15 (ORS Creation, ORS Processing)
+        // ORS: status_id 13–14 (ORS Creation, ORS Processing)
         rows = allRows.filter(
-          (r) => r.status_id !== null && r.status_id >= 14 && r.status_id <= 15,
+          (r) => r.status_id !== null && r.status_id >= 13 && r.status_id <= 14,
         );
       } else if (activeSubTab === "serving") {
-        // Serving pipeline: 16 (Accounting) → 17 (PARPO) → 18 (Serving)
+        // Serving pipeline: 15 (Accounting) → 16 (PARPO) → 17 (Serving)
         rows = allRows.filter(
-          (r) => r.status_id !== null && r.status_id >= 16 && r.status_id <= 18,
+          (r) => r.status_id !== null && r.status_id >= 15 && r.status_id <= 17,
         );
       } else {
         rows = allRows;
@@ -1155,6 +1173,11 @@ export default function POModule() {
 
   /** Remove the cancelled PO from the local list immediately. */
   const handlePOCancelled = useCallback((id: string) => {
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setPage(1);
+  }, []);
+
+  const handlePODeleted = useCallback((id: string) => {
     setRecords((prev) => prev.filter((r) => r.id !== id));
     setPage(1);
   }, []);
@@ -1315,10 +1338,12 @@ export default function POModule() {
                     setMoreVisible(true);
                   }}
                 />
-                {/* ORS inline panel — appears contextually at status 14 */}
+                {/* ORS inline panel — appears contextually at status 13 */}
                 {record.statusId === ORS_INLINE_STATUS && (
                   <ORSInlinePanel
+                    poId={record.id}
                     prNo={record.prNo}
+                    prId={record.prId}
                     totalAmount={record.totalAmount}
                     canEdit={canEditOrs}
                     currentUserId={currentUser?.id}
@@ -1423,6 +1448,13 @@ export default function POModule() {
             setCancelVisible(true);
           }
         }}
+        onDelete={() => {
+          if (moreRecord) {
+            setDeletePoId(moreRecord.id);
+            setDeletePoNo(moreRecord.poNo);
+            setDeleteVisible(true);
+          }
+        }}
       />
 
       {/* PORemarkSheet — unified PO + linked PR remarks */}
@@ -1451,6 +1483,22 @@ export default function POModule() {
           setCancelVisible(false);
           setCancelPoId(null);
           setCancelPoNo(null);
+        }}
+      />
+      <DeletePOModal
+        visible={deleteVisible}
+        poId={deletePoId}
+        poNo={deletePoNo}
+        onClose={() => {
+          setDeleteVisible(false);
+          setDeletePoId(null);
+          setDeletePoNo(null);
+        }}
+        onDeleted={(id) => {
+          handlePODeleted(id);
+          setDeleteVisible(false);
+          setDeletePoId(null);
+          setDeletePoNo(null);
         }}
       />
 

@@ -758,8 +758,8 @@ function useCanvasserData() {
   const inCanvass = prs.filter(
     (p) => p.statusId >= 6 && p.statusId <= 9,
   ).length;
-  const bacResolution = prs.filter((p) => p.statusId === 10).length;
-  const aaaIssuance = prs.filter((p) => p.statusId === 11).length;
+  const bacResolution = prs.filter((p) => p.statusId === 7).length;
+  const aaaIssuance = prs.filter((p) => p.statusId === 10).length;
   const total = prs.length;
 
   const statCards: StatCard[] = [

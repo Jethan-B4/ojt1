@@ -29,8 +29,7 @@
 
 import { supabase } from "./client";
 
-/** status.id used for cancellation — must exist in the `status` table. */
-export const CANCELLED_PO_STATUS_ID = 0;
+export const CANCELLED_STATUS_NAME = "Cancelled";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,10 +172,24 @@ export async function cancelPurchaseOrder(
 ): Promise<CancelPOResult> {
   const now = new Date().toISOString();
 
+  const { data: statusRow, error: statusErr } = await supabase
+    .from("status")
+    .select("id")
+    .ilike("status_name", CANCELLED_STATUS_NAME)
+    .limit(1)
+    .maybeSingle();
+  if (statusErr) throw statusErr;
+  const cancelledStatusId = (statusRow as any)?.id ?? null;
+  if (!cancelledStatusId) {
+    throw new Error(
+      "Cancelled status not found in public.status. Add a status row named 'Cancelled' and try again.",
+    );
+  }
+
   // ── 1. Soft-delete the PO ──
   const { error: poErr } = await supabase
     .from("purchase_orders")
-    .update({ status_id: CANCELLED_PO_STATUS_ID, updated_at: now })
+    .update({ status_id: cancelledStatusId, updated_at: now })
     .eq("id", poId);
   if (poErr) throw poErr;
 
