@@ -12,6 +12,7 @@ export interface DeliveryRow {
   dr_no: string | null;
   soa_no: string | null;
   notes: string | null;
+  expected_delivery_date: string | null;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;
@@ -53,13 +54,14 @@ export async function insertDelivery(payload: {
   office_section?: string | null;
   division_id?: number | null;
   delivery_no: string;
+  expected_delivery_date?: string | null;
   created_by?: number | null;
 }) {
   const { data, error } = await supabase
     .from("deliveries")
     .insert({
       ...payload,
-      status_id: 16,
+      status_id: 18,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -78,6 +80,7 @@ export async function updateDelivery(
       | "dr_no"
       | "soa_no"
       | "notes"
+      | "expected_delivery_date"
       | "supplier"
       | "office_section"
       | "division_id"
@@ -217,8 +220,8 @@ export async function fetchDeliveryStatuses(): Promise<
   const { data, error } = await supabase
     .from("status")
     .select("id, status_name")
-    .gte("id", 16)
-    .lte("id", 22)
+    .gte("id", 18)
+    .lte("id", 27)
     .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as { id: number; status_name: string }[];

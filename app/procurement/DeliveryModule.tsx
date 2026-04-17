@@ -47,6 +47,8 @@ type DeliveryRecord = {
   statusId: number;
   date: string;
   updatedAt: string;
+  createdAtIso: string;
+  expectedDeliveryDate: string | null;
   elapsedTime: string;
   raw: any;
 };
@@ -55,49 +57,60 @@ const STATUS_CFG: Record<
   number,
   { bg: string; text: string; dot: string; label: string }
 > = {
-  16: {
+  18: {
     bg: "#fefce8",
     text: "#854d0e",
     dot: "#eab308",
-    label: "Awaiting Delivery",
+    label: "Delivery (Waiting)",
   },
-  17: {
+  19: {
     bg: "#fff7ed",
     text: "#9a3412",
     dot: "#f97316",
-    label: "Delivery Received",
+    label: "Delivery (Received)",
   },
-  18: {
+  20: {
     bg: "#f0fdfa",
     text: "#0f766e",
     dot: "#0d9488",
-    label: "IAR Preparation",
+    label: "Delivery (IAR)",
   },
-  19: { bg: "#faf5ff", text: "#6b21a8", dot: "#9333ea", label: "IAR Signing" },
-  20: {
+  21: {
+    bg: "#faf5ff",
+    text: "#6b21a8",
+    dot: "#9333ea",
+    label: "Delivery (IAR Processing)",
+  },
+  22: {
     bg: "#eff6ff",
     text: "#1e40af",
     dot: "#3b82f6",
-    label: "LOA / DV Prep",
+    label: "Delivery (LOA)",
   },
-  21: {
+  23: {
     bg: "#f0fdf4",
     text: "#166534",
     dot: "#22c55e",
-    label: "Division Signature",
+    label: "Delivery (DV)",
   },
-  22: {
+  24: {
     bg: "#ecfdf5",
     text: "#065f46",
     dot: "#10b981",
-    label: "COA Submission",
+    label: "Delivery (Division Chief)",
+  },
+  27: {
+    bg: "#fef2f2",
+    text: "#991b1b",
+    dot: "#ef4444",
+    label: "Cancelled",
   },
 };
 const SUB_TAB_STATUS_MAP: Record<SubTab, number[]> = {
-  all: [16, 17, 18, 19, 20, 21, 22],
-  deliveries: [16, 17],
-  inspection: [18, 19],
-  acceptance: [20, 21, 22],
+  all: [18, 19, 20, 21, 22, 23, 24, 27],
+  deliveries: [18, 19],
+  inspection: [20, 21],
+  acceptance: [22, 23, 24],
 };
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "all", label: "All" },
@@ -618,9 +631,8 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 const canRoleCreate = (roleId: number) => roleId === 1 || roleId === 8;
 const canRoleProcess = (roleId: number, statusId: number) =>
   roleId === 1 ||
-  (roleId === 8 && [16, 17, 18, 20, 22].includes(statusId)) ||
-  (roleId === 9 && statusId === 19) ||
-  (roleId === 2 && statusId === 21);
+  (roleId === 8 && [18, 19, 20, 22, 23].includes(statusId)) ||
+  (roleId === 9 && statusId === 21);
 
 const cfg = (id: number) =>
   STATUS_CFG[id] ?? {
@@ -648,11 +660,64 @@ const toRecord = (row: any): DeliveryRecord => {
     officeSection: String(row.office_section ?? "—"),
     iarNo: null,
     dvNo: null,
-    statusId: Number(row.status_id ?? 16),
+    statusId: Number(row.status_id ?? 18),
+    createdAtIso: created.toISOString(),
+    expectedDeliveryDate: row?.expected_delivery_date ?? null,
     date: created.toLocaleDateString("en-PH"),
     updatedAt: updated.toLocaleDateString("en-PH"),
     elapsedTime,
     raw: row,
+  };
+};
+
+const normalizeDateOnly = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+};
+
+const getDueMeta = (record: DeliveryRecord) => {
+  const created = normalizeDateOnly(record.createdAtIso);
+  const expected = normalizeDateOnly(record.expectedDeliveryDate);
+  if (!created || !expected) return null;
+
+  const today = new Date();
+  const current = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const elapsedDays = Math.max(
+    0,
+    Math.floor((current.getTime() - created.getTime()) / 86400000),
+  );
+  const leadDays = Math.max(
+    0,
+    Math.floor((expected.getTime() - created.getTime()) / 86400000),
+  );
+  const remainingDays = Math.ceil(
+    (expected.getTime() - current.getTime()) / 86400000,
+  );
+
+  if (remainingDays < 0) {
+    return {
+      label: `Past due by ${Math.abs(remainingDays)} day${Math.abs(remainingDays) === 1 ? "" : "s"}`,
+      detail: `Elapsed ${elapsedDays}d since log (target ${leadDays}d)`,
+      tone: "late" as const,
+    };
+  }
+  if (remainingDays <= 2) {
+    return {
+      label: `Due in ${remainingDays} day${remainingDays === 1 ? "" : "s"}`,
+      detail: `Elapsed ${elapsedDays}d since log (target ${leadDays}d)`,
+      tone: "near" as const,
+    };
+  }
+  return {
+    label: `Due in ${remainingDays} days`,
+    detail: `Elapsed ${elapsedDays}d since log (target ${leadDays}d)`,
+    tone: "ontrack" as const,
   };
 };
 
@@ -690,6 +755,7 @@ export default function DeliveryModule() {
   const [poOptions, setPoOptions] = useState<any[]>([]);
   const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
   const [deliveryNo, setDeliveryNo] = useState("");
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
 
   const [drNo, setDrNo] = useState("");
   const [soaNo, setSoaNo] = useState("");
@@ -760,12 +826,15 @@ export default function DeliveryModule() {
     try {
       const options = (await fetchPoCandidatesForDelivery()) as any[];
       setPoOptions(options);
+      setDeliveryNo("");
+      setSelectedPoId(null);
       if (!options.length) {
         Alert.alert(
           "No served PO found",
           "Only served Purchase Orders can be logged for delivery.",
         );
       }
+      setExpectedDeliveryDate("");
       setCreateOpen(true);
     } catch (e: any) {
       Alert.alert("Load failed", e?.message ?? "Could not load PO options.");
@@ -820,6 +889,12 @@ export default function DeliveryModule() {
     const po = poOptions.find((x) => Number(x.id) === Number(selectedPoId));
     if (!deliveryNo.trim())
       return Alert.alert("Missing field", "Delivery No. is required.");
+    if (!expectedDeliveryDate.trim()) {
+      return Alert.alert(
+        "Missing field",
+        "Expected delivery date is required.",
+      );
+    }
     if (!po)
       return Alert.alert("Missing field", "Please select a Purchase Order.");
     try {
@@ -830,10 +905,12 @@ export default function DeliveryModule() {
         office_section: po.office_section ?? "",
         division_id: po.division_id ?? null,
         delivery_no: deliveryNo.trim(),
+        expected_delivery_date: expectedDeliveryDate.trim(),
         created_by: (currentUser as any)?.id ?? null,
       });
       setCreateOpen(false);
       setDeliveryNo("");
+      setExpectedDeliveryDate("");
       setSelectedPoId(null);
       await load();
       Alert.alert("Success", "Delivery logged successfully.");
@@ -845,57 +922,82 @@ export default function DeliveryModule() {
   const submitProcess = async () => {
     if (!active) return;
     try {
-      if (active.status_id === 16) {
+      if (active.status_id === 18) {
         await updateDelivery(active.id, {
-          status_id: 17,
+          status_id: 19,
           dr_no: drNo || null,
           soa_no: soaNo || null,
           notes: notes || null,
         });
-      } else if (active.status_id === 17) {
+      } else if (active.status_id === 19) {
         await upsertIARByDelivery(active.id, {
           iar_no: iar?.iar_no ?? "",
           invoice_no: iar?.invoice_no ?? "",
           invoice_date: iar?.invoice_date ?? "",
-        });
-        await updateDelivery(active.id, {
-          status_id: 18,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 18) {
-        await updateDelivery(active.id, {
-          status_id: 19,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 19) {
-        await upsertIARByDelivery(active.id, {
+          requisitioning_office:
+            iar?.requisitioning_office ?? active.office_section ?? "",
+          responsibility_center: iar?.responsibility_center ?? "",
+          received_at: iar?.received_at ?? "",
           inspector_name: iar?.inspector_name ?? "",
-          inspected_at: iar?.inspected_at ?? "",
+          supply_officer_name: iar?.supply_officer_name ?? "",
         });
         await updateDelivery(active.id, {
           status_id: 20,
           notes: notes || null,
         });
       } else if (active.status_id === 20) {
-        await upsertLOAByDelivery(active.id, {
-          loa_no: loa?.loa_no ?? "",
-          invoice_no: loa?.invoice_no ?? "",
-          accepted_by_name: loa?.accepted_by_name ?? "",
-          accepted_by_title: loa?.accepted_by_title ?? "",
-        });
-        await upsertDVByDelivery(active.id, {
-          dv_no: dv?.dv_no ?? "",
-          amount_due: dv?.amount_due ?? "",
-          particulars: dv?.particulars ?? "",
-          mode_of_payment: dv?.mode_of_payment ?? "",
-        });
         await updateDelivery(active.id, {
           status_id: 21,
           notes: notes || null,
         });
       } else if (active.status_id === 21) {
+        await upsertIARByDelivery(active.id, {
+          inspector_name: iar?.inspector_name ?? "",
+          inspected_at: iar?.inspected_at ?? "",
+          iar_no: iar?.iar_no ?? "",
+          invoice_no: iar?.invoice_no ?? "",
+          invoice_date: iar?.invoice_date ?? "",
+          requisitioning_office:
+            iar?.requisitioning_office ?? active.office_section ?? "",
+          responsibility_center: iar?.responsibility_center ?? "",
+          received_at: iar?.received_at ?? "",
+          supply_officer_name: iar?.supply_officer_name ?? "",
+        });
         await updateDelivery(active.id, {
           status_id: 22,
+          notes: notes || null,
+        });
+      } else if (active.status_id === 22) {
+        await upsertLOAByDelivery(active.id, {
+          loa_no: loa?.loa_no ?? "",
+          invoice_no: loa?.invoice_no ?? "",
+          invoice_date: loa?.invoice_date ?? "",
+          accepted_at: loa?.accepted_at ?? "",
+          accepted_by_name: loa?.accepted_by_name ?? "",
+          accepted_by_title: loa?.accepted_by_title ?? "",
+        });
+        await updateDelivery(active.id, {
+          status_id: 23,
+          notes: notes || null,
+        });
+      } else if (active.status_id === 23) {
+        await upsertDVByDelivery(active.id, {
+          dv_no: dv?.dv_no ?? "",
+          fund_cluster: dv?.fund_cluster ?? "",
+          ors_no: dv?.ors_no ?? "",
+          payee: dv?.payee ?? active.supplier ?? "",
+          payee_tin: dv?.payee_tin ?? "",
+          address: dv?.address ?? "",
+          amount_due: dv?.amount_due ?? "",
+          particulars: dv?.particulars ?? "",
+          responsibility_center: dv?.responsibility_center ?? "",
+          mfo_pap: dv?.mfo_pap ?? "",
+          mode_of_payment: dv?.mode_of_payment ?? "",
+          certified_by: dv?.certified_by ?? "",
+          approved_by: dv?.approved_by ?? "",
+        });
+        await updateDelivery(active.id, {
+          status_id: 24,
           notes: notes || null,
         });
       } else {
@@ -934,7 +1036,9 @@ export default function DeliveryModule() {
         }}
         onCreatePress={() => void openCreate()}
         canCreate={canRoleCreate(roleId)}
-        filterActive={filterOpen || statusFilter !== null || sectionFilter !== "All"}
+        filterActive={
+          filterOpen || statusFilter !== null || sectionFilter !== "All"
+        }
         onFilterToggle={() => setFilterOpen((o) => !o)}
       />
 
@@ -1006,6 +1110,7 @@ export default function DeliveryModule() {
               statuses.find((s) => s.id === r.statusId)?.status_name ??
               cfg(r.statusId).label;
             const canProcess = canRoleProcess(roleId, r.statusId);
+            const dueMeta = getDueMeta(r);
             return (
               <View
                 key={r.id}
@@ -1039,18 +1144,60 @@ export default function DeliveryModule() {
                       {r.officeSection}
                     </Text>
                   </View>
+                  {dueMeta && (
+                    <View
+                      className="mt-2 rounded-lg px-2.5 py-1.5 self-start border"
+                      style={{
+                        backgroundColor:
+                          dueMeta.tone === "late"
+                            ? "#fef2f2"
+                            : dueMeta.tone === "near"
+                              ? "#fff7ed"
+                              : "#ecfdf5",
+                        borderColor:
+                          dueMeta.tone === "late"
+                            ? "#fecaca"
+                            : dueMeta.tone === "near"
+                              ? "#fed7aa"
+                              : "#bbf7d0",
+                      }}
+                    >
+                      <Text
+                        className="text-[10.5px] font-bold"
+                        style={{
+                          color:
+                            dueMeta.tone === "late"
+                              ? "#991b1b"
+                              : dueMeta.tone === "near"
+                                ? "#9a3412"
+                                : "#166534",
+                        }}
+                      >
+                        {dueMeta.label}
+                      </Text>
+                      <Text className="text-[10px] text-gray-500">
+                        {dueMeta.detail}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <View className="h-px bg-gray-100 mx-4" />
                 <View className="flex-row items-center px-3 py-2.5 gap-2">
                   <View className="flex-1">
-                    <Text className="text-[10.5px] text-gray-400">{r.date}</Text>
+                    <Text className="text-[10.5px] text-gray-400">
+                      {r.date}
+                    </Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => void openView(r)}
                     activeOpacity={0.85}
                     className="flex-row items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 border border-gray-200"
                   >
-                    <MaterialIcons name="visibility" size={14} color="#6b7280" />
+                    <MaterialIcons
+                      name="visibility"
+                      size={14}
+                      color="#6b7280"
+                    />
                     <Text className="text-[12px] font-semibold text-gray-600">
                       View
                     </Text>
@@ -1079,7 +1226,9 @@ export default function DeliveryModule() {
                     activeOpacity={0.85}
                     className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
                   >
-                    <Text className="text-white text-[16px] font-extrabold">•••</Text>
+                    <Text className="text-white text-[16px] font-extrabold">
+                      •••
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1088,17 +1237,24 @@ export default function DeliveryModule() {
         )}
       </ScrollView>
 
-      <Pagination page={page} totalPages={totalPages} total={filtered.length} onPage={setPage} />
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={filtered.length}
+        onPage={setPage}
+      />
 
       <MoreSheet
         visible={moreVisible}
         record={moreRecord}
         roleId={roleId}
-        canProcess={moreRecord ? canRoleProcess(roleId, moreRecord.statusId) : false}
+        canProcess={
+          moreRecord ? canRoleProcess(roleId, moreRecord.statusId) : false
+        }
         statusLabel={
           moreRecord
-            ? statuses.find((s) => s.id === moreRecord.statusId)?.status_name ??
-              cfg(moreRecord.statusId).label
+            ? (statuses.find((s) => s.id === moreRecord.statusId)
+                ?.status_name ?? cfg(moreRecord.statusId).label)
             : ""
         }
         onClose={() => {
@@ -1125,10 +1281,17 @@ export default function DeliveryModule() {
         visible={createOpen}
         deliveryNo={deliveryNo}
         setDeliveryNo={setDeliveryNo}
+        expectedDeliveryDate={expectedDeliveryDate}
+        setExpectedDeliveryDate={setExpectedDeliveryDate}
         poOptions={poOptions}
         selectedPoId={selectedPoId}
         setSelectedPoId={setSelectedPoId}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setCreateOpen(false);
+          setDeliveryNo("");
+          setExpectedDeliveryDate("");
+          setSelectedPoId(null);
+        }}
         onSubmit={submitCreate}
       />
       <ViewDeliveryModal
@@ -1148,7 +1311,7 @@ export default function DeliveryModule() {
         active={active}
         statusLabel={
           statuses.find((s) => s.id === Number(active?.status_id ?? 0))
-            ?.status_name ?? cfg(active?.status_id ?? 16).label
+            ?.status_name ?? cfg(active?.status_id ?? 18).label
         }
         drNo={drNo}
         setDrNo={setDrNo}
@@ -1162,6 +1325,18 @@ export default function DeliveryModule() {
         setLoa={setLoa}
         dv={dv}
         setDv={setDv}
+        onPreviewIAR={() => {
+          setViewTab("iar");
+          setViewOpen(true);
+        }}
+        onPreviewLOA={() => {
+          setViewTab("loa");
+          setViewOpen(true);
+        }}
+        onPreviewDV={() => {
+          setViewTab("dv");
+          setViewOpen(true);
+        }}
       />
 
       <DeleteDeliveryModal
