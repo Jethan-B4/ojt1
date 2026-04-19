@@ -94,6 +94,9 @@ function StyledInput({
   return (
     <TextInput
       {...props}
+      autoCapitalize={props.autoCapitalize ?? "none"}
+      autoCorrect={props.autoCorrect ?? false}
+      spellCheck={props.spellCheck ?? false}
       placeholderTextColor="#9ca3af"
       onFocus={(e) => {
         setFocused(true);
@@ -244,7 +247,8 @@ function PRPicker({
                       className="text-[11px] font-bold text-emerald-700"
                       style={{ fontFamily: MONO }}
                     >
-                      ₱{fmt(Number(item.total_cost) || 0)}
+                      <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                      {fmt(Number(item.total_cost) || 0)}
                     </Text>
                   </View>
                   {!!item.office_section && (
@@ -382,7 +386,11 @@ export default function CreatePOModal({
     setPrLoadingDB(true);
     try {
       const list = await fetchPurchaseRequests();
-      setPrSuggestions((list ?? []) as any);
+      // PO creation can link only to PRs completed in the prior phase.
+      const eligible = (list ?? []).filter(
+        (p: any) => Number(p.status_id) === 33,
+      );
+      setPrSuggestions(eligible as any);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not load PRs.");
       setPrSuggestions([]);
@@ -553,7 +561,7 @@ export default function CreatePOModal({
         funds_available: fundsAvailable.trim() || null,
         ors_amount: orsAmount.trim() ? Number(orsAmount) || 0 : null,
         total_amount: totalAmount,
-        status_id: 12,
+        status_id: 11,
         division_id: divisionId ?? null,
         official_name: officialName.trim() || null,
         official_desig: officialDesig.trim() || null,
@@ -669,6 +677,17 @@ export default function CreatePOModal({
                   <Text className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                     Link to PR
                   </Text>
+                  <View className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <Text className="text-[11px] font-semibold text-emerald-800">
+                      Prior-phase rule: only PRs marked{" "}
+                      <Text className="font-extrabold">Completed (PR Phase)</Text>{" "}
+                      can be linked to a new PO.
+                    </Text>
+                    <Text className="text-[10.5px] text-emerald-700 mt-1">
+                      You can still create a semi-independent PO manually by
+                      leaving PR linkage blank.
+                    </Text>
+                  </View>
                   <FieldLabel>PR No.</FieldLabel>
                   <PRPicker
                     open={prPickerOpen}
@@ -993,7 +1012,8 @@ export default function CreatePOModal({
                                 className="text-sm font-bold text-gray-700"
                                 style={{ fontFamily: MONO }}
                               >
-                                ₱{fmt(sub)}
+                                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                                {fmt(sub)}
                               </Text>
                             </View>
                           </View>
@@ -1034,7 +1054,8 @@ export default function CreatePOModal({
                         className="text-[14px] font-extrabold text-[#064E3B]"
                         style={{ fontFamily: MONO }}
                       >
-                        ₱{fmt(totalAmount)}
+                        <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                        {fmt(totalAmount)}
                       </Text>
                     </View>
                     <Text className="text-[10px] text-gray-400 mt-1">

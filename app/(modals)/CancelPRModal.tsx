@@ -149,7 +149,8 @@ export default function CancelPRModal({
 
   const targetPrNo = preview?.prNo ?? prNo ?? "";
   const canConfirm =
-    confirmText.trim() === targetPrNo && reason.trim().length > 0;
+    confirmText.trim().toUpperCase() === targetPrNo.toUpperCase() &&
+    reason.trim().length > 0;
 
   const fmt = (n: number) =>
     n.toLocaleString("en-PH", {
@@ -371,8 +372,9 @@ export default function CancelPRModal({
                   onChangeText={setConfirmText}
                   placeholder={targetPrNo}
                   placeholderTextColor="#9ca3af"
-                  autoCapitalize="characters"
+                  autoCapitalize="none"
                   autoCorrect={false}
+                  spellCheck={false}
                   className="bg-gray-50 rounded-[10px] px-3 py-2.5 text-sm text-gray-900 border"
                   style={{
                     borderColor: canConfirm ? "#10b981" : "#e5e7eb",

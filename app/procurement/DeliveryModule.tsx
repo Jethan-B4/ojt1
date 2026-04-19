@@ -1,34 +1,40 @@
 import {
-  fetchDVByDelivery,
-  fetchDeliveries,
-  fetchDeliveriesByDivision,
-  fetchDeliveryStatuses,
-  fetchIARByDelivery,
-  fetchLOAByDelivery,
-  fetchPoCandidatesForDelivery,
-  insertDelivery,
-  updateDelivery,
-  upsertDVByDelivery,
-  upsertIARByDelivery,
-  upsertLOAByDelivery,
+    fetchDVByDelivery,
+    fetchDeliveries,
+    fetchDeliveriesByDivision,
+    fetchDeliveryPOContext,
+    fetchDeliveryStatuses,
+    fetchIARByDelivery,
+    fetchLOAByDelivery,
+    fetchPoCandidatesForDelivery,
+    insertDelivery,
+    insertDeliveryProcessRemark,
+    updateDelivery,
+    upsertDVByDelivery,
+    upsertIARByDelivery,
+    upsertLOAByDelivery,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
+import PORemarkSheet, {
+    type PORemarkSheetRecord,
+} from "../(components)/PORemarkSheet";
 import CreateDeliveryModal from "../(modals)/CreateDeliveryModal";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
 import ProcessDeliveryModal from "../(modals)/ProcessDeliveryModal";
+import { type StatusFlag } from "../(modals)/ProcessPRModal";
 import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
@@ -99,6 +105,12 @@ const STATUS_CFG: Record<
     dot: "#10b981",
     label: "Delivery (Division Chief)",
   },
+  35: {
+    bg: "#ecfdf5",
+    text: "#14532d",
+    dot: "#22c55e",
+    label: "Completed (Delivery Phase)",
+  },
   27: {
     bg: "#fef2f2",
     text: "#991b1b",
@@ -107,7 +119,7 @@ const STATUS_CFG: Record<
   },
 };
 const SUB_TAB_STATUS_MAP: Record<SubTab, number[]> = {
-  all: [18, 19, 20, 21, 22, 23, 24, 27],
+  all: [],
   deliveries: [18, 19],
   inspection: [20, 21],
   acceptance: [22, 23, 24],
@@ -413,8 +425,10 @@ const MoreSheet: React.FC<{
   canProcess: boolean;
   statusLabel: string;
   onClose: () => void;
+  onRemarks: () => void;
   onView: () => void;
   onProcess: () => void;
+  onOverride: () => void;
   onDelete: () => void;
 }> = ({
   visible,
@@ -423,8 +437,10 @@ const MoreSheet: React.FC<{
   canProcess,
   statusLabel,
   onClose,
+  onRemarks,
   onView,
   onProcess,
+  onOverride,
   onDelete,
 }) => {
   if (!record) return null;
@@ -440,6 +456,17 @@ const MoreSheet: React.FC<{
   };
 
   const actions: Action[] = [
+    {
+      icon: "chat",
+      label: "Remarks",
+      sublabel: "View stacked PR/PO/Delivery/Payment remarks",
+      color: "#1d4ed8",
+      bg: "#eff6ff",
+      onPress: () => {
+        onClose();
+        onRemarks();
+      },
+    },
     {
       icon: "visibility",
       label: "View Documents",
@@ -468,6 +495,17 @@ const MoreSheet: React.FC<{
       : []),
     ...(roleId === 1
       ? ([
+          {
+            icon: "admin-panel-settings",
+            label: "Override Status",
+            sublabel: "Force delivery to any Phase 3 status",
+            color: "#1d4ed8",
+            bg: "#eff6ff",
+            onPress: () => {
+              onClose();
+              onOverride();
+            },
+          },
           {
             icon: "delete-forever",
             label: "Delete Delivery",
@@ -632,7 +670,17 @@ const canRoleCreate = (roleId: number) => roleId === 1 || roleId === 8;
 const canRoleProcess = (roleId: number, statusId: number) =>
   roleId === 1 ||
   (roleId === 8 && [18, 19, 20, 22, 23].includes(statusId)) ||
-  (roleId === 9 && statusId === 21);
+  (roleId === 9 && statusId === 21) ||
+  (roleId === 2 && statusId === 24);
+
+const FLAG_TO_ID: Record<StatusFlag, number> = {
+  complete: 2,
+  incomplete_info: 3,
+  wrong_information: 4,
+  needs_revision: 5,
+  on_hold: 6,
+  urgent: 7,
+};
 
 const cfg = (id: number) =>
   STATUS_CFG[id] ?? {
@@ -751,6 +799,10 @@ export default function DeliveryModule() {
     string | number | null
   >(null);
   const [deleteDeliveryNo, setDeleteDeliveryNo] = useState<string | null>(null);
+  const [overrideVisible, setOverrideVisible] = useState(false);
+  const [overrideRecord, setOverrideRecord] = useState<DeliveryRecord | null>(
+    null,
+  );
 
   const [poOptions, setPoOptions] = useState<any[]>([]);
   const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
@@ -760,10 +812,16 @@ export default function DeliveryModule() {
   const [drNo, setDrNo] = useState("");
   const [soaNo, setSoaNo] = useState("");
   const [notes, setNotes] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagPickerOpen, setFlagPickerOpen] = useState(false);
   const [iar, setIar] = useState<any>(null);
   const [loa, setLoa] = useState<any>(null);
   const [dv, setDv] = useState<any>(null);
   const [viewTab, setViewTab] = useState<"iar" | "loa" | "dv">("iar");
+  const [remarkVisible, setRemarkVisible] = useState(false);
+  const [remarkRecord, setRemarkRecord] = useState<PORemarkSheetRecord | null>(
+    null,
+  );
 
   useEffect(() => {
     fetchDeliveryStatuses()
@@ -796,7 +854,7 @@ export default function DeliveryModule() {
   const filtered = useMemo(() => {
     return records
       .filter((r) => {
-        if (!tabStatuses.includes(r.statusId)) return false;
+        if (subTab !== "all" && !tabStatuses.includes(r.statusId)) return false;
         const q = searchQuery.toLowerCase();
         const matchSearch =
           !q ||
@@ -817,7 +875,15 @@ export default function DeliveryModule() {
           return b.updatedAt.localeCompare(a.updatedAt);
         return b.date.localeCompare(a.date);
       });
-  }, [records, tabStatuses, searchQuery, sectionFilter, statusFilter, sortBy]);
+  }, [
+    records,
+    subTab,
+    tabStatuses,
+    searchQuery,
+    sectionFilter,
+    statusFilter,
+    sortBy,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -868,6 +934,7 @@ export default function DeliveryModule() {
       setDrNo(r.raw?.dr_no ?? "");
       setSoaNo(r.raw?.soa_no ?? "");
       setNotes(r.raw?.notes ?? "");
+      setStatusFlag(null);
       const [i, l, d] = await Promise.all([
         fetchIARByDelivery(r.id),
         fetchLOAByDelivery(r.id),
@@ -922,49 +989,46 @@ export default function DeliveryModule() {
   const submitProcess = async () => {
     if (!active) return;
     try {
+      const currentStatus = Number(active.status_id ?? 0);
+      let nextStatus = currentStatus;
       if (active.status_id === 18) {
+        nextStatus = 19;
         await updateDelivery(active.id, {
-          status_id: 19,
+          status_id: nextStatus,
           dr_no: drNo || null,
           soa_no: soaNo || null,
           notes: notes || null,
         });
       } else if (active.status_id === 19) {
-        await upsertIARByDelivery(active.id, {
-          iar_no: iar?.iar_no ?? "",
-          invoice_no: iar?.invoice_no ?? "",
-          invoice_date: iar?.invoice_date ?? "",
-          requisitioning_office:
-            iar?.requisitioning_office ?? active.office_section ?? "",
-          responsibility_center: iar?.responsibility_center ?? "",
-          received_at: iar?.received_at ?? "",
-          inspector_name: iar?.inspector_name ?? "",
-          supply_officer_name: iar?.supply_officer_name ?? "",
-        });
+        nextStatus = 20;
         await updateDelivery(active.id, {
-          status_id: 20,
+          status_id: nextStatus,
+          dr_no: drNo || null,
+          soa_no: soaNo || null,
           notes: notes || null,
         });
       } else if (active.status_id === 20) {
-        await updateDelivery(active.id, {
-          status_id: 21,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 21) {
         await upsertIARByDelivery(active.id, {
-          inspector_name: iar?.inspector_name ?? "",
-          inspected_at: iar?.inspected_at ?? "",
           iar_no: iar?.iar_no ?? "",
           invoice_no: iar?.invoice_no ?? "",
           invoice_date: iar?.invoice_date ?? "",
           requisitioning_office:
             iar?.requisitioning_office ?? active.office_section ?? "",
           responsibility_center: iar?.responsibility_center ?? "",
+          inspected_at: iar?.inspected_at ?? "",
           received_at: iar?.received_at ?? "",
+          inspector_name: iar?.inspector_name ?? "",
           supply_officer_name: iar?.supply_officer_name ?? "",
         });
+        nextStatus = 21;
         await updateDelivery(active.id, {
-          status_id: 22,
+          status_id: nextStatus,
+          notes: notes || null,
+        });
+      } else if (active.status_id === 21) {
+        nextStatus = 22;
+        await updateDelivery(active.id, {
+          status_id: nextStatus,
           notes: notes || null,
         });
       } else if (active.status_id === 22) {
@@ -976,8 +1040,9 @@ export default function DeliveryModule() {
           accepted_by_name: loa?.accepted_by_name ?? "",
           accepted_by_title: loa?.accepted_by_title ?? "",
         });
+        nextStatus = 23;
         await updateDelivery(active.id, {
-          status_id: 23,
+          status_id: nextStatus,
           notes: notes || null,
         });
       } else if (active.status_id === 23) {
@@ -996,14 +1061,38 @@ export default function DeliveryModule() {
           certified_by: dv?.certified_by ?? "",
           approved_by: dv?.approved_by ?? "",
         });
+        nextStatus = 24;
         await updateDelivery(active.id, {
-          status_id: 24,
+          status_id: nextStatus,
+          notes: notes || null,
+        });
+      } else if (active.status_id === 24) {
+        nextStatus = 35;
+        await updateDelivery(active.id, {
+          status_id: nextStatus,
           notes: notes || null,
         });
       } else {
         await updateDelivery(active.id, { notes: notes || null });
       }
+
+      const flagId = statusFlag ? FLAG_TO_ID[statusFlag] : null;
+      const statusLabel =
+        statuses.find((s) => s.id === nextStatus)?.status_name ??
+        cfg(nextStatus).label;
+      const noteText =
+        notes.trim() ||
+        `Forwarded delivery from status ${currentStatus} to ${nextStatus} (${statusLabel}).`;
+      await insertDeliveryProcessRemark(
+        Number(active.id),
+        (currentUser as any)?.id ?? null,
+        noteText,
+        flagId ?? null,
+        "delivery",
+      );
+
       setProcessOpen(false);
+      setStatusFlag(null);
       await load();
       Alert.alert("Success", "Delivery status updated.");
     } catch (e: any) {
@@ -1011,6 +1100,26 @@ export default function DeliveryModule() {
         "Process failed",
         e?.message ?? "Could not process delivery.",
       );
+    }
+  };
+
+  const openRemarks = async (r: DeliveryRecord) => {
+    try {
+      const ctx = await fetchDeliveryPOContext(Number(r.id));
+      if (!ctx?.poId) {
+        Alert.alert("Not available", "Linked PO context not found.");
+        return;
+      }
+      setRemarkRecord({
+        id: String(ctx.poId),
+        poNo: ctx.poNo || r.poNo,
+        supplier: ctx.supplier || r.supplier,
+        linkedPrId: ctx.prId,
+        prNo: ctx.prNo || "—",
+      });
+      setRemarkVisible(true);
+    } catch (e: any) {
+      Alert.alert("Load failed", e?.message ?? "Could not load remarks.");
     }
   };
 
@@ -1261,6 +1370,10 @@ export default function DeliveryModule() {
           setMoreVisible(false);
           setMoreRecord(null);
         }}
+        onRemarks={() => {
+          if (!moreRecord) return;
+          void openRemarks(moreRecord);
+        }}
         onView={() => {
           if (!moreRecord) return;
           void openView(moreRecord);
@@ -1268,6 +1381,11 @@ export default function DeliveryModule() {
         onProcess={() => {
           if (!moreRecord) return;
           void openProcess(moreRecord);
+        }}
+        onOverride={() => {
+          if (!moreRecord) return;
+          setOverrideRecord(moreRecord);
+          setOverrideVisible(true);
         }}
         onDelete={() => {
           if (!moreRecord) return;
@@ -1337,6 +1455,23 @@ export default function DeliveryModule() {
           setViewTab("dv");
           setViewOpen(true);
         }}
+        statusFlag={statusFlag}
+        onPressStatusFlag={() => setFlagPickerOpen(true)}
+        flagPickerOpen={flagPickerOpen}
+        onCloseFlagPicker={() => setFlagPickerOpen(false)}
+        onSelectStatusFlag={(f: StatusFlag | null) => {
+          setStatusFlag(f);
+          setFlagPickerOpen(false);
+        }}
+      />
+
+      <PORemarkSheet
+        visible={remarkVisible}
+        record={remarkRecord}
+        onClose={() => {
+          setRemarkVisible(false);
+          setRemarkRecord(null);
+        }}
       />
 
       <DeleteDeliveryModal
@@ -1355,6 +1490,73 @@ export default function DeliveryModule() {
           setDeleteDeliveryNo(null);
         }}
       />
+
+      <Modal
+        visible={overrideVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setOverrideVisible(false);
+          setOverrideRecord(null);
+        }}
+      >
+        <View className="flex-1 bg-black/50 justify-center px-5">
+          <View className="bg-white rounded-2xl p-4 max-h-[80%]">
+            <Text className="text-[13px] font-extrabold text-gray-900 mb-1">
+              Override delivery status
+            </Text>
+            <Text className="text-[11px] text-gray-500 mb-3">
+              {overrideRecord?.deliveryNo ?? ""} · Admin only
+            </Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {[18, 19, 20, 21, 22, 23, 24, 27].map((sid) => {
+                const label =
+                  statuses.find((s) => s.id === sid)?.status_name ??
+                  cfg(sid).label;
+                return (
+                  <TouchableOpacity
+                    key={sid}
+                    onPress={async () => {
+                      if (!overrideRecord) return;
+                      try {
+                        await updateDelivery(overrideRecord.id, {
+                          status_id: sid,
+                        });
+                        setOverrideVisible(false);
+                        setOverrideRecord(null);
+                        await load();
+                        Alert.alert("Success", "Delivery status updated.");
+                      } catch (e: any) {
+                        Alert.alert(
+                          "Failed",
+                          e?.message ?? "Could not override status.",
+                        );
+                      }
+                    }}
+                    className="py-3 border-b border-gray-100"
+                  >
+                    <Text className="text-[12px] font-bold text-gray-800">
+                      {label}
+                    </Text>
+                    <Text className="text-[10px] text-gray-400">ID {sid}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => {
+                setOverrideVisible(false);
+                setOverrideRecord(null);
+              }}
+              className="mt-3 py-2.5 rounded-xl bg-gray-100 items-center"
+            >
+              <Text className="text-[12px] font-bold text-gray-600">
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

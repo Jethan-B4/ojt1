@@ -12,7 +12,7 @@ import {
   notifyPREdited,
   notifyPRStatusChanged,
 } from "@/lib/supabase/notifications";
-import { supabase } from "./client";
+import { supabase, withTimeout } from "./client";
 
 // ─── Status label helper ──────────────────────────────────────────────────────
 
@@ -182,10 +182,13 @@ export async function updatePRStatus(prId: string | number, statusId: number) {
     .eq("id", prId)
     .maybeSingle();
 
-  const { error } = await supabase
-    .from("purchase_requests")
-    .update({ status_id: statusId, updated_at: new Date().toISOString() })
-    .eq("id", prId);
+  const { error } = await withTimeout(
+    supabase
+      .from("purchase_requests")
+      .update({ status_id: statusId, updated_at: new Date().toISOString() })
+      .eq("id", prId),
+    "update PR status",
+  );
   if (error) throw error;
 
   // Resolve label and fire notification (non-blocking).
@@ -225,18 +228,20 @@ export async function insertPurchaseRequest(
   if (pr.app_name) base.app_name = pr.app_name;
   if (pr.app_desig) base.app_desig = pr.app_desig;
 
-  const { data, error } = await supabase
-    .from("purchase_requests")
-    .insert(base)
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase.from("purchase_requests").insert(base).select().single(),
+    "create PR header",
+  );
   if (error) throw error;
 
   const parentId = (data as any).id ?? (data as any).pr_id;
   if (items.length > 0) {
-    const { error: itemsError } = await supabase
-      .from("purchase_request_items")
-      .insert(items.map((item) => ({ ...item, pr_id: parentId })));
+    const { error: itemsError } = await withTimeout(
+      supabase
+        .from("purchase_request_items")
+        .insert(items.map((item) => ({ ...item, pr_id: parentId }))),
+      "create PR items",
+    );
     if (itemsError) throw itemsError;
   }
 
@@ -292,24 +297,30 @@ export async function updatePurchaseRequest(
     .maybeSingle();
 
   // 1. Update header
-  const { error: headerErr } = await supabase
-    .from("purchase_requests")
-    .update({ ...patch, updated_at: now })
-    .eq("id", prId);
+  const { error: headerErr } = await withTimeout(
+    supabase
+      .from("purchase_requests")
+      .update({ ...patch, updated_at: now })
+      .eq("id", prId),
+    "update PR header",
+  );
   if (headerErr) throw headerErr;
 
   // 2. Replace items only when caller provides a new list
   if (items !== undefined) {
-    const { error: delErr } = await supabase
-      .from("purchase_request_items")
-      .delete()
-      .eq("pr_id", prId);
+    const { error: delErr } = await withTimeout(
+      supabase.from("purchase_request_items").delete().eq("pr_id", prId),
+      "replace PR items (delete)",
+    );
     if (delErr) throw delErr;
 
     if (items.length > 0) {
-      const { error: insErr } = await supabase
-        .from("purchase_request_items")
-        .insert(items.map((i) => ({ ...i, pr_id: prId })));
+      const { error: insErr } = await withTimeout(
+        supabase
+          .from("purchase_request_items")
+          .insert(items.map((i) => ({ ...i, pr_id: prId }))),
+        "replace PR items (insert)",
+      );
       if (insErr) throw insErr;
     }
   }

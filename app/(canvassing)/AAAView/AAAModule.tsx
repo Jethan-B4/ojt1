@@ -1053,7 +1053,7 @@ export default function AAAView({
       }
 
       await updateCanvassSessionMeta(sessionId, { status: "closed" });
-      await updatePRStatus(resolvedPrId, 11);
+      await updatePRStatus(resolvedPrId, 33);
 
       setIsSubmitted(true);
 

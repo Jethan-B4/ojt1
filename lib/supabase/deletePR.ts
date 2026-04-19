@@ -17,6 +17,10 @@ export interface DeletePRPreview {
   bacResolutionPRLinkCount: number;
   poCount: number;
   poItemCount: number;
+  deliveryCount: number;
+  iarCount: number;
+  loaCount: number;
+  dvCount: number;
   orsCount: number;
 }
 
@@ -48,8 +52,15 @@ export async function fetchPRDeletePreview(
   const { data: pos } = await supabase
     .from("purchase_orders")
     .select("id")
-    .or(`pr_id.eq.${prId},pr_no.eq.${prNo}`);
+    .eq("pr_id", prId);
   const poIds = (pos ?? []).map((r: any) => Number(r.id)).filter(Boolean);
+
+  const { data: deliveries } = poIds.length
+    ? await supabase.from("deliveries").select("id").in("po_id", poIds)
+    : ({ data: [] } as any);
+  const deliveryIds = (deliveries ?? [])
+    .map((r: any) => Number(r.id))
+    .filter(Boolean);
 
   const [
     prItems,
@@ -64,6 +75,9 @@ export async function fetchPRDeletePreview(
     bacResolutions,
     bacResLinks,
     poItems,
+    iars,
+    loas,
+    dvs,
     orsEntries,
   ] = await Promise.all([
     supabase
@@ -130,10 +144,28 @@ export async function fetchPRDeletePreview(
           .select("id", { count: "exact", head: true })
           .in("po_id", poIds)
       : Promise.resolve({ count: 0 } as any),
+    deliveryIds.length
+      ? supabase
+          .from("iar_documents")
+          .select("id", { count: "exact", head: true })
+          .in("delivery_id", deliveryIds)
+      : Promise.resolve({ count: 0 } as any),
+    deliveryIds.length
+      ? supabase
+          .from("loa_documents")
+          .select("id", { count: "exact", head: true })
+          .in("delivery_id", deliveryIds)
+      : Promise.resolve({ count: 0 } as any),
+    deliveryIds.length
+      ? supabase
+          .from("dv_documents")
+          .select("id", { count: "exact", head: true })
+          .in("delivery_id", deliveryIds)
+      : Promise.resolve({ count: 0 } as any),
     supabase
       .from("ors_entries")
       .select("id", { count: "exact", head: true })
-      .or(`pr_id.eq.${prId},pr_no.eq.${prNo}`),
+      .eq("pr_id", prId),
   ]);
 
   return {
@@ -156,6 +188,10 @@ export async function fetchPRDeletePreview(
     bacResolutionPRLinkCount: bacResLinks.count ?? 0,
     poCount: poIds.length,
     poItemCount: poItems.count ?? 0,
+    deliveryCount: deliveryIds.length,
+    iarCount: iars.count ?? 0,
+    loaCount: loas.count ?? 0,
+    dvCount: dvs.count ?? 0,
     orsCount: orsEntries.count ?? 0,
   };
 }
@@ -187,9 +223,40 @@ export async function deletePurchaseRequestDeep(prId: string): Promise<void> {
   const { data: pos, error: poErr } = await supabase
     .from("purchase_orders")
     .select("id")
-    .or(`pr_id.eq.${prId},pr_no.eq.${prNo}`);
+    .eq("pr_id", prId);
   if (poErr) throw poErr;
   const poIds = (pos ?? []).map((r: any) => Number(r.id)).filter(Boolean);
+
+  const { data: deliveries, error: dErr } = poIds.length
+    ? await supabase.from("deliveries").select("id").in("po_id", poIds)
+    : ({ data: [], error: null } as any);
+  if (dErr) throw dErr;
+  const deliveryIds = (deliveries ?? [])
+    .map((r: any) => Number(r.id))
+    .filter(Boolean);
+
+  if (deliveryIds.length) {
+    const { error: e1 } = await supabase
+      .from("iar_documents")
+      .delete()
+      .in("delivery_id", deliveryIds);
+    if (e1) throw e1;
+    const { error: e2 } = await supabase
+      .from("loa_documents")
+      .delete()
+      .in("delivery_id", deliveryIds);
+    if (e2) throw e2;
+    const { error: e3 } = await supabase
+      .from("dv_documents")
+      .delete()
+      .in("delivery_id", deliveryIds);
+    if (e3) throw e3;
+    const { error: e4 } = await supabase
+      .from("deliveries")
+      .delete()
+      .in("id", deliveryIds);
+    if (e4) throw e4;
+  }
 
   if (poIds.length) {
     const { error } = await supabase.from("remarks").delete().in("po_id", poIds);
@@ -257,7 +324,7 @@ export async function deletePurchaseRequestDeep(prId: string): Promise<void> {
     const { error } = await supabase
       .from("bac_resolution_prs")
       .delete()
-      .or(`pr_id.eq.${prId},pr_no.eq.${prNo}`);
+      .eq("pr_id", prId);
     if (error) throw error;
   }
 
@@ -279,7 +346,7 @@ export async function deletePurchaseRequestDeep(prId: string): Promise<void> {
     const { error } = await supabase
       .from("ors_entries")
       .delete()
-      .or(`pr_id.eq.${prId},pr_no.eq.${prNo}`);
+      .eq("pr_id", prId);
     if (error) throw error;
   }
 
@@ -314,4 +381,3 @@ export async function deletePurchaseRequestDeep(prId: string): Promise<void> {
     .eq("id", prId);
   if (delErr) throw delErr;
 }
-

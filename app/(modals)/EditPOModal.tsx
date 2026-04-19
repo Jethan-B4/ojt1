@@ -176,6 +176,9 @@ function StyledInput(
   return (
     <TextInput
       {...rest}
+      autoCapitalize={rest.autoCapitalize ?? "none"}
+      autoCorrect={rest.autoCorrect ?? false}
+      spellCheck={rest.spellCheck ?? false}
       onFocus={(e) => {
         setFocused(true);
         props.onFocus?.(e);
@@ -396,7 +399,8 @@ function ItemRow({
           className="text-[13px] font-bold text-[#064E3B]"
           style={{ fontFamily: MONO }}
         >
-          ₱{fmt(amount)}
+          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          {fmt(amount)}
         </Text>
       </View>
     </View>

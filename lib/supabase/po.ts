@@ -17,11 +17,11 @@
  */
 
 import {
-  notifyPOCreated,
-  notifyPOEdited,
-  notifyPOStatusChanged,
+    notifyPOCreated,
+    notifyPOEdited,
+    notifyPOStatusChanged,
 } from "@/lib/supabase/notifications";
-import { supabase } from "./client";
+import { supabase, withTimeout } from "./client";
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
@@ -188,23 +188,29 @@ export async function updatePO(
     poNo = (data as any)?.po_no ?? null;
   }
 
-  const { error: hErr } = await supabase
-    .from("purchase_orders")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", poId);
+  const { error: hErr } = await withTimeout(
+    supabase
+      .from("purchase_orders")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", poId),
+    "update PO header",
+  );
   if (hErr) throw hErr;
 
   if (items !== undefined) {
-    const { error: delErr } = await supabase
-      .from("purchase_order_items")
-      .delete()
-      .eq("po_id", poId);
+    const { error: delErr } = await withTimeout(
+      supabase.from("purchase_order_items").delete().eq("po_id", poId),
+      "replace PO items (delete)",
+    );
     if (delErr) throw delErr;
 
     if (items.length > 0) {
-      const { error: insErr } = await supabase
-        .from("purchase_order_items")
-        .insert(items.map((i) => ({ ...i, po_id: poId })));
+      const { error: insErr } = await withTimeout(
+        supabase
+          .from("purchase_order_items")
+          .insert(items.map((i) => ({ ...i, po_id: poId }))),
+        "replace PO items (insert)",
+      );
       if (insErr) throw insErr;
     }
   }
@@ -216,7 +222,7 @@ export async function updatePO(
 /**
  * Insert a new PO header + items (used by CreatePOModal).
  * Returns the full inserted row (including server-generated id).
- * Always starts at status_id 12 ("PO Allocation") unless explicitly overridden.
+ * Default status_id is 11 (PO Creation) when payload omits status_id.
  * 🔔 Fires notifyPOCreated after a successful insert.
  */
 export async function insertPurchaseOrder(
@@ -224,19 +230,34 @@ export async function insertPurchaseOrder(
   items: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<PORow> {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("purchase_orders")
-    .insert({ ...po, status_id: 12, created_at: now, updated_at: now })
-    .select()
-    .single();
+  const initialStatus =
+    po.status_id != null && Number(po.status_id) > 0
+      ? Number(po.status_id)
+      : 11;
+  const { data, error } = await withTimeout(
+    supabase
+      .from("purchase_orders")
+      .insert({
+        ...po,
+        status_id: initialStatus,
+        created_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single(),
+    "create PO header",
+  );
   if (error) throw error;
 
   const inserted = data as PORow;
 
   if (items.length > 0) {
-    const { error: iErr } = await supabase
-      .from("purchase_order_items")
-      .insert(items.map((i) => ({ ...i, po_id: inserted.id })));
+    const { error: iErr } = await withTimeout(
+      supabase
+        .from("purchase_order_items")
+        .insert(items.map((i) => ({ ...i, po_id: inserted.id }))),
+      "create PO items",
+    );
     if (iErr) throw iErr;
   }
 
@@ -266,9 +287,8 @@ export async function fetchPOStatuses(): Promise<
   const { data, error } = await supabase
     .from("status")
     .select("id, status_name")
-    // PO lifecycle status IDs: 11 (PO Creation) → 17 (PO Serving)
-    .gte("id", 11)
-    .lte("id", 17)
+    // PO lifecycle only (exclude delivery/payment ids between 17 and 34)
+    .in("id", [11, 12, 13, 14, 15, 16, 17, 34])
     .order("id", { ascending: true });
   if (error) throw error;
   return (data ?? []) as { id: number; status_name: string }[];

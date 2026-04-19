@@ -19,38 +19,37 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import {
-  fetchOrsEntryByNo,
-  generateOrsNumber,
-  insertOrsEntry,
-  updateOrsEntry,
+    generateOrsNumber,
+    insertOrsEntry,
+    updateOrsEntry
 } from "../../lib/supabase/budget";
 import { supabase } from "../../lib/supabase/client";
 import {
-  fetchPOStatuses,
-  fetchPOWithItemsById,
-  updatePO,
-  updatePOStatus,
-  type PORow,
+    fetchPOStatuses,
+    fetchPOWithItemsById,
+    updatePO,
+    updatePOStatus,
+    type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
 import CalendarPickerModal from "./CalendarModal";
 import {
-  FlagButton,
-  STATUS_FLAGS,
-  StatusFlagPicker,
-  type StatusFlag,
+    FlagButton,
+    STATUS_FLAGS,
+    StatusFlagPicker,
+    type StatusFlag,
 } from "./ProcessPRModal";
 
 // ─── Re-exports (consumed by POModule) ───────────────────────────────────────
@@ -129,7 +128,13 @@ const ROLE_META: Record<
     step: "Step 17",
     title: "PO (Serving)",
     accentColor: "#166534",
-    nextStatusId: 17,
+    nextStatusId: 34,
+  },
+  34: {
+    step: "Complete",
+    title: "Completed (PO Phase)",
+    accentColor: "#15803d",
+    nextStatusId: 34,
   },
 };
 
@@ -165,7 +170,16 @@ const PHASE2_STEPS: Record<
     role: "PARPO",
     action: "Forward to Supply (Serving)",
   },
-  17: { label: "PO (Serving)", role: "Supply", action: "Mark as Served" },
+  17: {
+    label: "PO (Serving)",
+    role: "Supply",
+    action: "Complete PO phase",
+  },
+  34: {
+    label: "Completed (PO Phase)",
+    role: "—",
+    action: "Closed in PO module",
+  },
 };
 
 // ─── canRoleProcessPO ─────────────────────────────────────────────────────────
@@ -179,7 +193,9 @@ const PHASE2_STEPS: Record<
 export function canRoleProcessPO(roleId: number, statusId: number): boolean {
   if (roleId === 1) return true;
   if (roleId === 8)
-    return statusId === 11 || statusId === 12 || statusId === 16 || statusId === 17;
+    return (
+      statusId === 11 || statusId === 12 || statusId === 16 || statusId === 17
+    );
   if (roleId === 4) return statusId === 13 || statusId === 14;
   return false;
 }
@@ -429,6 +445,7 @@ function StyledInput({
   multiline,
   keyboardType,
   mono,
+  editable = true,
 }: {
   value: string;
   onChangeText: (t: string) => void;
@@ -436,20 +453,29 @@ function StyledInput({
   multiline?: boolean;
   keyboardType?: any;
   mono?: boolean;
+  editable?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
       value={value}
       onChangeText={onChangeText}
+      autoCapitalize="none"
+      autoCorrect={false}
+      spellCheck={false}
       placeholder={placeholder}
       placeholderTextColor="#9ca3af"
       multiline={multiline}
       keyboardType={keyboardType}
+      editable={editable}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       className={`rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border bg-white ${
-        focused ? "border-emerald-500" : "border-gray-200"
+        !editable
+          ? "border-gray-200 bg-gray-100 text-gray-500"
+          : focused
+            ? "border-emerald-500"
+            : "border-gray-200"
       } ${multiline ? "min-h-[80px]" : ""}`}
       style={[
         multiline ? { textAlignVertical: "top" } : undefined,
@@ -602,7 +628,7 @@ function SupplyModal({
 
       const canSkipToBudget =
         (statusId === 11 && poNo.trim()) || statusId === 12;
-      const targetStatusId = statusId === 17 ? 17 : canSkipToBudget ? 13 : 12;
+      const targetStatusId = statusId === 17 ? 34 : canSkipToBudget ? 13 : 12;
 
       await updatePOStatus(record.id, targetStatusId);
       onProcessed(record.id, targetStatusId);
@@ -764,7 +790,6 @@ function BudgetModal({
     setSaving(true);
     try {
       if (statusId === 13) {
-        const finalOrsNo = orsNo.trim() || (await generateOrsNumber());
         const amount = orsAmount.trim() ? Number(orsAmount) || 0 : 0;
         const prId =
           (header as any)?.pr_id != null ? String((header as any).pr_id) : null;
@@ -775,17 +800,96 @@ function BudgetModal({
             : null;
         const fiscalYear = new Date().getFullYear();
 
-        const existing = await fetchOrsEntryByNo(finalOrsNo).catch(() => null);
-        if (existing) {
-          await updateOrsEntry(existing.id, {
+        let draftId: string | null = null;
+        if (prId) {
+          const { data: existing, error: eErr } = await supabase
+            .from("ors_entries")
+            .select("id")
+            .eq("pr_id", prId)
+            .is("ors_no", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (eErr) throw eErr;
+          if (existing?.id) draftId = String((existing as any).id);
+        }
+
+        if (draftId) {
+          await updateOrsEntry(draftId, {
             pr_id: prId,
             pr_no: prNo || null,
             division_id: divisionId,
             fiscal_year: fiscalYear,
             amount,
+            status: "Pending",
+            prepared_by: currentUser?.id ?? null,
+          } as any);
+        } else {
+          const { data: draft, error: draftErr } = await supabase
+            .from("ors_entries")
+            .insert({
+              ors_no: null,
+              pr_id: prId,
+              pr_no: prNo || null,
+              division_id: divisionId,
+              fiscal_year: fiscalYear,
+              amount,
+              status: "Pending",
+              prepared_by: (currentUser?.id as any) ?? null,
+              approved_by: null,
+              notes: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .select("id")
+            .single();
+          if (draftErr) throw draftErr;
+          if (!draft) throw new Error("Could not create ORS entry.");
+        }
+
+        await updatePO(record.id, {
+          ors_no: header?.ors_no ?? null,
+          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
+          ors_amount: amount,
+          funds_available: fundsAvailable.trim() || null,
+        });
+      }
+
+      if (statusId === 14) {
+        const finalOrsNo = orsNo.trim() || (await generateOrsNumber());
+        const amount = header?.ors_amount ?? null;
+        const prId =
+          (header as any)?.pr_id != null ? String((header as any).pr_id) : null;
+        const prNo = String((header as any)?.pr_no ?? record.prNo ?? "");
+        const divisionId =
+          (header as any)?.division_id != null
+            ? Number((header as any).division_id)
+            : null;
+        const fiscalYear = new Date().getFullYear();
+
+        let targetOrsId: string | null = null;
+        if (prId) {
+          const { data: existing, error: eErr } = await supabase
+            .from("ors_entries")
+            .select("id, ors_no")
+            .eq("pr_id", prId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (eErr) throw eErr;
+          if (existing?.id) targetOrsId = String((existing as any).id);
+        }
+
+        if (targetOrsId) {
+          await updateOrsEntry(targetOrsId, {
+            ors_no: finalOrsNo,
+            pr_id: prId,
+            pr_no: prNo || null,
+            division_id: divisionId,
+            fiscal_year: fiscalYear,
+            amount: amount ?? 0,
             status: "Processing",
             prepared_by: currentUser?.id ?? null,
-            notes: (existing as any).notes ?? null,
           } as any);
         } else {
           await insertOrsEntry({
@@ -794,7 +898,7 @@ function BudgetModal({
             pr_no: prNo || null,
             division_id: divisionId,
             fiscal_year: fiscalYear,
-            amount,
+            amount: amount ?? 0,
             status: "Processing",
             prepared_by: (currentUser?.id as any) ?? null,
             approved_by: null,
@@ -804,12 +908,7 @@ function BudgetModal({
           } as any);
         }
 
-        await updatePO(record.id, {
-          ors_no: finalOrsNo,
-          ors_date: orsDate.trim() ? normalizeDateString(orsDate.trim()) : null,
-          ors_amount: amount,
-          funds_available: fundsAvailable.trim() || null,
-        });
+        await updatePO(record.id, { ors_no: finalOrsNo });
       }
 
       await insertPORemark(
@@ -861,12 +960,13 @@ function BudgetModal({
               {statusId === 13 && (
                 <>
                   <SectionLabel>ORS Details</SectionLabel>
-                  <Field label="ORS Number" required>
+                  <Field label="ORS Number">
                     <StyledInput
-                      value={orsNo}
-                      onChangeText={setOrsNo}
-                      placeholder="e.g. ORS-2026-001"
+                      value=""
+                      onChangeText={() => {}}
+                      placeholder="Auto-assigned at ORS Processing"
                       mono
+                      editable={false}
                     />
                   </Field>
                   <Field label="ORS Date" required>
@@ -898,13 +998,24 @@ function BudgetModal({
 
               {/* ORS Processing (14) — forwarding note */}
               {statusId === 14 && (
-                <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
-                  <MaterialIcons name="send" size={16} color="#1d4ed8" />
-                  <Text className="text-[12px] text-blue-800 flex-1">
-                    Budget officer has signed the ORS. This will forward the
-                    purchase order to Accounting for incoming check processing.
-                  </Text>
-                </View>
+                <>
+                  <SectionLabel>ORS Processing</SectionLabel>
+                  <Field label="Assign ORS Number" required>
+                    <StyledInput
+                      value={orsNo}
+                      onChangeText={setOrsNo}
+                      placeholder="e.g. ORS-2026-001"
+                      mono
+                    />
+                  </Field>
+                  <View className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 flex-row items-center gap-2">
+                    <MaterialIcons name="send" size={16} color="#1d4ed8" />
+                    <Text className="text-[12px] text-blue-800 flex-1">
+                      Assign the ORS number, then forward the purchase order to
+                      Accounting for incoming check processing.
+                    </Text>
+                  </View>
+                </>
               )}
 
               <SectionLabel>Budget Action</SectionLabel>
@@ -920,8 +1031,8 @@ function BudgetModal({
                   onChangeText={setRemarks}
                   placeholder={
                     statusId === 13
-                      ? "e.g. ORS prepared and assigned ORS number. Forwarding for signature."
-                      : "e.g. Budget officer signature obtained. Forwarding to Accounting."
+                      ? "e.g. ORS prepared. Forwarding for ORS processing and numbering."
+                      : "e.g. ORS number assigned. Forwarding to Accounting."
                   }
                   multiline
                 />
@@ -932,11 +1043,15 @@ function BudgetModal({
             onCancel={onClose}
             onConfirm={handleSubmit}
             confirmLabel={
-              statusId === 13 ? "Finalize ORS" : "Forward to Accounting"
+              statusId === 13
+                ? "Forward to ORS Processing"
+                : "Forward to Accounting"
             }
             confirmingLabel="Saving…"
             disabled={
-              loading || (statusId === 13 && (!orsNo.trim() || !orsDate.trim()))
+              loading ||
+              (statusId === 13 && !orsDate.trim()) ||
+              (statusId === 14 && !orsNo.trim())
             }
             saving={saving}
             color={meta.accentColor}
@@ -991,25 +1106,46 @@ function ParpoModal({
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <KeyboardAvoidingView
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
           ) : (
-            <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
               {header && <POSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>PARPO Review</SectionLabel>
               <View className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl px-4 py-3 mb-4">
                 <Text className="text-[12px] text-fuchsia-800">
-                  Review and confirm PARPO signoff. This will move PO to Serving.
+                  Review and confirm PARPO signoff. This will move PO to
+                  Serving.
                 </Text>
               </View>
               <Field label="Status Flag">
-                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
+                />
               </Field>
               <Field label="PARPO Remarks">
-                <StyledInput value={remarks} onChangeText={setRemarks} placeholder="e.g. PARPO reviewed and signed." multiline />
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder="e.g. PARPO reviewed and signed."
+                  multiline
+                />
               </Field>
             </ScrollView>
           )}
@@ -1024,7 +1160,12 @@ function ParpoModal({
           />
         </KeyboardAvoidingView>
       </Modal>
-      <StatusFlagPicker visible={flagOpen} selected={statusFlag} onSelect={setStatusFlag} onClose={() => setFlagOpen(false)} />
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
     </>
   );
 }
@@ -1057,7 +1198,10 @@ function ServingModal({
 
   const handleSubmit = async () => {
     if (!servedToSupplier || !copiedForCoa) {
-      Alert.alert("Checklist required", "Confirm serving and COA copy checklist before proceeding.");
+      Alert.alert(
+        "Checklist required",
+        "Confirm serving and COA copy checklist before proceeding.",
+      );
       return;
     }
     setSaving(true);
@@ -1069,8 +1213,8 @@ function ServingModal({
         remarks || "PO served to supplier; COA copies prepared.",
         getStatusFlagId(statusFlag),
       );
-      await updatePOStatus(record.id, 17);
-      onProcessed(record.id, 17);
+      await updatePOStatus(record.id, 34);
+      onProcessed(record.id, 34);
       onClose();
     } catch (e: any) {
       Alert.alert("Failed", e?.message ?? "Could not mark PO as served.");
@@ -1081,26 +1225,70 @@ function ServingModal({
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-        <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+      >
+        <KeyboardAvoidingView
+          className="flex-1 bg-white"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <ModalHeader meta={meta} poNo={record.poNo} onClose={onClose} />
           {loading ? (
             <LoadingBody color={meta.accentColor} />
           ) : (
-            <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              className="flex-1 bg-gray-50"
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
               {header && <POSummaryCard header={header} statuses={statuses} />}
               <SectionLabel>Serving Checklist</SectionLabel>
-              {[{key:"served",label:"PO served to supplier",val:servedToSupplier,set:setServedToSupplier},{key:"coa",label:"Signed PO and attachments photocopied for COA",val:copiedForCoa,set:setCopiedForCoa}].map((row:any)=>(
-                <TouchableOpacity key={row.key} onPress={() => row.set(!row.val)} activeOpacity={0.8} className="flex-row items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 bg-white mb-2">
-                  <MaterialIcons name={row.val ? "check-box" : "check-box-outline-blank"} size={18} color={row.val ? "#166534" : "#9ca3af"} />
-                  <Text className="text-[12.5px] text-gray-700 flex-1">{row.label}</Text>
+              {[
+                {
+                  key: "served",
+                  label: "PO served to supplier",
+                  val: servedToSupplier,
+                  set: setServedToSupplier,
+                },
+                {
+                  key: "coa",
+                  label: "Signed PO and attachments photocopied for COA",
+                  val: copiedForCoa,
+                  set: setCopiedForCoa,
+                },
+              ].map((row: any) => (
+                <TouchableOpacity
+                  key={row.key}
+                  onPress={() => row.set(!row.val)}
+                  activeOpacity={0.8}
+                  className="flex-row items-center gap-2 px-3 py-2.5 rounded-xl border border-gray-200 bg-white mb-2"
+                >
+                  <MaterialIcons
+                    name={row.val ? "check-box" : "check-box-outline-blank"}
+                    size={18}
+                    color={row.val ? "#166534" : "#9ca3af"}
+                  />
+                  <Text className="text-[12.5px] text-gray-700 flex-1">
+                    {row.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
               <Field label="Status Flag">
-                <FlagButton selected={statusFlag} onPress={() => setFlagOpen(true)} />
+                <FlagButton
+                  selected={statusFlag}
+                  onPress={() => setFlagOpen(true)}
+                />
               </Field>
               <Field label="Serving Notes">
-                <StyledInput value={remarks} onChangeText={setRemarks} placeholder="e.g. Served on-site, supplier acknowledged receipt." multiline />
+                <StyledInput
+                  value={remarks}
+                  onChangeText={setRemarks}
+                  placeholder="e.g. Served on-site, supplier acknowledged receipt."
+                  multiline
+                />
               </Field>
             </ScrollView>
           )}
@@ -1115,7 +1303,12 @@ function ServingModal({
           />
         </KeyboardAvoidingView>
       </Modal>
-      <StatusFlagPicker visible={flagOpen} selected={statusFlag} onSelect={setStatusFlag} onClose={() => setFlagOpen(false)} />
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
     </>
   );
 }
@@ -1143,12 +1336,14 @@ function AdminModal({
 
   const currentStatus = record?.statusId ?? 11;
   const [targetStatusId, setTargetStatusId] = useState<number>(
-    Math.min(currentStatus + 1, 17),
+    currentStatus >= 17 ? 34 : Math.min(currentStatus + 1, 17),
   );
 
   useEffect(() => {
     if (!visible || !record) return;
-    setTargetStatusId(Math.min(record.statusId + 1, 17));
+    setTargetStatusId(
+      record.statusId >= 17 ? 34 : Math.min(record.statusId + 1, 17),
+    );
     setRemarks("");
     setStatusFlag(null);
     setPoNo("");
@@ -1280,11 +1475,12 @@ function AdminModal({
               {/* Target status picker */}
               <SectionLabel>Target Status</SectionLabel>
               <View className="flex-row flex-wrap gap-2 mb-1">
-                {([11, 12, 13, 14, 15, 16, 17] as const).map((sid) => {
+                {([11, 12, 13, 14, 15, 16, 17, 34] as const).map((sid) => {
                   const m = PHASE2_STEPS[sid];
                   if (!m) return null;
                   const active = targetStatusId === sid;
-                  const isPast = sid <= currentStatus;
+                  const isPast =
+                    sid === 34 ? currentStatus >= 34 : sid <= currentStatus;
                   return (
                     <TouchableOpacity
                       key={sid}

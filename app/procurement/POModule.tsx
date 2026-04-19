@@ -17,6 +17,7 @@
  *   15 = PO (Accounting)  ← Accounting verifies document completeness
  *   16 = PO (PARPO)       ← PARPO II reviews and signs PO
  *   17 = PO (Serving)     ← Supply serves PO to suppliers
+ *   34 = Completed (PO Phase)
  *
  * Role permissions:
  *   role_id 1  = Admin   — sees all, can process (override all statuses), can edit
@@ -100,6 +101,7 @@ type SubTab = "all" | "po" | "ors" | "serving";
  *   15 = PO (Accounting)  — Accounting verifies document completeness
  *   16 = PO (PARPO)       — PARPO II reviews and signs PO
  *   17 = PO (Serving)     — Supply serves PO to suppliers
+ *   34 = Completed (PO Phase)
  */
 const PO_STATUS_CFG: Record<
   number,
@@ -146,6 +148,12 @@ const PO_STATUS_CFG: Record<
     text: "#166534",
     dot: "#16a34a",
     label: "PO (Serving)",
+  },
+  34: {
+    bg: "#ecfdf5",
+    text: "#14532d",
+    dot: "#22c55e",
+    label: "Completed (PO Phase)",
   },
 };
 
@@ -1108,9 +1116,12 @@ export default function POModule() {
           (r) => r.status_id !== null && r.status_id >= 13 && r.status_id <= 14,
         );
       } else if (activeSubTab === "serving") {
-        // Serving pipeline: 15 (Accounting) → 16 (PARPO) → 17 (Serving)
+        // Serving pipeline through PO phase completion (status 34)
         rows = allRows.filter(
-          (r) => r.status_id !== null && r.status_id >= 15 && r.status_id <= 17,
+          (r) =>
+            r.status_id !== null &&
+            ((r.status_id >= 15 && r.status_id <= 17) ||
+              r.status_id === 34),
         );
       } else {
         rows = allRows;

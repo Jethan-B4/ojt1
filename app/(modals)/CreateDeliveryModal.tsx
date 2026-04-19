@@ -1,7 +1,9 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -93,7 +95,10 @@ export default function CreateDeliveryModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 bg-white">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        className="flex-1 bg-white"
+      >
         <View className="px-5 pt-4 pb-3 bg-[#064E3B]">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-3">
@@ -133,9 +138,11 @@ export default function CreateDeliveryModal({
             <TextInput
               value={deliveryNo}
               onChangeText={setDeliveryNo}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               placeholder="e.g. DEL-2026-0012"
               placeholderTextColor="#9ca3af"
-              autoCapitalize="characters"
               className="border border-gray-200 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 bg-white"
             />
 
@@ -163,12 +170,26 @@ export default function CreateDeliveryModal({
             <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400 mb-2">
               PO Candidates (Served)
             </Text>
+            <View className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <Text className="text-[11px] font-semibold text-emerald-800">
+                Prior-phase rule: only POs marked{" "}
+                <Text className="font-extrabold">Completed (PO Phase)</Text> are
+                eligible for Delivery Log creation.
+              </Text>
+              <Text className="text-[10.5px] text-emerald-700 mt-1">
+                Delivery entries are created manually from this eligible list,
+                not auto-forwarded.
+              </Text>
+            </View>
 
             <View className="flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200 mb-3">
               <MaterialIcons name="search" size={16} color="#9ca3af" />
               <TextInput
                 value={poSearch}
                 onChangeText={setPoSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 placeholder="Search PO No., PR No., supplier, section…"
                 placeholderTextColor="#9ca3af"
                 returnKeyType="search"
@@ -305,7 +326,7 @@ export default function CreateDeliveryModal({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
       <CalendarPickerModal
         visible={calendarOpen}
         onClose={() => setCalendarOpen(false)}
@@ -317,4 +338,3 @@ export default function CreateDeliveryModal({
     </Modal>
   );
 }
-

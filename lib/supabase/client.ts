@@ -18,3 +18,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  ms = 60000,
+): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      t = setTimeout(() => reject(new Error(`Timed out: ${label}`)), ms);
+    });
+    return (await Promise.race([promise, timeoutPromise])) as T;
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}

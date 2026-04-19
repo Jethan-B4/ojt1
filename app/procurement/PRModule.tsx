@@ -123,6 +123,12 @@ const STATUS_CFG: Record<
     dot: "#3b82f6",
     label: "PO (Creation)",
   },
+  33: {
+    bg: "#ecfdf5",
+    text: "#14532d",
+    dot: "#22c55e",
+    label: "Completed (PR Phase)",
+  },
 };
 
 function statusCfgFor(id: number) {
@@ -561,7 +567,8 @@ const RecordCard: React.FC<{
           className="text-[12.5px] font-bold text-gray-700"
           style={{ fontFamily: MONO }}
         >
-          ₱{fmt(record.totalCost)}
+          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          {fmt(record.totalCost)}
         </Text>
       </View>
       {/* ── Latest status flag from remarks ── */}

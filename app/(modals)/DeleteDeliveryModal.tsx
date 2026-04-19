@@ -95,7 +95,8 @@ export default function DeleteDeliveryModal({
 
   const targetNo = preview?.deliveryNo ?? deliveryNo ?? `DEL#${deliveryId}`;
   const canConfirm =
-    confirmNo.trim() === targetNo && confirmWord.trim().toUpperCase() === "DELETE";
+    confirmNo.trim().toUpperCase() === targetNo.toUpperCase() &&
+    confirmWord.trim().toUpperCase() === "DELETE";
 
   const handleDelete = async () => {
     if (!canConfirm || saving) return;
@@ -166,6 +167,33 @@ export default function DeleteDeliveryModal({
               </View>
             </View>
 
+            <View className="bg-white border border-gray-200 rounded-2xl px-4 py-3 mb-3">
+              <Text className="text-[12px] font-extrabold text-gray-900">
+                Delete Scope
+              </Text>
+              <Text className="text-[11px] text-gray-500 mt-1 leading-5">
+                Deletion is scoped by primary keys. A Delivery delete removes
+                Delivery-owned documents linked via delivery_id.
+              </Text>
+              <View className="mt-2 rounded-xl bg-gray-50 px-3 py-2.5 border border-gray-100">
+                <Text className="text-[11px] font-bold text-gray-700">
+                  Includes
+                </Text>
+                <Text className="text-[10.5px] text-gray-500 mt-1 leading-5">
+                  This delivery log and its IAR/LOA/DV document rows.
+                </Text>
+              </View>
+              <View className="mt-2 rounded-xl bg-amber-50 px-3 py-2.5 border border-amber-200">
+                <Text className="text-[11px] font-bold text-amber-800">
+                  Excludes
+                </Text>
+                <Text className="text-[10.5px] text-amber-700 mt-1 leading-5">
+                  The connected PO (and its items/remarks) and any linked PR
+                  records. Only this Delivery record is removed.
+                </Text>
+              </View>
+            </View>
+
             {loadingPreview ? (
               <View className="bg-white border border-gray-200 rounded-2xl p-4">
                 <View className="flex-row items-center gap-2">
@@ -215,7 +243,9 @@ export default function DeleteDeliveryModal({
                 onChangeText={setConfirmNo}
                 placeholder={targetNo}
                 placeholderTextColor="#9ca3af"
-                autoCapitalize="characters"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-gray-800 bg-white"
               />
 
@@ -227,7 +257,9 @@ export default function DeleteDeliveryModal({
                 onChangeText={setConfirmWord}
                 placeholder="DELETE"
                 placeholderTextColor="#9ca3af"
-                autoCapitalize="characters"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-gray-800 bg-white"
               />
             </View>
@@ -277,4 +309,3 @@ export default function DeleteDeliveryModal({
     </Modal>
   );
 }
-

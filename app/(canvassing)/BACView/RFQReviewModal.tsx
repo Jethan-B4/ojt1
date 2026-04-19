@@ -83,11 +83,14 @@ function computeWinners(
     );
 
     const allQuotes = itemEntries.map((e) => {
-      const assignmentId = (e as any).assignment_id as string | null | undefined;
-      const matchedAssignment =
-        (assignmentId
+      const assignmentId = e.assignment_id;
+      const matchedById =
+        assignmentId != null
           ? assignments.find((a) => a.id === assignmentId)
-          : null) ?? assignments.find((a) => a.status === "returned");
+          : null;
+      const matchedAssignment =
+        matchedById ??
+        assignments.find((a) => a.status === "returned");
 
       const user = matchedAssignment?.canvasser_id
         ? userById[matchedAssignment.canvasser_id]
@@ -458,6 +461,8 @@ interface RFQReviewModalProps {
   assignments: CanvasserAssignmentRow[];
   users: CanvassUserRow[];
   chairperson: string;
+  /** Optional RFQ / BAC reference (e.g. from AAA context) */
+  bacNo?: string;
 }
 
 export default function RFQReviewModal({
@@ -469,6 +474,7 @@ export default function RFQReviewModal({
   assignments,
   users,
   chairperson,
+  bacNo,
 }: RFQReviewModalProps) {
   const [rfqPreviewData, setRfqPreviewData] =
     useState<CanvassPreviewData | null>(null);
@@ -548,6 +554,14 @@ export default function RFQReviewModal({
               >
                 {pr.prNo}
               </Text>
+              {bacNo ? (
+                <Text
+                  className="text-[11px] font-semibold text-white/80 mt-1"
+                  style={{ fontFamily: MONO }}
+                >
+                  RFQ / BAC: {bacNo}
+                </Text>
+              ) : null}
               <View className="flex-row items-center gap-3 mt-1.5">
                 <View className="flex-row items-center gap-1">
                   <View className="w-2 h-2 rounded-full bg-emerald-400" />

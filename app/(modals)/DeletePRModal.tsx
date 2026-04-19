@@ -92,7 +92,7 @@ export default function DeletePRModal({
 
   const targetPrNo = preview?.prNo ?? prNo ?? "";
   const canConfirm =
-    confirmPrNo.trim() === targetPrNo &&
+    confirmPrNo.trim().toUpperCase() === targetPrNo.toUpperCase() &&
     confirmWord.trim().toUpperCase() === "DELETE";
 
   const handleDelete = async () => {
@@ -160,6 +160,37 @@ export default function DeletePRModal({
                 <Text className="text-[11.5px] text-red-700 mt-1 leading-5">
                   This will delete the PR and its connected records from the
                   database. This action cannot be undone.
+                </Text>
+              </View>
+            </View>
+
+            <View className="bg-white border border-gray-200 rounded-2xl px-4 py-3 mb-3">
+              <Text className="text-[12px] font-extrabold text-gray-900">
+                Delete Scope
+              </Text>
+              <Text className="text-[11px] text-gray-500 mt-1 leading-5">
+                Deletion is scoped by primary keys. A PR delete removes PR-owned
+                records and child-phase records linked through PO and Delivery
+                IDs.
+              </Text>
+              <View className="mt-2 rounded-xl bg-gray-50 px-3 py-2.5 border border-gray-100">
+                <Text className="text-[11px] font-bold text-gray-700">
+                  Includes
+                </Text>
+                <Text className="text-[10.5px] text-gray-500 mt-1 leading-5">
+                  PR items, proposals, PR remarks, canvass session data (RFQs,
+                  assignments, entries), BAC resolution links, ORS entries (by
+                  PR ID), POs linked to this PR, delivery logs under those POs,
+                  and their IAR/LOA/DV documents.
+                </Text>
+              </View>
+              <View className="mt-2 rounded-xl bg-amber-50 px-3 py-2.5 border border-amber-200">
+                <Text className="text-[11px] font-bold text-amber-800">
+                  Excludes
+                </Text>
+                <Text className="text-[10.5px] text-amber-700 mt-1 leading-5">
+                  Unrelated POs/deliveries not linked to this PR ID and any PRs
+                  not directly linked to this PR’s canvass/bac resolution links.
                 </Text>
               </View>
             </View>
@@ -235,6 +266,26 @@ export default function DeletePRModal({
                     color="#be123c"
                   />
                 </View>
+                <View className="flex-row gap-2 mb-3">
+                  <ImpactBadge
+                    icon="local-shipping"
+                    label="Deliveries"
+                    value={preview?.deliveryCount ?? 0}
+                    color="#0ea5e9"
+                  />
+                  <ImpactBadge
+                    icon="fact-check"
+                    label="IAR"
+                    value={preview?.iarCount ?? 0}
+                    color="#0f766e"
+                  />
+                  <ImpactBadge
+                    icon="task"
+                    label="LOA"
+                    value={preview?.loaCount ?? 0}
+                    color="#7c3aed"
+                  />
+                </View>
               </>
             )}
 
@@ -254,7 +305,9 @@ export default function DeletePRModal({
                 onChangeText={setConfirmPrNo}
                 placeholder={targetPrNo || "PR-XXXX-XXXX"}
                 placeholderTextColor="#9ca3af"
-                autoCapitalize="characters"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-gray-800 bg-white"
               />
 
@@ -266,7 +319,9 @@ export default function DeletePRModal({
                 onChangeText={setConfirmWord}
                 placeholder="DELETE"
                 placeholderTextColor="#9ca3af"
-                autoCapitalize="characters"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 className="border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-gray-800 bg-white"
               />
             </View>
@@ -312,4 +367,3 @@ export default function DeletePRModal({
     </Modal>
   );
 }
-

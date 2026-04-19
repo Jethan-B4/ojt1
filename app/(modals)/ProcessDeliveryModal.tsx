@@ -10,6 +10,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  FlagButton,
+  StatusFlagPicker,
+  type StatusFlag,
+} from "./ProcessPRModal";
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
@@ -60,6 +65,9 @@ function StyledInput({
     <TextInput
       value={value}
       onChangeText={onChangeText}
+      autoCapitalize="none"
+      autoCorrect={false}
+      spellCheck={false}
       placeholder={placeholder}
       placeholderTextColor="#9ca3af"
       multiline={multiline}
@@ -93,6 +101,11 @@ export default function ProcessDeliveryModal({
   setLoa,
   dv,
   setDv,
+  statusFlag,
+  onPressStatusFlag,
+  flagPickerOpen,
+  onCloseFlagPicker,
+  onSelectStatusFlag,
   onPreviewIAR,
   onPreviewLOA,
   onPreviewDV,
@@ -161,7 +174,7 @@ export default function ProcessDeliveryModal({
             </>
           )}
 
-          {(active?.status_id === 19 || active?.status_id === 21) && (
+          {active?.status_id === 20 && (
             <>
               <SectionLabel>Inspection & Acceptance Report (IAR)</SectionLabel>
               <View className="flex-row justify-end mb-2">
@@ -583,7 +596,23 @@ export default function ProcessDeliveryModal({
             </>
           )}
 
+          {active?.status_id === 24 && (
+            <>
+              <SectionLabel>Division Chief</SectionLabel>
+              <View className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 mb-3">
+                <Text className="text-[12px] text-emerald-900 leading-5">
+                  Finalize inspection and acceptance for this delivery. Submitting
+                  marks the delivery phase as complete and moves the record to
+                  Payment and Closure.
+                </Text>
+              </View>
+            </>
+          )}
+
           <SectionLabel>Notes</SectionLabel>
+          <Field label="Status Flag">
+            <FlagButton selected={statusFlag as StatusFlag | null} onPress={onPressStatusFlag} />
+          </Field>
           <Field label="Notes / Remarks">
             <StyledInput
               value={notes}
@@ -611,12 +640,20 @@ export default function ProcessDeliveryModal({
               className="flex-1 px-4 py-2.5 rounded-xl bg-[#064E3B]"
             >
               <Text className="text-[12px] font-bold text-white text-center">
-                Save & Next Step
+                {active?.status_id === 24
+                  ? "Submit & Complete Delivery Phase"
+                  : "Save & Next Step"}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
+      <StatusFlagPicker
+        visible={flagPickerOpen}
+        selected={statusFlag as StatusFlag | null}
+        onSelect={onSelectStatusFlag}
+        onClose={onCloseFlagPicker}
+      />
     </Modal>
   );
 }
