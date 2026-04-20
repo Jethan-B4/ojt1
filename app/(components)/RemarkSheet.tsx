@@ -58,6 +58,7 @@ export interface RemarkEntry {
   created_at: string;
   user_id: number | null;
   username?: string;
+  po_id?: string | null;
 }
 
 // ─── Flag ID helpers ──────────────────────────────────────────────────────────
@@ -86,6 +87,29 @@ function getStatusFlagId(flag: StatusFlag | null): number | null {
 
 function getFlagFromId(id: number | null): StatusFlag | null {
   return id ? (ID_TO_FLAG[id] ?? null) : null;
+}
+
+type RemarkPhase = "pr" | "po" | "delivery" | "payment";
+
+function phaseFromRemark(entry: RemarkEntry): { phase: RemarkPhase; cleanRemark: string } {
+  const raw = entry.remark ?? "";
+  if (!entry.po_id) return { phase: "pr", cleanRemark: raw };
+  const m = raw.match(/^\s*\[(DELIVERY|PAYMENT|PO)\]\s*/i);
+  if (!m) return { phase: "po", cleanRemark: raw };
+  const tag = String(m[1] ?? "").toUpperCase();
+  const phase: RemarkPhase =
+    tag === "DELIVERY" ? "delivery" : tag === "PAYMENT" ? "payment" : "po";
+  return { phase, cleanRemark: raw.replace(m[0], "").trimStart() };
+}
+
+function phaseBadge(phase: RemarkPhase) {
+  if (phase === "pr")
+    return { bg: "#eff6ff", dot: "#3b82f6", text: "#1d4ed8", label: "PR" };
+  if (phase === "delivery")
+    return { bg: "#ecfeff", dot: "#06b6d4", text: "#0e7490", label: "Delivery" };
+  if (phase === "payment")
+    return { bg: "#faf5ff", dot: "#a855f7", text: "#6d28d9", label: "Payment" };
+  return { bg: "#f0fdf4", dot: "#10b981", text: "#065f46", label: "PO" };
 }
 
 // ─── Attachment encoding / decoding ──────────────────────────────────────────
@@ -299,6 +323,8 @@ const RemarkTimelineItem: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
   entry,
   isLast,
 }) => {
+  const { phase, cleanRemark } = phaseFromRemark(entry);
+  const p = phaseBadge(phase);
   const flagKey = getFlagFromId(entry.status_flag_id);
   const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
   const date = new Date(entry.created_at);
@@ -309,7 +335,7 @@ const RemarkTimelineItem: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
     minute: "2-digit",
     hour12: true,
   });
-  const { text, attachments } = parseAttachments(entry.remark ?? "");
+  const { text, attachments } = parseAttachments(cleanRemark);
 
   return (
     <View className="flex-row gap-3">
@@ -343,6 +369,15 @@ const RemarkTimelineItem: React.FC<{ entry: RemarkEntry; isLast: boolean }> = ({
       {/* Content bubble */}
       <View className="flex-1 pb-4">
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
+          <View
+            className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: p.bg }}
+          >
+            <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.dot }} />
+            <Text className="text-[10px] font-bold" style={{ color: p.text }}>
+              {p.label}
+            </Text>
+          </View>
           {flag && (
             <View
               className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full border ${flag.bg} ${flag.border}`}
@@ -421,7 +456,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
     supabase
       .from("remarks")
       .select(
-        "id, remark, status_flag_id, created_at, user_id, users(fullname)",
+        "id, remark, status_flag_id, created_at, user_id, po_id, users(fullname)",
       )
       .eq("pr_id", record.id)
       .order("created_at", { ascending: false })
@@ -438,6 +473,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
             status_flag_id: r.status_flag_id as number | null,
             created_at: r.created_at,
             user_id: r.user_id,
+            po_id: r.po_id != null ? String(r.po_id) : null,
             username: r.users?.fullname ?? undefined,
           })),
         );
@@ -450,7 +486,9 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
     if (!visible) {
       setRemarksText("");
       setStatusFlag(null);
-      clearFile();
+      setFileName(null);
+      setFileUri(null);
+      setFileType("application/octet-stream");
     }
   }, [visible]);
 

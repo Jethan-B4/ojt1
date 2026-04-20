@@ -192,6 +192,30 @@ const STATUS_ID_CFG: Record<
     dot: "#3b82f6",
     label: "ORS (Processing)",
   },
+  33: {
+    bg: "#ecfdf5",
+    text: "#14532d",
+    dot: "#22c55e",
+    label: "Completed (PR Phase)",
+  },
+  34: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#10b981",
+    label: "Completed (PO Phase)",
+  },
+  35: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#10b981",
+    label: "Completed (Delivery Phase)",
+  },
+  36: {
+    bg: "#ecfdf5",
+    text: "#065f46",
+    dot: "#10b981",
+    label: "Completed (Payment Phase)",
+  },
 };
 
 const ROLE_QUEUE_STATUS: Record<number, number> = { 2: 1, 3: 2, 4: 3, 5: 4 };
@@ -245,6 +269,54 @@ function statusCfgFor(statusId: number, statuses: PRStatusRow[] = []) {
     label: `Status ${statusId}`,
   };
   return { ...cfg, label: dbLabel ?? cfg.label };
+}
+
+function LifecycleSummaryCard({ prs }: { prs: PRSummary[] }) {
+  if (!prs || prs.length === 0) return null;
+  const prDone = prs.filter((r) => Number(r.statusId) === 33).length;
+  const poDone = prs.filter((r) => Number(r.statusId) === 34).length;
+  const delDone = prs.filter((r) => Number(r.statusId) === 35).length;
+  const payDone = prs.filter((r) => Number(r.statusId) === 36).length;
+
+  return (
+    <View
+      style={{
+        marginHorizontal: 12,
+        marginTop: 10,
+        backgroundColor: "#ffffff",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#e5e7eb",
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 11, fontWeight: "800", color: "#111827" }}>
+          Lifecycle Completion
+        </Text>
+        <Text style={{ fontSize: 10.5, color: "#6b7280", marginTop: 2 }}>
+          {prDone} PR · {poDone} PO · {delDone} Delivery · {payDone} Payment
+        </Text>
+      </View>
+      <View
+        style={{
+          backgroundColor: "#f3f4f6",
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 999,
+        }}
+      >
+        <Text style={{ fontSize: 10, fontWeight: "800", color: "#374151" }}>
+          {prs.length}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function fmtDate(iso?: string): string {
@@ -1103,7 +1175,7 @@ function PRTableRow({
           textAlign: "right",
         }}
       >
-        ₱
+        <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
         <Text style={{ fontFamily: MONO }}>
           {record.totalCost.toLocaleString("en-PH")}
         </Text>
@@ -1197,7 +1269,7 @@ function PRSummaryCard({
             color: "#374151",
           }}
         >
-          ₱
+          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
           <Text style={{ fontFamily: MONO }}>
             {pr.totalCost.toLocaleString("en-PH")}
           </Text>
@@ -1528,6 +1600,8 @@ function SupplyDashboard({ navigation }: any) {
         ))}
       </View>
 
+      <LifecycleSummaryCard prs={prs} />
+
       {/* ── All recent PRs across every division ── */}
       <SectionHeader
         title="All Purchase Requests"
@@ -1828,6 +1902,8 @@ function AdminDashboard({ navigation }: any) {
           <StatTile key={card.label} card={card} />
         ))}
       </View>
+
+      <LifecycleSummaryCard prs={prs} />
 
       {/* ── Approval funnel ── */}
       <SectionHeader title="Approval Funnel" sub="PRs by current status" />

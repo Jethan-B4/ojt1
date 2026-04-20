@@ -122,12 +122,14 @@ ${rows}
 interface ViewPRModalProps {
   visible: boolean;
   record: PRRecord | null;
+  initialTab?: "details" | "pdf";
   onClose: () => void;
 }
 
 export default function ViewPRModal({
   visible,
   record,
+  initialTab,
   onClose,
 }: ViewPRModalProps) {
   const [tab, setTab] = useState<"details" | "pdf">("details");
@@ -145,7 +147,7 @@ export default function ViewPRModal({
 
   useEffect(() => {
     if (!visible || !record) return;
-    setTab("details");
+    setTab(initialTab ?? "details");
     setLoading(true);
     fetchPRWithItemsById(record.id)
       .then(({ header, items }) => {
@@ -168,7 +170,7 @@ export default function ViewPRModal({
         setItems([]);
       })
       .finally(() => setLoading(false));
-  }, [visible, record]);
+  }, [visible, record, initialTab]);
 
   if (!record) return null;
   const hdr = header ?? record;

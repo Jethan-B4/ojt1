@@ -98,6 +98,7 @@ function poCfgFor(id: number | null | undefined) {
 interface ViewPOModalProps {
   visible: boolean;
   record: PORecord | null;
+  initialTab?: "details" | "pdf";
   onClose: () => void;
 }
 
@@ -106,6 +107,7 @@ interface ViewPOModalProps {
 export default function ViewPOModal({
   visible,
   record,
+  initialTab,
   onClose,
 }: ViewPOModalProps) {
   const [tab, setTab] = useState<"details" | "pdf">("details");
@@ -118,7 +120,7 @@ export default function ViewPOModal({
 
   useEffect(() => {
     if (!visible || !record) return;
-    setTab("details");
+    setTab(initialTab ?? "details");
     setLoading(true);
     Promise.all([fetchPOWithItemsById(record.id), fetchPOStatuses()])
       .then(([po, statuses]) => {
@@ -133,7 +135,7 @@ export default function ViewPOModal({
         setItems([]);
       })
       .finally(() => setLoading(false));
-  }, [visible, record]);
+  }, [visible, record, initialTab]);
 
   // Build camelCase POPreviewData from the fetched PORow
   const previewData: POPreviewData | null = header

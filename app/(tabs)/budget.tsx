@@ -24,6 +24,7 @@ import {
   fetchBudgets,
   fetchOrsEntries,
   insertDivisionBudget,
+  supabase,
   updateDivisionBudget,
   type DivisionBudgetRow,
   type OrsEntryRow,
@@ -73,6 +74,7 @@ export default function BudgetScreen() {
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [budgets, setBudgets] = useState<DivisionBudgetRow[]>([]);
   const [orsEntries, setOrsEntries] = useState<OrsEntryRow[]>([]);
+  const [prStatusByNo, setPrStatusByNo] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -95,6 +97,25 @@ export default function BudgetScreen() {
             : b,
         );
         setOrsEntries(o);
+        const prNos = [
+          ...new Set((o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean)),
+        ];
+        if (prNos.length === 0) {
+          setPrStatusByNo({});
+        } else {
+          const { data: prRows, error: prErr } = await supabase
+            .from("purchase_requests")
+            .select("pr_no, status_id")
+            .in("pr_no", prNos);
+          if (prErr) throw prErr;
+          const map: Record<string, number> = {};
+          for (const r of prRows ?? []) {
+            const k = String((r as any).pr_no ?? "");
+            if (!k) continue;
+            map[k] = Number((r as any).status_id) || 0;
+          }
+          setPrStatusByNo(map);
+        }
       } catch (e: any) {
         Alert.alert("Load error", e?.message ?? "Could not fetch budget data");
       } finally {
@@ -176,7 +197,7 @@ export default function BudgetScreen() {
   const handleDeleteOrs = (entry: OrsEntryRow) => {
     Alert.alert(
       "Delete ORS Entry",
-      `Remove ${entry.ors_no}? This cannot be undone.`,
+      `Remove ${entry.ors_no ?? "this ORS entry"}? This cannot be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -297,7 +318,8 @@ export default function BudgetScreen() {
               className="text-[17px] font-extrabold text-[#064E3B]"
               style={{ fontFamily: MONO }}
             >
-              ₱{fmt(totalAllocated)}
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              {fmt(totalAllocated)}
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">
               Annual Procurement Plan {year}
@@ -322,7 +344,8 @@ export default function BudgetScreen() {
               className="text-[17px] font-extrabold text-[#10b981]"
               style={{ fontFamily: MONO }}
             >
-              ₱{fmt(totalUtilized)}
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              {fmt(totalUtilized)}
             </Text>
             <View className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
               <View
@@ -355,7 +378,8 @@ export default function BudgetScreen() {
               }`}
               style={{ fontFamily: MONO }}
             >
-              ₱{fmt(Math.abs(totalRemaining))}
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              {fmt(Math.abs(totalRemaining))}
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">
               Available for procurement
@@ -379,6 +403,7 @@ export default function BudgetScreen() {
           canEdit={canEdit}
           isEndUser={isEndUser}
           budgets={budgets}
+          prStatusByNo={prStatusByNo}
           currentUserId={currentUser?.id}
           onSave={handleSaveOrs}
           onDelete={handleDeleteOrs}

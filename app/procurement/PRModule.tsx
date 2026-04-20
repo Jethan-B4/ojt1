@@ -679,6 +679,7 @@ const MoreSheet: React.FC<{
   roleId: number;
   onClose: () => void;
   onRemarks: () => void;
+  onViewDocuments: () => void;
   onEdit: () => void;
   onCancel: () => void;
   onDelete: () => void;
@@ -688,6 +689,7 @@ const MoreSheet: React.FC<{
   roleId,
   onClose,
   onRemarks,
+  onViewDocuments,
   onEdit,
   onCancel,
   onDelete,
@@ -713,6 +715,17 @@ const MoreSheet: React.FC<{
       onPress: () => {
         onClose();
         onRemarks();
+      },
+    },
+    {
+      icon: "visibility",
+      label: "View Documents",
+      sublabel: "Open PR PDF preview",
+      color: "#1d4ed8",
+      bg: "#eff6ff",
+      onPress: () => {
+        onClose();
+        onViewDocuments();
       },
     },
     {
@@ -878,6 +891,9 @@ export default function PRModule({
   // View PR modal state
   const [viewRecord, setViewRecord] = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
+  const [viewInitialTab, setViewInitialTab] = useState<"details" | "pdf">(
+    "details",
+  );
 
   // Edit PR modal state
   const [editRecord, setEditRecord] = useState<PREditRecord | null>(null);
@@ -1168,6 +1184,7 @@ export default function PRModule({
               latestFlag={latestRemarks[record.id] ?? null}
               onView={(r) => {
                 setViewRecord(r);
+                setViewInitialTab("details");
                 setViewVisible(true);
               }}
               onEdit={(r) => {
@@ -1404,6 +1421,7 @@ export default function PRModule({
       <ViewPRModal
         visible={viewVisible}
         record={viewRecord}
+        initialTab={viewInitialTab}
         onClose={() => {
           setViewVisible(false);
           setViewRecord(null);
@@ -1423,6 +1441,12 @@ export default function PRModule({
           if (!moreRecord) return;
           setRemarkRecord(moreRecord);
           setRemarkVisible(true);
+        }}
+        onViewDocuments={() => {
+          if (!moreRecord) return;
+          setViewRecord(moreRecord);
+          setViewInitialTab("pdf");
+          setViewVisible(true);
         }}
         onEdit={() => {
           if (!moreRecord) return;

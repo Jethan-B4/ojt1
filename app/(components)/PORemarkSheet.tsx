@@ -99,6 +99,33 @@ interface UnifiedRemark {
   source: "po" | "pr";
 }
 
+type RemarkPhase = "pr" | "po" | "delivery" | "payment";
+
+function phaseFromRemark(entry: UnifiedRemark): {
+  phase: RemarkPhase;
+  cleanRemark: string;
+} {
+  const raw = entry.remark ?? "";
+  if (entry.source === "pr") return { phase: "pr", cleanRemark: raw };
+
+  const m = raw.match(/^\s*\[(DELIVERY|PAYMENT|PO)\]\s*/i);
+  if (!m) return { phase: "po", cleanRemark: raw };
+  const tag = String(m[1] ?? "").toUpperCase();
+  const phase: RemarkPhase =
+    tag === "DELIVERY" ? "delivery" : tag === "PAYMENT" ? "payment" : "po";
+  return { phase, cleanRemark: raw.replace(m[0], "").trimStart() };
+}
+
+function phaseBadge(phase: RemarkPhase) {
+  if (phase === "pr")
+    return { bg: "#eff6ff", dot: "#3b82f6", text: "#1d4ed8", label: "PR" };
+  if (phase === "delivery")
+    return { bg: "#ecfeff", dot: "#06b6d4", text: "#0e7490", label: "Delivery" };
+  if (phase === "payment")
+    return { bg: "#faf5ff", dot: "#a855f7", text: "#6d28d9", label: "Payment" };
+  return { bg: "#f0fdf4", dot: "#10b981", text: "#065f46", label: "PO" };
+}
+
 // ─── Attachment helpers (verbatim from RemarkSheet) ───────────────────────────
 
 function encodeAttachment(filename: string, url: string): string {
@@ -284,6 +311,8 @@ const RemarkTimelineItem: React.FC<{
   entry: UnifiedRemark;
   isLast: boolean;
 }> = ({ entry, isLast }) => {
+  const { phase, cleanRemark } = phaseFromRemark(entry);
+  const p = phaseBadge(phase);
   const flagKey = getFlagFromId(entry.status_flag_id);
   const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
   const date = new Date(entry.created_at);
@@ -294,12 +323,7 @@ const RemarkTimelineItem: React.FC<{
     minute: "2-digit",
     hour12: true,
   });
-  const { text, attachments } = parseAttachments(entry.remark);
-
-  // Source badge colours
-  const sourceBg = entry.source === "pr" ? "#eff6ff" : "#f0fdf4";
-  const sourceDot = entry.source === "pr" ? "#3b82f6" : "#10b981";
-  const sourceLabel = entry.source === "pr" ? "PR Remark" : "PO Remark";
+  const { text, attachments } = parseAttachments(cleanRemark);
 
   return (
     <View className="flex-row gap-3">
@@ -310,21 +334,17 @@ const RemarkTimelineItem: React.FC<{
           style={{
             backgroundColor: flag
               ? flag.dot + "22"
-              : entry.source === "pr"
-                ? "#dbeafe"
-                : "#dcfce7",
-            borderColor: flag ? flag.dot + "55" : sourceDot + "55",
+              : p.bg,
+            borderColor: flag ? flag.dot + "55" : p.dot + "55",
           }}
         >
           {flag ? (
             <MaterialIcons name={flag.icon} size={13} color={flag.dot} />
           ) : (
             <MaterialIcons
-              name={
-                entry.source === "pr" ? "receipt-long" : "chat-bubble-outline"
-              }
+              name={phase === "pr" ? "receipt-long" : "chat-bubble-outline"}
               size={12}
-              color={sourceDot}
+              color={p.dot}
             />
           )}
         </View>
@@ -339,20 +359,13 @@ const RemarkTimelineItem: React.FC<{
       {/* Content bubble */}
       <View className="flex-1 pb-4">
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
-          {/* Source tag */}
           <View
             className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: sourceBg }}
+            style={{ backgroundColor: p.bg }}
           >
-            <View
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: sourceDot }}
-            />
-            <Text
-              className="text-[10px] font-bold"
-              style={{ color: sourceDot }}
-            >
-              {sourceLabel}
+            <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.dot }} />
+            <Text className="text-[10px] font-bold" style={{ color: p.text }}>
+              {p.label}
             </Text>
           </View>
           {/* Flag badge */}
@@ -486,7 +499,9 @@ const PORemarkSheet: React.FC<PORemarkSheetProps> = ({
     if (!visible) {
       setRemarksText("");
       setStatusFlag(null);
-      clearFile();
+      setFileName(null);
+      setFileUri(null);
+      setFileType("application/octet-stream");
     }
   }, [visible]);
 

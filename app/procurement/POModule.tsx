@@ -30,40 +30,40 @@ import type { RemarkRow } from "@/lib/supabase-types";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
 import PORemarkSheet, {
-  type PORemarkSheetRecord,
+    type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
 import CancelPOModal from "../(modals)/CancelPOModal";
 import CreatePOModal, { type POCreatePayload } from "../(modals)/CreatePOModal";
 import DeletePOModal from "../(modals)/DeletePOModal";
 import EditPOModal, {
-  type POEditPayload,
-  type POEditRecord,
+    type POEditPayload,
+    type POEditRecord,
 } from "../(modals)/EditPOModal";
 import ProcessPOModal, {
-  STATUS_FLAGS,
-  canRoleProcessPO,
-  type ProcessPORecord,
-  type StatusFlag,
+    STATUS_FLAGS,
+    canRoleProcessPO,
+    type ProcessPORecord,
+    type StatusFlag,
 } from "../(modals)/ProcessPOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
-  fetchLatestRemarkByPO,
-  fetchPOStatuses,
-  fetchPurchaseOrders,
-  fetchPurchaseOrdersByDivision,
-  type PORow,
+    fetchLatestRemarkByPO,
+    fetchPOStatuses,
+    fetchPurchaseOrders,
+    fetchPurchaseOrdersByDivision,
+    type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
@@ -534,6 +534,7 @@ interface MoreSheetProps {
   canEdit: boolean;
   onClose: () => void;
   onRemarks: () => void;
+  onViewDocuments: () => void;
   onEdit: () => void;
   onOverride: () => void;
   /** Admin-only: open the Cancel PO confirmation modal. */
@@ -549,6 +550,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
   canEdit,
   onClose,
   onRemarks,
+  onViewDocuments,
   onEdit,
   onOverride,
   onCancel,
@@ -576,6 +578,17 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
       onPress: () => {
         onClose();
         onRemarks();
+      },
+    },
+    {
+      icon: "visibility",
+      label: "View Documents",
+      sublabel: "Open PO PDF preview",
+      color: "#1d4ed8",
+      bg: "#eff6ff",
+      onPress: () => {
+        onClose();
+        onViewDocuments();
       },
     },
     ...(canEdit
@@ -1039,6 +1052,9 @@ export default function POModule() {
 
   const [viewRecord, setViewRecord] = useState<PORecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
+  const [viewInitialTab, setViewInitialTab] = useState<"details" | "pdf">(
+    "details",
+  );
 
   const [createVisible, setCreateVisible] = useState(false);
 
@@ -1120,8 +1136,7 @@ export default function POModule() {
         rows = allRows.filter(
           (r) =>
             r.status_id !== null &&
-            ((r.status_id >= 15 && r.status_id <= 17) ||
-              r.status_id === 34),
+            ((r.status_id >= 15 && r.status_id <= 17) || r.status_id === 34),
         );
       } else {
         rows = allRows;
@@ -1333,6 +1348,7 @@ export default function POModule() {
                   canProcess={canProcess}
                   onView={(r) => {
                     setViewRecord(r);
+                    setViewInitialTab("details");
                     setViewVisible(true);
                   }}
                   onProcess={(r) => {
@@ -1379,6 +1395,7 @@ export default function POModule() {
       <ViewPOModal
         visible={viewVisible}
         record={viewRecord}
+        initialTab={viewInitialTab}
         onClose={() => {
           setViewVisible(false);
           setViewRecord(null);
@@ -1434,6 +1451,12 @@ export default function POModule() {
             });
             setRemarkVisible(true);
           }
+        }}
+        onViewDocuments={() => {
+          if (!moreRecord) return;
+          setViewRecord(moreRecord);
+          setViewInitialTab("pdf");
+          setViewVisible(true);
         }}
         onEdit={() => {
           if (moreRecord) {

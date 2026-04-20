@@ -14,7 +14,7 @@ export type OrsStatus = "Pending" | "Processing" | "Approved" | "Rejected";
 
 export interface OrsEntryRow {
   id: string;
-  ors_no: string;
+  ors_no: string | null;
   pr_id?: string | null;
   pr_no?: string | null;
   division_id?: number | null;

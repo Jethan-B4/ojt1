@@ -33,6 +33,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useAuth } from "../AuthContext";
@@ -132,7 +133,6 @@ const FLAG_CFG: Partial<
 
 const ALL_FLAGS = Object.keys(FLAG_CFG) as StatusFlag[];
 
-const EDIT_ROLES = new Set([1, 4]);
 const ENDUSER_ROLE = 6;
 
 // ─── Flag ID Mapping ──────────────────────────────────────────────────────────
@@ -185,6 +185,55 @@ function fmtTime(iso?: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+type PhaseFilter = "all" | "pr" | "po" | "delivery" | "payment" | "completed";
+
+function phaseForStatusId(statusId: number): "pr" | "po" | "delivery" | "payment" {
+  if (statusId >= 25 && statusId <= 36) return "payment";
+  if (statusId >= 18 && statusId <= 24) return "delivery";
+  if (statusId >= 12 && statusId <= 17) return "po";
+  return "pr";
+}
+
+function phaseLabel(phase: "pr" | "po" | "delivery" | "payment") {
+  if (phase === "po") return "PO";
+  if (phase === "delivery") return "Delivery";
+  if (phase === "payment") return "Payment";
+  return "PR";
+}
+
+function lifecycleFillCount(statusId: number): number {
+  const p = phaseForStatusId(statusId);
+  if (p === "payment") return 4;
+  if (p === "delivery") return 3;
+  if (p === "po") return 2;
+  return 1;
+}
+
+function LifecycleMini({ statusId }: { statusId: number }) {
+  const p = phaseForStatusId(statusId);
+  const fill = lifecycleFillCount(statusId);
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <View
+            key={i}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: i <= fill ? "#064E3B" : "#e5e7eb",
+            }}
+          />
+        ))}
+      </View>
+      <Text style={{ fontSize: 10, fontWeight: "700", color: "#6b7280" }}>
+        {phaseLabel(p)}
+      </Text>
+    </View>
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -337,6 +386,8 @@ function PRLogCard({
   statusConfig?: Record<number, any>;
   latestRemark: RemarkRow | null;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
   const { pr, remarks, loaded } = entry;
   const latestFlagId = loaded
     ? (remarks.find((r) => r.status_flag_id)?.status_flag_id ?? null)
@@ -366,110 +417,200 @@ function PRLogCard({
         activeOpacity={0.75}
         style={{ padding: 14 }}
       >
-        <View
-          style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
-        >
-          {/* PR icon */}
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: "#ecfdf5",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <MaterialIcons name="description" size={18} color="#064E3B" />
-          </View>
-
-          {/* PR info */}
-          <View style={{ flex: 1, gap: 2 }}>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-            >
-              <Text
+        {compact ? (
+          <>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+              <View
                 style={{
-                  fontSize: 12.5,
-                  fontWeight: "800",
-                  color: "#064E3B",
-                  fontFamily: MONO,
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: "#ecfdf5",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                {pr.pr_no}
-              </Text>
-              {pr.is_high_value && (
-                <View
-                  style={{
-                    backgroundColor: "#022c22",
-                    paddingHorizontal: 5,
-                    paddingVertical: 1,
-                    borderRadius: 4,
-                  }}
-                >
+                <MaterialIcons name="description" size={18} color="#064E3B" />
+              </View>
+
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <Text
                     style={{
-                      fontSize: 8.5,
-                      fontWeight: "700",
-                      color: "#a7f3d0",
+                      fontSize: 12.5,
+                      fontWeight: "800",
+                      color: "#064E3B",
+                      fontFamily: MONO,
                     }}
                   >
-                    HIGH-VALUE
+                    {pr.pr_no}
                   </Text>
+                  {pr.is_high_value && (
+                    <View
+                      style={{
+                        backgroundColor: "#022c22",
+                        paddingHorizontal: 5,
+                        paddingVertical: 1,
+                        borderRadius: 4,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 8.5,
+                          fontWeight: "700",
+                          color: "#a7f3d0",
+                        }}
+                      >
+                        HIGH-VALUE
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              )}
+                <Text style={{ fontSize: 11.5, color: "#6b7280" }} numberOfLines={2}>
+                  {pr.purpose}
+                </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: 3,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
+                  {latestFlag && <FlagPill flag={latestFlag} />}
+                  <LifecycleMini statusId={pr.status_id} />
+                </View>
+              </View>
             </View>
-            <Text
-              style={{ fontSize: 11.5, color: "#6b7280" }}
-              numberOfLines={1}
-            >
-              {pr.purpose}
-            </Text>
+
             <View
               style={{
                 flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                marginTop: 3,
-                flexWrap: "wrap",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                marginTop: 10,
+                paddingTop: 10,
+                borderTopWidth: 1,
+                borderTopColor: "#f3f4f6",
+                gap: 10,
               }}
             >
-              <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
-              {latestFlag && <FlagPill flag={latestFlag} />}
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 10, color: "#9ca3af" }}>
+                  Created: {fmtDate(pr.created_at)}
+                </Text>
+                {pr.updated_at && pr.updated_at !== pr.created_at && (
+                  <Text style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}>
+                    Updated: {fmtDate(pr.updated_at)}
+                  </Text>
+                )}
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 4 }}>
+                <Text style={{ fontSize: 12.5, fontWeight: "800", color: "#374151" }}>
+                  <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                  <Text style={{ fontFamily: MONO }}>
+                    {Number(pr.total_cost).toLocaleString("en-PH")}
+                  </Text>
+                </Text>
+                <MaterialIcons
+                  name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                  size={18}
+                  color="#9ca3af"
+                />
+              </View>
+            </View>
+          </>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: "#ecfdf5",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MaterialIcons name="description" size={18} color="#064E3B" />
+            </View>
+
+            <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: "800",
+                    color: "#064E3B",
+                    fontFamily: MONO,
+                  }}
+                >
+                  {pr.pr_no}
+                </Text>
+                {pr.is_high_value && (
+                  <View
+                    style={{
+                      backgroundColor: "#022c22",
+                      paddingHorizontal: 5,
+                      paddingVertical: 1,
+                      borderRadius: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 8.5,
+                        fontWeight: "700",
+                        color: "#a7f3d0",
+                      }}
+                    >
+                      HIGH-VALUE
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={{ fontSize: 11.5, color: "#6b7280" }} numberOfLines={1}>
+                {pr.purpose}
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 3,
+                  flexWrap: "wrap",
+                }}
+              >
+                <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
+                {latestFlag && <FlagPill flag={latestFlag} />}
+                <LifecycleMini statusId={pr.status_id} />
+              </View>
+            </View>
+
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}>
+                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                <Text style={{ fontFamily: MONO }}>
+                  {Number(pr.total_cost).toLocaleString("en-PH")}
+                </Text>
+              </Text>
+              <Text style={{ fontSize: 10, color: "#9ca3af" }}>
+                Created: {fmtDate(pr.created_at)}
+              </Text>
+              {pr.updated_at && pr.updated_at !== pr.created_at && (
+                <Text style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}>
+                  Updated: {fmtDate(pr.updated_at)}
+                </Text>
+              )}
+              <MaterialIcons
+                name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                size={18}
+                color="#9ca3af"
+              />
             </View>
           </View>
-
-          {/* Right side */}
-          <View style={{ alignItems: "flex-end", gap: 4 }}>
-            <Text
-              style={{
-                fontSize: 12.5,
-                fontWeight: "700",
-                color: "#374151",
-              }}
-            >
-              ₱
-              <Text style={{ fontFamily: MONO }}>
-                {Number(pr.total_cost).toLocaleString("en-PH")}
-              </Text>
-            </Text>
-            <Text style={{ fontSize: 10, color: "#9ca3af" }}>
-              Created: {fmtDate(pr.created_at)}
-            </Text>
-            {pr.updated_at && pr.updated_at !== pr.created_at && (
-              <Text
-                style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}
-              >
-                Updated: {fmtDate(pr.updated_at)}
-              </Text>
-            )}
-            <MaterialIcons
-              name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
-              size={18}
-              color="#9ca3af"
-            />
-          </View>
-        </View>
+        )}
 
         {/* Remark count badge */}
         {loaded && (
@@ -605,15 +746,17 @@ function FilterChip({
       onPress={onPress}
       activeOpacity={0.75}
       style={{
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+        minHeight: 44,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
         borderRadius: 999,
         backgroundColor: bg,
         borderWidth: 1.5,
         borderColor: border,
+        justifyContent: "center",
       }}
     >
-      <Text style={{ fontSize: 11.5, fontWeight: "700", color: txt }}>
+      <Text style={{ fontSize: 12, fontWeight: "800", color: txt }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -642,6 +785,7 @@ export default function ProcurementLog({ navigation }: any) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<number | null>(null);
   const [flagFilter, setFlagFilter] = useState<StatusFlag | null>(null);
+  const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortBy, setSortBy] = useState<
     "date_created" | "last_updated" | "has_flag"
@@ -726,6 +870,14 @@ export default function ProcurementLog({ navigation }: any) {
   // ── Filtered & sorted list ──────────────────────────────────────────────────
   const filteredPRs = allPRs
     .filter((pr) => {
+      const sid = Number(pr.status_id) || 0;
+      if (phaseFilter !== "all") {
+        if (phaseFilter === "completed") {
+          if (![33, 34, 35, 36].includes(sid)) return false;
+        } else {
+          if (phaseForStatusId(sid) !== phaseFilter) return false;
+        }
+      }
       if (statusFilter !== null && pr.status_id !== statusFilter) return false;
       if (flagFilter !== null) {
         const prId = String(pr.id);
@@ -930,6 +1082,9 @@ export default function ProcurementLog({ navigation }: any) {
           <TextInput
             value={search}
             onChangeText={setSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
             placeholder="Search PR no., purpose, section…"
             placeholderTextColor="#9ca3af"
             style={{ flex: 1, fontSize: 13, color: "#111827" }}
@@ -972,6 +1127,31 @@ export default function ProcurementLog({ navigation }: any) {
           />
         </TouchableOpacity>
       </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 6 }}
+      >
+        {(
+          [
+            { key: "all" as PhaseFilter, label: "All" },
+            { key: "pr" as PhaseFilter, label: "PR" },
+            { key: "po" as PhaseFilter, label: "PO" },
+            { key: "delivery" as PhaseFilter, label: "Delivery" },
+            { key: "payment" as PhaseFilter, label: "Payment" },
+            { key: "completed" as PhaseFilter, label: "Completed" },
+          ] as { key: PhaseFilter; label: string }[]
+        ).map((p) => (
+          <FilterChip
+            key={p.key}
+            label={p.label}
+            active={phaseFilter === p.key}
+            color="#064E3B"
+            onPress={() => setPhaseFilter(p.key)}
+          />
+        ))}
+      </ScrollView>
 
       {/* ── Filter panel ── */}
       {filterOpen && (
@@ -1108,6 +1288,7 @@ export default function ProcurementLog({ navigation }: any) {
               onPress={() => {
                 setStatusFilter(null);
                 setFlagFilter(null);
+                setPhaseFilter("all");
               }}
               style={{ alignSelf: "flex-end" }}
             >

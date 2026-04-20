@@ -48,6 +48,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    useWindowDimensions,
     View,
     type TextInputProps,
 } from "react-native";
@@ -204,6 +205,9 @@ function StyledInput(props: TextInputProps & { mono?: boolean }) {
   return (
     <TextInput
       {...rest}
+      autoCapitalize={rest.autoCapitalize ?? "none"}
+      autoCorrect={rest.autoCorrect ?? false}
+      spellCheck={rest.spellCheck ?? false}
       onFocus={(e) => {
         setFocused(true);
         props.onFocus?.(e);
@@ -774,6 +778,7 @@ export interface ORSSectionProps {
   canEdit: boolean;
   isEndUser: boolean;
   budgets: DivisionBudgetRow[];
+  prStatusByNo?: Record<string, number>;
   currentUserId?: string | number | null;
   onSave: (form: OrsForm, existing?: OrsEntryRow) => Promise<void>;
   onDelete: (entry: OrsEntryRow) => void;
@@ -785,9 +790,12 @@ export function ORSSection({
   canEdit,
   isEndUser,
   budgets,
+  prStatusByNo,
   onSave,
   onDelete,
 }: ORSSectionProps) {
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
   // undefined = closed, null = new entry, OrsEntryRow = editing
   const [editOrs, setEditOrs] = useState<OrsEntryRow | null | undefined>(
     undefined,
@@ -800,7 +808,7 @@ export function ORSSection({
       budgets.find((d) => d.division_id === entry.division_id)?.division_name ??
       "";
     const html = buildORSHtml({
-      orsNo: entry.ors_no,
+      orsNo: entry.ors_no ?? "",
       prNo: entry.pr_no ?? "",
       divisionName,
       fiscalYear: year,
@@ -809,6 +817,35 @@ export function ORSSection({
       notes: entry.notes ?? "",
     });
     setPreviewHtml(html);
+  };
+
+  const phaseMeta = (prNo: string | null | undefined) => {
+    const key = String(prNo ?? "");
+    const sid = key && prStatusByNo ? Number(prStatusByNo[key] ?? 0) : 0;
+    if (!sid) return null;
+    const phase =
+      sid >= 25
+        ? "Payment"
+        : sid >= 18
+          ? "Delivery"
+          : sid >= 12
+            ? "PO"
+            : "PR";
+    const done =
+      sid === 33
+        ? "PR"
+        : sid === 34
+          ? "PO"
+          : sid === 35
+            ? "Delivery"
+            : sid === 36
+              ? "Payment"
+              : null;
+    const label = done ? `${done} Done` : phase;
+    const bg = done ? "#ecfdf5" : "#f9fafb";
+    const text = done ? "#065f46" : "#374151";
+    const dot = done ? "#10b981" : "#9ca3af";
+    return { label, bg, text, dot };
   };
 
   return (
@@ -824,8 +861,8 @@ export function ORSSection({
     >
       <View className="px-4 pt-3.5 pb-3">
         {/* ── Header ── */}
-        <View className="flex-row items-center justify-between mb-3">
-          <View>
+        <View className="flex-row items-start justify-between mb-3 flex-wrap gap-2">
+          <View style={{ flexShrink: 1, minWidth: 220 }}>
             <Text className="text-[15px] font-extrabold text-[#1a4d2e]">
               {isEndUser ? "My Division's ORS" : "ORS Processing"}
             </Text>
@@ -869,88 +906,213 @@ export function ORSSection({
         ) : (
           <>
             {/* Table header */}
-            <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
-              <Text className="w-28 text-[9.5px] font-bold uppercase text-white/70">
-                ORS No.
-              </Text>
-              <Text className="w-24 text-[9.5px] font-bold uppercase text-white/70">
-                PR No.
-              </Text>
-              <Text className="flex-1 text-[9.5px] font-bold uppercase text-white/70 text-right">
-                Amount
-              </Text>
-              <Text className="w-24 text-[9.5px] font-bold uppercase text-white/70 text-right">
-                Status
-              </Text>
-              <Text className="w-16" />
-            </View>
+            {!compact && (
+              <View className="flex-row bg-[#064E3B] rounded-xl px-3 py-1.5 mb-1">
+                <Text className="w-28 text-[9.5px] font-bold uppercase text-white/70">
+                  ORS No.
+                </Text>
+                <Text className="w-24 text-[9.5px] font-bold uppercase text-white/70">
+                  PR No.
+                </Text>
+                <Text className="flex-1 text-[9.5px] font-bold uppercase text-white/70 text-right">
+                  Amount
+                </Text>
+                <Text className="w-24 text-[9.5px] font-bold uppercase text-white/70 text-right">
+                  Status
+                </Text>
+                <Text className="w-16" />
+              </View>
+            )}
 
             {orsEntries.map((entry, i) => (
-              <View
-                key={entry.id}
-                className={`flex-row items-center px-3 py-2.5 rounded-xl ${
-                  i % 2 === 0 ? "bg-white" : "bg-gray-50"
-                }`}
-                style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
-              >
-                <Text
-                  className="w-28 text-[11.5px] font-semibold text-[#1a4d2e]"
-                  style={{ fontFamily: MONO }}
-                  numberOfLines={1}
+              compact ? (
+                <View
+                  key={entry.id}
+                  className="bg-white rounded-2xl border border-gray-200 px-3 py-3 mb-2"
                 >
-                  {entry.ors_no}
-                </Text>
-                <Text
-                  className="w-24 text-[11.5px] text-gray-500"
-                  style={{ fontFamily: MONO }}
-                  numberOfLines={1}
-                >
-                  {entry.pr_no ?? "—"}
-                </Text>
-                <Text
-                  className="flex-1 text-[11.5px] font-semibold text-gray-800 text-right"
-                >
-                  ₱<Text style={{ fontFamily: MONO }}>{fmt(entry.amount)}</Text>
-                </Text>
-                <View className="w-24 items-end">
-                  <OrsStatusPill status={entry.status} />
-                </View>
+                  <View className="flex-row items-start justify-between gap-2">
+                    <View className="flex-1">
+                      <Text
+                        className="text-[12.5px] font-extrabold text-[#1a4d2e]"
+                        style={{ fontFamily: MONO }}
+                        numberOfLines={1}
+                      >
+                        {entry.ors_no ?? "—"}
+                      </Text>
+                      <View className="flex-row items-center flex-wrap gap-2 mt-1">
+                        <Text
+                          className="text-[11.5px] text-gray-500"
+                          style={{ fontFamily: MONO }}
+                          numberOfLines={1}
+                        >
+                          {entry.pr_no ?? "—"}
+                        </Text>
+                        {(() => {
+                          const m = phaseMeta(entry.pr_no);
+                          if (!m) return null;
+                          return (
+                            <View
+                              className="px-2 py-0.5 rounded-full border"
+                              style={{
+                                backgroundColor: m.bg,
+                                borderColor: m.dot + "40",
+                              }}
+                            >
+                              <Text
+                                className="text-[9.5px] font-bold"
+                                style={{ color: m.text }}
+                              >
+                                {m.label}
+                              </Text>
+                            </View>
+                          );
+                        })()}
+                      </View>
+                    </View>
+                    <OrsStatusPill status={entry.status} />
+                  </View>
 
-                {/* Action icons */}
-                <View className="w-16 flex-row items-center justify-end gap-1">
-                  {/* Preview icon — always visible */}
-                  <TouchableOpacity
-                    onPress={() => openReadOnlyPreview(entry)}
-                    hitSlop={8}
-                  >
-                    <MaterialIcons
-                      name="visibility"
-                      size={16}
-                      color="#6b7280"
-                    />
-                  </TouchableOpacity>
-                  {canEdit && (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => setEditOrs(entry)}
-                        hitSlop={8}
-                      >
-                        <MaterialIcons name="edit" size={15} color="#064E3B" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => onDelete(entry)}
-                        hitSlop={8}
-                      >
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={15}
-                          color="#ef4444"
-                        />
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  <View className="flex-row items-center justify-between mt-2">
+                    <Text className="text-[10.5px] text-gray-400 font-semibold">
+                      Amount
+                    </Text>
+                    <Text className="text-[12.5px] font-extrabold text-gray-800">
+                      <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                      <Text style={{ fontFamily: MONO }}>
+                        {fmt(entry.amount)}
+                      </Text>
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-end gap-2 mt-2 flex-wrap">
+                    <TouchableOpacity
+                      onPress={() => openReadOnlyPreview(entry)}
+                      activeOpacity={0.85}
+                      className="px-3 py-2 rounded-xl border border-gray-200 bg-white flex-row items-center gap-1.5"
+                    >
+                      <MaterialIcons name="visibility" size={14} color="#6b7280" />
+                      <Text className="text-[11px] font-bold text-gray-700">
+                        Preview
+                      </Text>
+                    </TouchableOpacity>
+                    {canEdit && (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => setEditOrs(entry)}
+                          activeOpacity={0.85}
+                          className="px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 flex-row items-center gap-1.5"
+                        >
+                          <MaterialIcons name="edit" size={14} color="#064E3B" />
+                          <Text className="text-[11px] font-bold text-[#064E3B]">
+                            Edit
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => onDelete(entry)}
+                          activeOpacity={0.85}
+                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 flex-row items-center gap-1.5"
+                        >
+                          <MaterialIcons
+                            name="delete-outline"
+                            size={14}
+                            color="#ef4444"
+                          />
+                          <Text className="text-[11px] font-bold text-red-600">
+                            Delete
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <View
+                  key={entry.id}
+                  className={`flex-row items-center px-3 py-2.5 rounded-xl ${
+                    i % 2 === 0 ? "bg-white" : "bg-gray-50"
+                  }`}
+                  style={{ borderWidth: 1, borderColor: "#f3f4f6" }}
+                >
+                  <Text
+                    className="w-28 text-[11.5px] font-semibold text-[#1a4d2e]"
+                    style={{ fontFamily: MONO }}
+                    numberOfLines={1}
+                  >
+                    {entry.ors_no ?? "—"}
+                  </Text>
+                  <View className="w-24">
+                    <Text
+                      className="text-[11.5px] text-gray-500"
+                      style={{ fontFamily: MONO }}
+                      numberOfLines={1}
+                    >
+                      {entry.pr_no ?? "—"}
+                    </Text>
+                    {(() => {
+                      const m = phaseMeta(entry.pr_no);
+                      if (!m) return null;
+                      return (
+                        <View
+                          className="self-start mt-1 px-2 py-0.5 rounded-full border"
+                          style={{
+                            backgroundColor: m.bg,
+                            borderColor: m.dot + "40",
+                          }}
+                        >
+                          <Text
+                            className="text-[9.5px] font-bold"
+                            style={{ color: m.text }}
+                          >
+                            {m.label}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                  </View>
+                  <Text className="flex-1 text-[11.5px] font-semibold text-gray-800 text-right">
+                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                    <Text style={{ fontFamily: MONO }}>
+                      {fmt(entry.amount)}
+                    </Text>
+                  </Text>
+                  <View className="w-24 items-end">
+                    <OrsStatusPill status={entry.status} />
+                  </View>
+
+                  <View className="w-16 flex-row items-center justify-end gap-1">
+                    <TouchableOpacity
+                      onPress={() => openReadOnlyPreview(entry)}
+                      hitSlop={8}
+                    >
+                      <MaterialIcons
+                        name="visibility"
+                        size={16}
+                        color="#6b7280"
+                      />
+                    </TouchableOpacity>
+                    {canEdit && (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => setEditOrs(entry)}
+                          hitSlop={8}
+                        >
+                          <MaterialIcons name="edit" size={15} color="#064E3B" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => onDelete(entry)}
+                          hitSlop={8}
+                        >
+                          <MaterialIcons
+                            name="delete-outline"
+                            size={15}
+                            color="#ef4444"
+                          />
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </View>
+              )
             ))}
 
             {/* Totals row */}
@@ -961,12 +1123,12 @@ export function ORSSection({
               <Text
                 className="text-[13px] font-extrabold text-emerald-800"
               >
-                ₱
+                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
                 <Text style={{ fontFamily: MONO }}>
                   {fmt(orsEntries.reduce((s, e) => s + e.amount, 0))}
                 </Text>
               </Text>
-              <View className="w-16" />
+              {!compact && <View className="w-16" />}
             </View>
           </>
         )}
