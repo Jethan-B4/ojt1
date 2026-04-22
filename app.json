@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "ojt1",
+    "name": "DAR Procurement System",
     "slug": "ojt1",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/dar.png",
     "scheme": "ojt1",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    // "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -19,13 +19,13 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
+      // "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/dar.png"
     },
     "plugins": [
       "expo-router",
@@ -46,6 +46,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7da607c6-17c3-472f-8318-93335f163239"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7da607c6-17c3-472f-8318-93335f163239"
     }
   }
 }
