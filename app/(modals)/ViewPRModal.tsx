@@ -137,6 +137,7 @@ export default function ViewPRModal({
   const [items, setItems] = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [zoomLevel] = useState(0.5);
   const webRef = useRef<WebView>(null);
 
   useEffect(() => {
@@ -172,6 +173,14 @@ export default function ViewPRModal({
       .finally(() => setLoading(false));
   }, [visible, record, initialTab]);
 
+  useEffect(() => {
+    if (tab === "pdf" && webRef.current) {
+      setTimeout(() => {
+        webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+      }, 100);
+    }
+  }, [tab, zoomLevel]);
+
   if (!record) return null;
   const hdr = header ?? record;
   const html = buildPRHtml(hdr, items);
@@ -200,6 +209,7 @@ export default function ViewPRModal({
     }
   };
 
+  
   return (
     <Modal
       visible={visible}
@@ -305,6 +315,11 @@ export default function ViewPRModal({
             style={{ flex: 1 }}
             originWhitelist={["*"]}
             showsVerticalScrollIndicator={false}
+            onLoad={() => {
+              setTimeout(() => {
+                webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+              }, 100);
+            }}
           />
         )}
       </View>

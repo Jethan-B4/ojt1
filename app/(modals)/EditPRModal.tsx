@@ -21,7 +21,7 @@ import {
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -368,6 +368,8 @@ export default function EditPRModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [zoomLevel] = useState(0.5);
+  const webRef = useRef<WebView>(null);
 
   // Fetch full PR on open
   useEffect(() => {
@@ -415,6 +417,14 @@ export default function EditPRModal({
       .catch((e: any) => setError(e.message ?? "Failed to load PR."))
       .finally(() => setLoading(false));
   }, [visible, record]);
+
+  useEffect(() => {
+    if (tab === "preview" && webRef.current) {
+      setTimeout(() => {
+        webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+      }, 100);
+    }
+  }, [tab, zoomLevel]);
 
   // Item helpers
   const handleItemChange = (
@@ -653,10 +663,16 @@ export default function EditPRModal({
         ) : tab === "preview" ? (
           /* ── Preview tab: live WebView (same as ViewPRModal) ── */
           <WebView
+            ref={webRef}
             source={{ html: previewHtml }}
             style={{ flex: 1 }}
             originWhitelist={["*"]}
             showsVerticalScrollIndicator={false}
+            onLoad={() => {
+              setTimeout(() => {
+                webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+              }, 100);
+            }}
           />
         ) : (
           /* ── Edit tab ── */

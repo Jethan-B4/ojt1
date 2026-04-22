@@ -17,7 +17,7 @@
 
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -375,8 +375,17 @@ export default function POPreviewPanel({
   showActions,
   style,
 }: POPreviewPanelProps) {
+  const [zoomLevel] = useState(0.5);
   const webRef = useRef<WebView>(null);
   const { handlePrint, handleDownload } = usePOPreviewActions(html);
+
+  useEffect(() => {
+    if (webRef.current) {
+      setTimeout(() => {
+        webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+      }, 100);
+    }
+  }, [html, zoomLevel]);
 
   return (
     <View style={[{ flex: 1 }, style]}>
@@ -408,6 +417,11 @@ export default function POPreviewPanel({
         originWhitelist={["*"]}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        onLoad={() => {
+          setTimeout(() => {
+            webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+          }, 100);
+        }}
       />
     </View>
   );

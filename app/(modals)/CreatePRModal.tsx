@@ -810,6 +810,7 @@ export function CreatePRModal({
   const [nextId, setNextId] = useState(2);
   const [justUnlocked, setJustUnlocked] = useState(false);
   const [tab, setTab] = useState<"form" | "pdf">("form");
+  const [zoomLevel] = useState(0.5);
   const prevHighValue = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const webRef = useRef<WebView>(null);
@@ -826,6 +827,14 @@ export function CreatePRModal({
       setForm((f) => ({ ...f, [field]: value })),
     [],
   );
+
+  useEffect(() => {
+    if (tab === "pdf" && webRef.current) {
+      setTimeout(() => {
+        webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+      }, 100);
+    }
+  }, [tab, zoomLevel]);
 
   const addItem = useCallback(
     () =>
@@ -1037,6 +1046,11 @@ export function CreatePRModal({
             style={{ flex: 1 }}
             originWhitelist={["*"]}
             showsVerticalScrollIndicator={false}
+            onLoad={() => {
+              setTimeout(() => {
+                webRef.current?.injectJavaScript(`document.body.style.zoom = '${zoomLevel}'`);
+              }, 100);
+            }}
           />
         ) : (
           <ScrollView

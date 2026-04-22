@@ -179,7 +179,7 @@ function BrandHeader({ navigation }: { navigation: any }) {
       <View
         style={{
           backgroundColor: "#064E3B",
-          paddingTop: 30,
+          paddingTop: 50,
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
