@@ -1,9 +1,10 @@
 /* eslint-disable import/namespace, import/no-named-as-default, import/no-named-as-default-member */
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import {
-  createDrawerNavigator,
-  DrawerContentScrollView,
-  DrawerItemList,
+    createDrawerNavigator,
+    DrawerContentScrollView,
+    DrawerItem,
+    DrawerItemList,
 } from "@react-navigation/drawer";
 import { Image } from "expo-image";
 import * as Notifications from "expo-notifications";
@@ -297,6 +298,22 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
       {/* ── Nav items ── */}
       <View style={{ flexGrow: 1 }}>
         <DrawerItemList {...props} />
+
+        {/* Admin-only: User Management */}
+        {currentUser?.role_id === 1 && (
+          <DrawerItem
+            label="User Management"
+            onPress={() => props.navigation.navigate("UserManagement")}
+            icon={({ color, size }) => (
+              <MaterialIcons name="manage-accounts" size={size} color={color} />
+            )}
+            focused={props.state.routes[props.state.index].name === "UserManagement"}
+            activeTintColor="#ffffff"
+            activeBackgroundColor="#10B981"
+            inactiveTintColor="#CBD5E1"
+            labelStyle={{ color: "#CBD5E1" }}
+          />
+        )}
       </View>
 
       {/* ── User identity card ── */}

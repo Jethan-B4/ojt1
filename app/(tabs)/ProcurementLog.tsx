@@ -1,15 +1,15 @@
 /**
  * ProcurementLog.tsx — Procurement Audit Trail & History
  *
+ * Integrated with procurement module pattern:
+ *   • SubTabRow for phase filtering (All, PR, PO, Delivery, Payment, Completed)
+ *   • SearchBar with filter toggle (matches PRModule/POModule)
+ *   • Expandable PR cards with remark timeline
+ *
  * Role behaviour:
  *   role_id 1 (Admin)       → all PRs system-wide, all remarks
  *   role_id 2–5 (Processor) → all PRs system-wide, all remarks (read-only)
  *   role_id 6+ (End User)   → own division's PRs only
- *
- * Each PR row expands to show its full remark timeline sourced from the
- * `remarks` table via fetchRemarksByPR.
- *
- * Filters: free-text search · status filter · flag filter
  */
 
 import {
@@ -135,6 +135,92 @@ const ALL_FLAGS = Object.keys(FLAG_CFG) as StatusFlag[];
 
 const ENDUSER_ROLE = 6;
 
+// ─── SubTabRow (matches PRModule/POModule pattern) ─────────────────────────────
+
+type PhaseFilter = "all" | "pr" | "po" | "delivery" | "payment" | "completed";
+
+const PHASE_TABS: { key: PhaseFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pr", label: "PR" },
+  { key: "po", label: "PO" },
+  { key: "delivery", label: "Delivery" },
+  { key: "payment", label: "Payment" },
+  { key: "completed", label: "Completed" },
+];
+
+const SubTabRow: React.FC<{
+  active: PhaseFilter;
+  onSelect: (s: PhaseFilter) => void;
+}> = ({ active, onSelect }) => (
+  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+    {PHASE_TABS.map((tab) => {
+      const on = tab.key === active;
+      return (
+        <TouchableOpacity
+          key={tab.key}
+          onPress={() => onSelect(tab.key)}
+          activeOpacity={0.8}
+          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
+        >
+          <Text
+            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+          >
+            {tab.label}
+          </Text>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
+
+// ─── SearchBar (matches PRModule/POModule pattern) ────────────────────────────
+
+const SearchBar: React.FC<{
+  value: string;
+  onChange: (t: string) => void;
+  filterActive: boolean;
+  onFilterToggle: () => void;
+}> = ({
+  value,
+  onChange,
+  filterActive,
+  onFilterToggle,
+}) => (
+  <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
+    <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
+      <MaterialIcons name="search" size={16} color="#9ca3af" />
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder="Search PR, section, purpose…"
+        placeholderTextColor="#9ca3af"
+        returnKeyType="search"
+        className="flex-1 text-[13px] text-gray-800"
+      />
+      {value.length > 0 && (
+        <TouchableOpacity onPress={() => onChange("")} hitSlop={8}>
+          <MaterialIcons name="close" size={16} color="#9ca3af" />
+        </TouchableOpacity>
+      )}
+    </View>
+    <TouchableOpacity
+      onPress={onFilterToggle}
+      activeOpacity={0.8}
+      className={`w-10 h-10 rounded-xl items-center justify-center border-2 ${
+        filterActive
+          ? "bg-[#064E3B] border-[#064E3B]"
+          : "bg-white border-gray-200"
+      }`}
+    >
+      <MaterialIcons
+        name="filter-list"
+        size={18}
+        color={filterActive ? "#ffffff" : "#6b7280"}
+      />
+    </TouchableOpacity>
+  </View>
+);
+
 // ─── Flag ID Mapping ──────────────────────────────────────────────────────────
 /**
  * Reverse mapping: status_flag_id → StatusFlag string.
@@ -187,19 +273,19 @@ function fmtTime(iso?: string) {
   });
 }
 
-type PhaseFilter = "all" | "pr" | "po" | "delivery" | "payment" | "completed";
-
-function phaseForStatusId(statusId: number): "pr" | "po" | "delivery" | "payment" {
-  if (statusId >= 25 && statusId <= 36) return "payment";
+function phaseForStatusId(statusId: number): "pr" | "po" | "delivery" | "payment" | "completed" {
+  if (statusId >= 33 && statusId <= 36) return "completed";
+  if (statusId >= 25 && statusId <= 32) return "payment";
   if (statusId >= 18 && statusId <= 24) return "delivery";
-  if (statusId >= 12 && statusId <= 17) return "po";
+  if (statusId >= 11 && statusId <= 17) return "po";
   return "pr";
 }
 
-function phaseLabel(phase: "pr" | "po" | "delivery" | "payment") {
+function phaseLabel(phase: "pr" | "po" | "delivery" | "payment" | "completed") {
   if (phase === "po") return "PO";
   if (phase === "delivery") return "Delivery";
   if (phase === "payment") return "Payment";
+  if (phase === "completed") return "Completed";
   return "PR";
 }
 
@@ -746,17 +832,17 @@ function FilterChip({
       onPress={onPress}
       activeOpacity={0.75}
       style={{
-        minHeight: 44,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
         borderRadius: 999,
         backgroundColor: bg,
         borderWidth: 1.5,
         borderColor: border,
         justifyContent: "center",
+        alignItems: "center",
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "800", color: txt }}>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: txt }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -791,6 +877,10 @@ export default function ProcurementLog({ navigation }: any) {
     "date_created" | "last_updated" | "has_flag"
   >("last_updated");
 
+  // ── Pagination ────────────────────────────────────────────────────────────────
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
   // ── Expanded cards ────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -811,22 +901,34 @@ export default function ProcurementLog({ navigation }: any) {
         setAllPRs(rows);
         setStatuses(statRows);
 
-        // Fetch latest remarks for all PRs in parallel
-        const remarkEntries = await Promise.all(
+        // Fetch all remarks for each PR in parallel (for immediate count display)
+        const entriesWithRemarks = await Promise.all(
           rows.map(async (r) => {
-            const remark = await fetchLatestRemarkByPR(r.id).catch(() => null);
-            return [String(r.id), remark] as [string, RemarkRow | null];
+            const key = String(r.id);
+            const [latest, allRemarks] = await Promise.all([
+              fetchLatestRemarkByPR(r.id).catch(() => null),
+              fetchRemarksByPR(r.id).catch(() => []),
+            ]);
+            return {
+              key,
+              latest,
+              entry: { pr: r, remarks: allRemarks, loaded: true },
+            };
           }),
         );
-        setLatestRemarks(Object.fromEntries(remarkEntries));
 
-        // Seed entries map — remarks fetched lazily on expand
+        // Update latest remarks for badges
+        setLatestRemarks(
+          Object.fromEntries(
+            entriesWithRemarks.map((e) => [e.key, e.latest]),
+          ),
+        );
+
+        // Set entries with pre-loaded remarks
         setEntries((prev) => {
           const next: Record<string, LogEntry> = {};
-          for (const pr of rows) {
-            const key = String(pr.id);
-            next[key] = prev[key] ?? { pr, remarks: [], loaded: false };
-            next[key].pr = pr; // always refresh PR data
+          for (const { key, entry } of entriesWithRemarks) {
+            next[key] = entry;
           }
           return next;
         });
@@ -935,6 +1037,10 @@ export default function ProcurementLog({ navigation }: any) {
       return 0;
     });
 
+  // ── Pagination ─────────────────────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filteredPRs.length / PAGE_SIZE));
+  const pagedPRs = filteredPRs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -957,201 +1063,25 @@ export default function ProcurementLog({ navigation }: any) {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#f9fafb" }}>
-      {/* ── Page header ── */}
-      <View
-        style={{
-          backgroundColor: "#064E3B",
-          paddingHorizontal: 16,
-          paddingTop: 14,
-          paddingBottom: 16,
+      {/* ── SubTabRow: Phase filters ── */}
+      <SubTabRow
+        active={phaseFilter}
+        onSelect={(tab) => {
+          setPhaseFilter(tab);
+          setPage(1);
         }}
-      >
-        <Text
-          style={{
-            fontSize: 9.5,
-            fontWeight: "600",
-            color: "rgba(255,255,255,0.4)",
-            textTransform: "uppercase",
-            letterSpacing: 1.2,
-          }}
-        >
-          DAR · Procurement
-        </Text>
-        <Text
-          style={{
-            fontSize: 22,
-            fontWeight: "800",
-            color: "#ffffff",
-            marginTop: 2,
-          }}
-        >
-          Procurement Log
-        </Text>
-        <Text
-          style={{
-            fontSize: 12,
-            color: "rgba(255,255,255,0.5)",
-            marginTop: 2,
-          }}
-        >
-          {isEndUser
-            ? "Your division's PR audit trail"
-            : "System-wide PR history & remarks"}
-        </Text>
+      />
 
-        {/* Summary strip */}
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 8,
-            marginTop: 14,
-          }}
-        >
-          {[
-            { label: "Total PRs", value: allPRs.length },
-            {
-              label: "With Remarks",
-              value: Object.values(latestRemarks).filter((r) => r !== null)
-                .length,
-            },
-            {
-              label: "Flagged",
-              value: Object.values(latestRemarks).filter(
-                (r) => r && r.status_flag_id,
-              ).length,
-            },
-          ].map((s) => (
-            <View
-              key={s.label}
-              style={{
-                flex: 1,
-                backgroundColor: "rgba(255,255,255,0.08)",
-                borderRadius: 12,
-                padding: 10,
-                alignItems: "center",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.12)",
-              }}
-            >
-              <Text
-                style={{ fontSize: 20, fontWeight: "800", color: "#ffffff" }}
-              >
-                {s.value}
-              </Text>
-              <Text
-                style={{
-                  fontSize: 9.5,
-                  color: "rgba(255,255,255,0.5)",
-                  marginTop: 1,
-                  textAlign: "center",
-                }}
-              >
-                {s.label}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* ── Search bar ── */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          marginHorizontal: 12,
-          marginTop: 12,
-          marginBottom: 4,
+      {/* ── SearchBar ── */}
+      <SearchBar
+        value={search}
+        onChange={(t) => {
+          setSearch(t);
+          setPage(1);
         }}
-      >
-        <View
-          style={{
-            flex: 1,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-            backgroundColor: "#ffffff",
-            borderRadius: 12,
-            borderWidth: 1.5,
-            borderColor: "#e5e7eb",
-            paddingHorizontal: 12,
-            paddingVertical: 9,
-          }}
-        >
-          <MaterialIcons name="search" size={16} color="#9ca3af" />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            placeholder="Search PR no., purpose, section…"
-            placeholderTextColor="#9ca3af"
-            style={{ flex: 1, fontSize: 13, color: "#111827" }}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-              <MaterialIcons name="close" size={14} color="#9ca3af" />
-            </TouchableOpacity>
-          )}
-        </View>
-        {/* Filter toggle */}
-        <TouchableOpacity
-          onPress={() => setFilterOpen((o) => !o)}
-          activeOpacity={0.8}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor:
-              statusFilter !== null || flagFilter !== null
-                ? "#064E3B"
-                : "#ffffff",
-            borderWidth: 1.5,
-            borderColor:
-              statusFilter !== null || flagFilter !== null
-                ? "#064E3B"
-                : "#e5e7eb",
-          }}
-        >
-          <MaterialIcons
-            name="filter-list"
-            size={20}
-            color={
-              statusFilter !== null || flagFilter !== null
-                ? "#ffffff"
-                : "#6b7280"
-            }
-          />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 6 }}
-      >
-        {(
-          [
-            { key: "all" as PhaseFilter, label: "All" },
-            { key: "pr" as PhaseFilter, label: "PR" },
-            { key: "po" as PhaseFilter, label: "PO" },
-            { key: "delivery" as PhaseFilter, label: "Delivery" },
-            { key: "payment" as PhaseFilter, label: "Payment" },
-            { key: "completed" as PhaseFilter, label: "Completed" },
-          ] as { key: PhaseFilter; label: string }[]
-        ).map((p) => (
-          <FilterChip
-            key={p.key}
-            label={p.label}
-            active={phaseFilter === p.key}
-            color="#064E3B"
-            onPress={() => setPhaseFilter(p.key)}
-          />
-        ))}
-      </ScrollView>
+        filterActive={filterOpen || statusFilter !== null || flagFilter !== null}
+        onFilterToggle={() => setFilterOpen((o) => !o)}
+      />
 
       {/* ── Filter panel ── */}
       {filterOpen && (
@@ -1302,20 +1232,32 @@ export default function ProcurementLog({ navigation }: any) {
         </View>
       )}
 
-      {/* ── Results count ── */}
-      <View style={{ paddingHorizontal: 14, paddingBottom: 6 }}>
-        <Text style={{ fontSize: 11, color: "#9ca3af" }}>
-          {filteredPRs.length} of {allPRs.length} records
+      {/* ── Results count + sort indicator ── */}
+      <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
+        <Text className="text-[11px] text-gray-400">
+          <Text className="font-semibold text-gray-500">{filteredPRs.length}</Text>
+          {" of "}
+          {allPRs.length} records
           {statusFilter !== null || flagFilter !== null || search
             ? " (filtered)"
             : ""}
         </Text>
+        <View className="flex-row items-center gap-1">
+          <MaterialIcons
+            name={sortBy === "date_created" ? "calendar-today" : "update"}
+            size={11}
+            color="#9ca3af"
+          />
+          <Text className="text-[10.5px] text-gray-400">
+            {sortBy === "date_created" ? "Date Created" : sortBy === "has_flag" ? "Flagged First" : "Last Updated"}
+          </Text>
+        </View>
       </View>
 
       {/* ── PR log list ── */}
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 40, paddingTop: 2 }}
+        contentContainerStyle={{ paddingBottom: 16, paddingTop: 2 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -1328,7 +1270,7 @@ export default function ProcurementLog({ navigation }: any) {
           />
         }
       >
-        {filteredPRs.length === 0 ? (
+        {pagedPRs.length === 0 ? (
           <View style={{ alignItems: "center", paddingTop: 48, gap: 10 }}>
             <MaterialIcons name="history" size={44} color="#d1d5db" />
             <Text style={{ fontSize: 14, fontWeight: "700", color: "#374151" }}>
@@ -1343,7 +1285,7 @@ export default function ProcurementLog({ navigation }: any) {
             </Text>
           </View>
         ) : (
-          filteredPRs.map((pr) => {
+          pagedPRs.map((pr) => {
             const key = String(pr.id);
             const entry = entries[key] ?? { pr, remarks: [], loaded: false };
             return (
@@ -1359,6 +1301,106 @@ export default function ProcurementLog({ navigation }: any) {
           })
         )}
       </ScrollView>
+
+      {/* ── Pagination ── */}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={filteredPRs.length}
+        onPage={setPage}
+      />
+    </View>
+  );
+}
+
+// ─── Pagination Component (matches procurement modules) ────────────────────
+
+function Pagination({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t border-gray-100">
+      <Text className="text-[12px] text-gray-400">
+        <Text className="font-semibold text-gray-600">{total}</Text> records
+      </Text>
+      <View className="flex-row items-center gap-1.5">
+        {[
+          { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
+          ...Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(
+            (p) => ({
+              label: String(p),
+              page: p,
+              disabled: false,
+              active: p === page,
+            })
+          ),
+          {
+            label: "next",
+            page: Math.min(totalPages, page + 1),
+            disabled: page === totalPages,
+          },
+        ].map((btn, i) => (
+          <TouchableOpacity
+            key={i}
+            onPress={() => onPage(btn.page)}
+            disabled={btn.disabled}
+            activeOpacity={0.8}
+            className={`w-8 h-8 rounded-lg items-center justify-center border ${
+              (btn as any).active
+                ? "bg-[#064E3B] border-[#064E3B]"
+                : btn.disabled
+                ? "bg-gray-50 border-gray-100"
+                : "bg-white border-gray-200"
+            }`}
+          >
+            {btn.label === "prev" ? (
+              <MaterialIcons
+                name="chevron-left"
+                size={18}
+                color={
+                  (btn as any).active
+                    ? "#ffffff"
+                    : btn.disabled
+                    ? "#d1d5db"
+                    : "#6b7280"
+                }
+              />
+            ) : btn.label === "next" ? (
+              <MaterialIcons
+                name="chevron-right"
+                size={18}
+                color={
+                  (btn as any).active
+                    ? "#ffffff"
+                    : btn.disabled
+                    ? "#d1d5db"
+                    : "#6b7280"
+                }
+              />
+            ) : (
+              <Text
+                className={`text-[12px] font-bold ${
+                  (btn as any).active
+                    ? "text-white"
+                    : btn.disabled
+                    ? "text-gray-300"
+                    : "text-gray-500"
+                }`}
+              >
+                {btn.label}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 }
