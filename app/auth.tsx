@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,8 +31,8 @@ const { height: SCREEN_H } = Dimensions.get('window');
 
 //Add designation field to DevUser interface
 interface DevUser {
-  username: string;
-  user_id: string;
+  fullname: string;
+  username: string; // login
   password: string;
   division_name: string | null;
   role_name: string | null;
@@ -50,19 +51,19 @@ function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: ()
     supabase
       .from('users')
       .select(`
+        fullname,
         username,
-        user_id,
         password,
         divisions ( division_name ),
         roles     ( role_name )
       `)
-      .order('username')
+      .order('fullname')
       .then(({ data, error: err }) => {
         if (err) { setError(err.message); return; }
         setUsers(
           (data ?? []).map((r: any) => ({
+            fullname:      r.fullname,
             username:      r.username,
-            user_id:       r.user_id,
             password:      r.password,
             division_name: r.divisions?.division_name ?? null,
             role_name:     r.roles?.role_name ?? null,
@@ -80,11 +81,14 @@ function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: ()
           {/* Header */}
           <View style={devStyles.header}>
             <View>
-              <Text style={devStyles.headerEyebrow}>⚠ DEV ONLY</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <MaterialIcons name="warning-amber" size={14} color="#f59e0b" />
+                <Text style={devStyles.headerEyebrow}>DEV ONLY</Text>
+              </View>
               <Text style={devStyles.headerTitle}>User Accounts</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={12} style={devStyles.closeBtn}>
-              <Text style={devStyles.closeBtnText}>✕</Text>
+              <MaterialIcons name="close" size={18} color="#9ca3af" />
             </TouchableOpacity>
           </View>
 
@@ -106,8 +110,8 @@ function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: ()
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Table header */}
               <View style={[devStyles.row, devStyles.tableHead]}>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.2 }]}>Username</Text>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1 }]}>User ID</Text>
+                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.2 }]}>Full Name</Text>
+                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1 }]}>Username</Text>
                 <Text style={[devStyles.cell, devStyles.headCell, { flex: 1 }]}>Password</Text>
                 <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.3 }]}>Division</Text>
                 <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.2 }]}>Role</Text>
@@ -117,9 +121,9 @@ function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: ()
                 <Text style={devStyles.emptyText}>No users found.</Text>
               ) : (
                 users.map((u, i) => (
-                  <View key={u.user_id} style={[devStyles.row, i % 2 === 1 && devStyles.rowAlt]}>
-                    <Text style={[devStyles.cell, { flex: 1.2 }]} numberOfLines={1}>{u.username}</Text>
-                    <Text style={[devStyles.cell, devStyles.monoCell, { flex: 1.2 }]} numberOfLines={1}>{u.user_id}</Text>
+                  <View key={u.username} style={[devStyles.row, i % 2 === 1 && devStyles.rowAlt]}>
+                    <Text style={[devStyles.cell, { flex: 1.2 }]} numberOfLines={1}>{u.fullname}</Text>
+                    <Text style={[devStyles.cell, devStyles.monoCell, { flex: 1.2 }]} numberOfLines={1}>{u.username}</Text>
                     <Text style={[devStyles.cell, devStyles.monoCell, { flex: 1 }]} numberOfLines={1}>{u.password}</Text>
                     <Text style={[devStyles.cell, { flex: 1.3 }]} numberOfLines={2}>{u.division_name ?? '—'}</Text>
                     <Text style={[devStyles.cell, devStyles.roleCell, { flex: 1.2 }]} numberOfLines={2}>{u.role_name ?? '—'}</Text>
@@ -242,12 +246,12 @@ export default function AuthScreen(): JSX.Element {
             Procurement Workflow Monitoring{'\n'}and Document Automation System
           </Text> */}
 
-          {/* ── User ID field ── */}
+          {/* ── Username field ── */}
           <View style={styles.fieldWrapper}>
-            <Text style={styles.fieldLabel}>User ID</Text>
+            <Text style={styles.fieldLabel}>Username</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter your user ID"
+              placeholder="Enter your username"
               placeholderTextColor="#aab5b0"
               value={user_id}
               onChangeText={(text) => { setUserID(text); setErrorMessage(''); }}
