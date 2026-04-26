@@ -32,25 +32,19 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
     Modal,
     Platform,
-    Pressable,
     RefreshControl,
     ScrollView,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
 import PORemarkSheet, {
     type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
 import CancelPOModal from "../(modals)/CancelPOModal";
-import CreatePOModal, { type POCreatePayload } from "../(modals)/CreatePOModal";
 import DeletePOModal from "../(modals)/DeletePOModal";
-import EditPOModal, {
-    type POEditPayload,
-    type POEditRecord,
-} from "../(modals)/EditPOModal";
 import ProcessPOModal, {
     STATUS_FLAGS,
     canRoleProcessPO,
@@ -260,15 +254,11 @@ const SubTabRow: React.FC<{
 const SearchBar: React.FC<{
   value: string;
   onChange: (t: string) => void;
-  onCreatePress: () => void;
-  canCreate: boolean;
   filterActive: boolean;
   onFilterToggle: () => void;
 }> = ({
   value,
   onChange,
-  onCreatePress,
-  canCreate,
   filterActive,
   onFilterToggle,
 }) => (
@@ -304,16 +294,6 @@ const SearchBar: React.FC<{
         color={filterActive ? "#ffffff" : "#6b7280"}
       />
     </TouchableOpacity>
-    {canCreate && (
-      <Pressable
-        onPress={onCreatePress}
-        className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
-      >
-        <MaterialIcons name="add" size={18} color="#ffffff" />
-        <Text className="text-white text-[13px] font-bold">Create</Text>
-      </Pressable>
-    )}
   </View>
 );
 
@@ -531,11 +511,9 @@ interface MoreSheetProps {
   visible: boolean;
   record: PORecord | null;
   roleId: number;
-  canEdit: boolean;
   onClose: () => void;
   onRemarks: () => void;
   onViewDocuments: () => void;
-  onEdit: () => void;
   onOverride: () => void;
   /** Admin-only: open the Cancel PO confirmation modal. */
   onCancel: () => void;
@@ -547,11 +525,9 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
   visible,
   record,
   roleId,
-  canEdit,
   onClose,
   onRemarks,
   onViewDocuments,
-  onEdit,
   onOverride,
   onCancel,
   onDelete,
@@ -591,21 +567,6 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
         onViewDocuments();
       },
     },
-    ...(canEdit
-      ? ([
-          {
-            icon: "edit",
-            label: "Edit PO",
-            sublabel: "Modify PO details and line items",
-            color: "#b45309",
-            bg: "#fffbeb",
-            onPress: () => {
-              onClose();
-              onEdit();
-            },
-          },
-        ] as Action[])
-      : []),
     // Admin-only: Override Status action
     ...(roleId === 1
       ? ([
@@ -1056,11 +1017,6 @@ export default function POModule() {
     "details",
   );
 
-  const [createVisible, setCreateVisible] = useState(false);
-
-  const [editRecord, setEditRecord] = useState<POEditRecord | null>(null);
-  const [editVisible, setEditVisible] = useState(false);
-
   const [processRecord, setProcessRecord] = useState<ProcessPORecord | null>(
     null,
   );
@@ -1088,18 +1044,8 @@ export default function POModule() {
   // Roles that can see every PO regardless of division
   const canSeeAll = roleId === 1 || [3, 4, 5, 6, 8].includes(roleId);
 
-  // Only Supply (8) can create new POs
-  const canCreate = roleId === 8;
-
   // Budget (4) and Admin (1) can edit ORS entries in the inline panel
   const canEditOrs = roleId === 1 || roleId === 4;
-
-  // Supply (8) can edit POs at status ≤ 12; Admin (1) can always edit;
-  // Budget (4) can edit ORS fields on POs at status 13–14
-  const canEditPO = (statusId: number) =>
-    roleId === 1 ||
-    (roleId === 8 && statusId <= 12) ||
-    (roleId === 4 && statusId >= 13 && statusId <= 14);
 
   // ── One-time lookups ───────────────────────────────────────────────────────
 
@@ -1169,28 +1115,6 @@ export default function POModule() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handlePOCreated = useCallback((row: POCreatePayload) => {
-    setRecords((prev) => [rowToPORecord(row), ...prev]);
-    setPage(1);
-  }, []);
-
-  const handlePOSave = useCallback((payload: POEditPayload) => {
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id !== payload.id
-          ? r
-          : {
-              ...r,
-              prNo: payload.prNo,
-              prId: payload.prId,
-              supplier: payload.supplier,
-              officeSection: payload.officeSection,
-              totalAmount: payload.totalAmount,
-            },
-      ),
-    );
-  }, []);
-
   const handlePOProcessed = useCallback((id: string, newStatusId: number) => {
     setRecords((prev) =>
       prev.map((r) => (r.id === id ? { ...r, statusId: newStatusId } : r)),
@@ -1259,8 +1183,6 @@ export default function POModule() {
           setSearchQuery(t);
           setPage(1);
         }}
-        onCreatePress={() => setCreateVisible(true)}
-        canCreate={canCreate}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
@@ -1402,23 +1324,6 @@ export default function POModule() {
         }}
       />
 
-      <CreatePOModal
-        visible={createVisible}
-        onClose={() => setCreateVisible(false)}
-        onCreated={handlePOCreated}
-        divisionId={currentUser?.division_id ?? null}
-      />
-
-      <EditPOModal
-        visible={editVisible}
-        record={editRecord}
-        onClose={() => {
-          setEditVisible(false);
-          setEditRecord(null);
-        }}
-        onSave={handlePOSave}
-      />
-
       <ProcessPOModal
         visible={processVisible}
         record={processRecord}
@@ -1435,7 +1340,6 @@ export default function POModule() {
         visible={moreVisible}
         record={moreRecord}
         roleId={roleId}
-        canEdit={moreRecord ? canEditPO(moreRecord.statusId) : false}
         onClose={() => {
           setMoreVisible(false);
           setMoreRecord(null);
@@ -1457,12 +1361,6 @@ export default function POModule() {
           setViewRecord(moreRecord);
           setViewInitialTab("pdf");
           setViewVisible(true);
-        }}
-        onEdit={() => {
-          if (moreRecord) {
-            setEditRecord({ id: moreRecord.id, poNo: moreRecord.poNo });
-            setEditVisible(true);
-          }
         }}
         onOverride={() => {
           if (moreRecord) {

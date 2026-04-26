@@ -17,12 +17,7 @@ import {
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import CancelPRModal from "../(modals)/CancelPRModal";
-import { CreatePRModal, PRSubmitPayload } from "../(modals)/CreatePRModal";
 import DeletePRModal from "../(modals)/DeletePRModal";
-import EditPRModal, {
-  type PREditPayload,
-  type PREditRecord,
-} from "../(modals)/EditPRModal";
 import ProcessPRModal, {
   STATUS_FLAGS,
   type ProcessRecord,
@@ -34,8 +29,6 @@ import {
   fetchPRStatuses,
   fetchPurchaseRequests,
   fetchPurchaseRequestsByDivision,
-  insertProposalForPR,
-  insertPurchaseRequest,
   updatePRStatus,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
@@ -227,15 +220,11 @@ const SubTabRow: React.FC<{
 const SearchBar: React.FC<{
   value: string;
   onChange: (t: string) => void;
-  onCreatePress: () => void;
-  canCreate?: boolean;
   filterActive: boolean;
   onFilterToggle: () => void;
 }> = ({
   value,
   onChange,
-  onCreatePress,
-  canCreate = true,
   filterActive,
   onFilterToggle,
 }) => (
@@ -272,18 +261,6 @@ const SearchBar: React.FC<{
         color={filterActive ? "#ffffff" : "#6b7280"}
       />
     </TouchableOpacity>
-    {canCreate && (
-      <Pressable
-        onPress={onCreatePress}
-        className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
-      >
-        <Text className="text-white text-[18px] leading-none font-light">
-          +
-        </Text>
-        <Text className="text-white text-[13px] font-bold">Create</Text>
-      </Pressable>
-    )}
   </View>
 );
 
@@ -500,7 +477,6 @@ const RecordCard: React.FC<{
   statuses: PRStatusRow[];
   latestFlag: RemarkRow | null;
   onView: (r: PRRecord) => void;
-  onEdit: (r: PRRecord) => void;
   onProcess: (r: PRRecord) => void;
   onMore: (r: PRRecord) => void;
 }> = ({
@@ -510,7 +486,6 @@ const RecordCard: React.FC<{
   statuses,
   latestFlag,
   onView,
-  onEdit,
   onProcess,
   onMore,
 }) => {
@@ -616,49 +591,13 @@ const RecordCard: React.FC<{
         >
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
-        {roleId === 6 ? (
-          record.statusId === 1 ? (
-            <TouchableOpacity
-              onPress={() => onProcess(record)}
-              activeOpacity={0.8}
-              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
-            >
-              <Text className="text-white text-[12px] font-bold">Process</Text>
-            </TouchableOpacity>
-          ) : record.statusId <= 2 ? (
-            <TouchableOpacity
-              onPress={() => onEdit(record)}
-              activeOpacity={0.8}
-              className="flex-1 bg-amber-500 rounded-xl py-2 items-center"
-            >
-              <Text className="text-white text-[12px] font-bold">Edit</Text>
-            </TouchableOpacity>
-          ) : record.statusId >= 6 ? (
-            <TouchableOpacity
-              onPress={() => onProcess(record)}
-              activeOpacity={0.8}
-              className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
-            >
-              <Text className="text-white text-[12px] font-bold">Process</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              disabled
-              activeOpacity={1}
-              className="flex-1 bg-gray-300 rounded-xl py-2 items-center"
-            >
-              <Text className="text-white text-[12px] font-bold">Locked</Text>
-            </TouchableOpacity>
-          )
-        ) : (
-          <TouchableOpacity
-            onPress={() => onProcess(record)}
-            activeOpacity={0.8}
-            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
-          >
-            <Text className="text-white text-[12px] font-bold">Process</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={() => onProcess(record)}
+          activeOpacity={0.8}
+          className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
+        >
+          <Text className="text-white text-[12px] font-bold">Process</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
@@ -680,7 +619,6 @@ const MoreSheet: React.FC<{
   onClose: () => void;
   onRemarks: () => void;
   onViewDocuments: () => void;
-  onEdit: () => void;
   onCancel: () => void;
   onDelete: () => void;
 }> = ({
@@ -690,7 +628,6 @@ const MoreSheet: React.FC<{
   onClose,
   onRemarks,
   onViewDocuments,
-  onEdit,
   onCancel,
   onDelete,
 }) => {
@@ -726,17 +663,6 @@ const MoreSheet: React.FC<{
       onPress: () => {
         onClose();
         onViewDocuments();
-      },
-    },
-    {
-      icon: "edit",
-      label: "Edit PR",
-      sublabel: "Modify PR details and line items",
-      color: "#b45309",
-      bg: "#fffbeb",
-      onPress: () => {
-        onClose();
-        onEdit();
       },
     },
     ...(roleId === 1
@@ -895,10 +821,6 @@ export default function PRModule({
     "details",
   );
 
-  // Edit PR modal state
-  const [editRecord, setEditRecord] = useState<PREditRecord | null>(null);
-  const [editVisible, setEditVisible] = useState(false);
-
   // Process PR modal state (Division Head / BAC / Budget)
   const [processRecord, setProcessRecord] = useState<ProcessRecord | null>(
     null,
@@ -924,8 +846,6 @@ export default function PRModule({
   const [remarkRecord, setRemarkRecord] = useState<PRRecord | null>(null);
   const [remarkVisible, setRemarkVisible] = useState(false);
 
-  // Create PR modal state
-  const [prModalOpen, setPrModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -988,82 +908,6 @@ export default function PRModule({
 
   // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
-  const handleOpenCreate = useCallback(() => {
-    setPrModalOpen(true);
-  }, []);
-
-  const handlePRSubmit = useCallback(async (payload: PRSubmitPayload) => {
-    setSaving(true);
-    try {
-      const saved = await insertPurchaseRequest(payload.pr, payload.items);
-      try {
-        await insertProposalForPR(
-          saved.id,
-          payload.proposalNo,
-          payload.divisionId,
-        );
-      } catch {}
-      setRecords((prev) => [rowToRecord(saved, payload.items.length), ...prev]);
-      setPage(1);
-    } catch (e: any) {
-      const message = e.message ?? "Insert failed";
-      setRecords((prev) => [
-        {
-          id: `local-${Date.now()}`,
-          prNo: payload.pr.pr_no,
-          // Mirror display fields exactly
-          officeSection: payload.pr.office_section,
-          purpose: payload.pr.purpose,
-          totalCost: payload.pr.total_cost,
-          statusId: 1, // Pending — status_id 1 per status table
-          date: new Date().toLocaleDateString("en-PH"),
-          // Extra display-only fields
-          itemDescription: payload.pr.purpose,
-          quantity: payload.items.length,
-          elapsedTime: "just now",
-        } as PRRecord,
-        ...prev,
-      ]);
-      setPage(1);
-      Alert.alert(
-        "Saved locally",
-        `Could not reach the server. Record will sync when online. ${message}`,
-      );
-    } finally {
-      setSaving(false);
-    }
-    // Modal already inserted to DB. Optimistically add to list and refresh later.
-    // setRecords((prev) => [{
-    //   id: `local-${Date.now()}`, prNo: payload.pr.pr_no,
-    //   itemDescription: `${payload.pr.office_section} procurement request`,
-    //   officeSection: payload.pr.office_section, quantity: payload.items.length,
-    //   totalCost: payload.pr.total_cost, date: new Date().toLocaleDateString("en-PH"),
-    //   status: "pending", elapsedTime: "just now",
-    // }, ...prev]);
-    // setPage(1);
-    // setSaving(false);
-  }, []);
-
-  // Fix 3: actually persists to Supabase (updatePurchaseRequest was never called before).
-  // Fix 5: uses payload.purpose for itemDescription instead of a hardcoded placeholder.
-  // Note: persistence is now handled inside EditPRModal itself before onSave is called,
-  // so this callback only needs to sync the in-memory list and handle the saving overlay.
-  const handlePRSave = useCallback((payload: PREditPayload) => {
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id !== payload.id
-          ? r
-          : {
-              ...r,
-              officeSection: payload.officeSection,
-              purpose: payload.purpose, // Fix 5: keep purpose in sync
-              totalCost: payload.totalCost,
-              quantity: payload.items.length,
-              itemDescription: payload.purpose, // Fix 5: was hardcoded placeholder
-            },
-      ),
-    );
-  }, []);
 
   const filtered = records
     .filter((r) => {
@@ -1103,8 +947,6 @@ export default function PRModule({
           setSearchQuery(t);
           setPage(1);
         }}
-        onCreatePress={handleOpenCreate}
-        canCreate={roleId === 6}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
@@ -1186,10 +1028,6 @@ export default function PRModule({
                 setViewRecord(r);
                 setViewInitialTab("details");
                 setViewVisible(true);
-              }}
-              onEdit={(r) => {
-                setEditRecord({ id: r.id, prNo: r.prNo });
-                setEditVisible(true);
               }}
               onProcess={async (r) => {
                 // End User initial processing: Pending (1) → Div. Head (2)
@@ -1448,11 +1286,6 @@ export default function PRModule({
           setViewInitialTab("pdf");
           setViewVisible(true);
         }}
-        onEdit={() => {
-          if (!moreRecord) return;
-          setEditRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
-          setEditVisible(true);
-        }}
         onCancel={() => {
           if (!moreRecord) return;
           setCancelRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
@@ -1473,17 +1306,6 @@ export default function PRModule({
           setRemarkVisible(false);
           setRemarkRecord(null);
         }}
-      />
-
-      {/* Edit PR modal */}
-      <EditPRModal
-        visible={editVisible}
-        record={editRecord}
-        onClose={() => {
-          setEditVisible(false);
-          setEditRecord(null);
-        }}
-        onSave={handlePRSave}
       />
 
       {/* Process PR modal — Division Head / BAC / Budget */}
@@ -1530,16 +1352,6 @@ export default function PRModule({
           setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
-
-      {/* Create PR modal */}
-      {prModalOpen && (
-        <CreatePRModal
-          visible={prModalOpen}
-          onClose={() => setPrModalOpen(false)}
-          onSubmit={handlePRSubmit}
-          currentUser={currentUser as any}
-        />
-      )}
 
       {/* Saving overlay */}
       {saving && (

@@ -3,31 +3,31 @@
  */
 
 import {
-  fetchDeliveryPOContext,
-  fetchDeliveriesForPaymentPhase,
-  fetchDVByDelivery,
-  fetchIARByDelivery,
-  fetchLOAByDelivery,
-  fetchPaymentPhaseStatuses,
+    fetchDeliveriesForPaymentPhase,
+    fetchDeliveryPOContext,
+    fetchDVByDelivery,
+    fetchIARByDelivery,
+    fetchLOAByDelivery,
+    fetchPaymentPhaseStatuses,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import PORemarkSheet, { type PORemarkSheetRecord } from "../(components)/PORemarkSheet";
 import ProcessPaymentModal, {
-  canRoleProcessPayment,
-  type ProcessPaymentRecord,
+    canRoleProcessPayment,
+    type ProcessPaymentRecord,
 } from "../(modals)/ProcessPaymentModal";
 import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../AuthContext";
@@ -566,6 +566,7 @@ export default function PaymentModule() {
       <PORemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
+        currentUser={currentUser}
         onClose={() => {
           setRemarkVisible(false);
           setRemarkRecord(null);

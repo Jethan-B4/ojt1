@@ -6,8 +6,6 @@ import {
     fetchDeliveryStatuses,
     fetchIARByDelivery,
     fetchLOAByDelivery,
-    fetchPoCandidatesForDelivery,
-    insertDelivery,
     insertDeliveryProcessRemark,
     updateDelivery,
     upsertDVByDelivery,
@@ -20,18 +18,16 @@ import {
     Alert,
     Modal,
     Platform,
-    Pressable,
     RefreshControl,
     ScrollView,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
 import PORemarkSheet, {
     type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
-import CreateDeliveryModal from "../(modals)/CreateDeliveryModal";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
 import ProcessDeliveryModal from "../(modals)/ProcessDeliveryModal";
 import { type StatusFlag } from "../(modals)/ProcessPRModal";
@@ -160,15 +156,11 @@ const SubTabRow: React.FC<{
 const SearchBar: React.FC<{
   value: string;
   onChange: (t: string) => void;
-  onCreatePress: () => void;
-  canCreate: boolean;
   filterActive: boolean;
   onFilterToggle: () => void;
 }> = ({
   value,
   onChange,
-  onCreatePress,
-  canCreate,
   filterActive,
   onFilterToggle,
 }) => (
@@ -204,16 +196,6 @@ const SearchBar: React.FC<{
         color={filterActive ? "#ffffff" : "#6b7280"}
       />
     </TouchableOpacity>
-    {canCreate && (
-      <Pressable
-        onPress={onCreatePress}
-        className="flex-row items-center gap-1.5 bg-[#064E3B] px-4 py-2.5 rounded-xl"
-        style={({ pressed }) => (pressed ? { opacity: 0.82 } : undefined)}
-      >
-        <MaterialIcons name="add" size={18} color="#ffffff" />
-        <Text className="text-white text-[13px] font-bold">Log</Text>
-      </Pressable>
-    )}
   </View>
 );
 
@@ -666,7 +648,6 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   </View>
 );
 
-const canRoleCreate = (roleId: number) => roleId === 1 || roleId === 8;
 const canRoleProcess = (roleId: number, statusId: number) =>
   roleId === 1 ||
   (roleId === 8 && [18, 19, 20, 22, 23].includes(statusId)) ||
@@ -788,7 +769,6 @@ export default function DeliveryModule() {
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [processOpen, setProcessOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
@@ -803,11 +783,6 @@ export default function DeliveryModule() {
   const [overrideRecord, setOverrideRecord] = useState<DeliveryRecord | null>(
     null,
   );
-
-  const [poOptions, setPoOptions] = useState<any[]>([]);
-  const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
-  const [deliveryNo, setDeliveryNo] = useState("");
-  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
 
   const [drNo, setDrNo] = useState("");
   const [soaNo, setSoaNo] = useState("");
@@ -888,25 +863,6 @@ export default function DeliveryModule() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const openCreate = async () => {
-    try {
-      const options = (await fetchPoCandidatesForDelivery()) as any[];
-      setPoOptions(options);
-      setDeliveryNo("");
-      setSelectedPoId(null);
-      if (!options.length) {
-        Alert.alert(
-          "No served PO found",
-          "Only served Purchase Orders can be logged for delivery.",
-        );
-      }
-      setExpectedDeliveryDate("");
-      setCreateOpen(true);
-    } catch (e: any) {
-      Alert.alert("Load failed", e?.message ?? "Could not load PO options.");
-    }
-  };
-
   const openView = async (r: DeliveryRecord) => {
     try {
       setActive(r.raw);
@@ -949,40 +905,6 @@ export default function DeliveryModule() {
         "Load failed",
         e?.message ?? "Could not load processing details.",
       );
-    }
-  };
-
-  const submitCreate = async () => {
-    const po = poOptions.find((x) => Number(x.id) === Number(selectedPoId));
-    if (!deliveryNo.trim())
-      return Alert.alert("Missing field", "Delivery No. is required.");
-    if (!expectedDeliveryDate.trim()) {
-      return Alert.alert(
-        "Missing field",
-        "Expected delivery date is required.",
-      );
-    }
-    if (!po)
-      return Alert.alert("Missing field", "Please select a Purchase Order.");
-    try {
-      await insertDelivery({
-        po_id: Number(po.id),
-        po_no: po.po_no ?? "",
-        supplier: po.supplier ?? "",
-        office_section: po.office_section ?? "",
-        division_id: po.division_id ?? null,
-        delivery_no: deliveryNo.trim(),
-        expected_delivery_date: expectedDeliveryDate.trim(),
-        created_by: (currentUser as any)?.id ?? null,
-      });
-      setCreateOpen(false);
-      setDeliveryNo("");
-      setExpectedDeliveryDate("");
-      setSelectedPoId(null);
-      await load();
-      Alert.alert("Success", "Delivery logged successfully.");
-    } catch (e: any) {
-      Alert.alert("Create failed", e?.message ?? "Could not log delivery.");
     }
   };
 
@@ -1143,8 +1065,6 @@ export default function DeliveryModule() {
           setSearchQuery(t);
           setPage(1);
         }}
-        onCreatePress={() => void openCreate()}
-        canCreate={canRoleCreate(roleId)}
         filterActive={
           filterOpen || statusFilter !== null || sectionFilter !== "All"
         }
@@ -1395,23 +1315,6 @@ export default function DeliveryModule() {
         }}
       />
 
-      <CreateDeliveryModal
-        visible={createOpen}
-        deliveryNo={deliveryNo}
-        setDeliveryNo={setDeliveryNo}
-        expectedDeliveryDate={expectedDeliveryDate}
-        setExpectedDeliveryDate={setExpectedDeliveryDate}
-        poOptions={poOptions}
-        selectedPoId={selectedPoId}
-        setSelectedPoId={setSelectedPoId}
-        onClose={() => {
-          setCreateOpen(false);
-          setDeliveryNo("");
-          setExpectedDeliveryDate("");
-          setSelectedPoId(null);
-        }}
-        onSubmit={submitCreate}
-      />
       <ViewDeliveryModal
         visible={viewOpen}
         onClose={() => setViewOpen(false)}
@@ -1468,6 +1371,7 @@ export default function DeliveryModule() {
       <PORemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
+        currentUser={currentUser}
         onClose={() => {
           setRemarkVisible(false);
           setRemarkRecord(null);
