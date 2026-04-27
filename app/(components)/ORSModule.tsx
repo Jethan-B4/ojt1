@@ -568,7 +568,9 @@ export function OrsModal({
 
               <View className="flex-row gap-2.5 mb-3.5">
                 <View className="flex-1">
-                  <FieldLabel required>Amount (₱)</FieldLabel>
+                  <FieldLabel required>
+                    Amount (<Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>)
+                  </FieldLabel>
                   <StyledInput
                     value={form.amount}
                     onChangeText={set("amount")}
@@ -623,7 +625,7 @@ export function OrsModal({
                   <Text
                     className="text-[18px] font-black text-white"
                   >
-                    ₱
+                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
                     <Text style={{ fontFamily: MONO }}>
                       {fmt2(parseFloat(form.amount.replace(/,/g, "")) || 0)}
                     </Text>
@@ -1463,7 +1465,8 @@ export function ORSInlinePanel({
               <Text
                 className="text-[12px] font-semibold text-gray-700 mr-2"
               >
-                ₱<Text style={{ fontFamily: MONO }}>{fmt(entry.amount)}</Text>
+                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                <Text style={{ fontFamily: MONO }}>{fmt(entry.amount)}</Text>
               </Text>
               <OrsStatusPill status={entry.status} />
 
@@ -1507,7 +1510,7 @@ export function ORSInlinePanel({
             <Text
               className="text-[12px] font-extrabold text-violet-800"
             >
-              ₱
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
               <Text style={{ fontFamily: MONO }}>
                 {fmt(entries.reduce((s, e) => s + e.amount, 0))}
               </Text>

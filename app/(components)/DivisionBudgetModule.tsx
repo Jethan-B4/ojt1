@@ -220,7 +220,9 @@ function AllocModal({
 
             {/* Amount */}
             <Text className="text-[12px] font-semibold text-gray-700 mb-1">
-              Allocated Budget (₱) <Text className="text-red-500">*</Text>
+              Allocated Budget (
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>){" "}
+              <Text className="text-red-500">*</Text>
             </Text>
             <TextInput
               value={amount} onChangeText={setAmount}
@@ -387,7 +389,9 @@ function CreateAllocModal({
 
             {/* Amount */}
             <Text className="text-[12px] font-semibold text-gray-700 mb-1">
-              Allocated Budget (₱) <Text className="text-red-500">*</Text>
+              Allocated Budget (
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>){" "}
+              <Text className="text-red-500">*</Text>
             </Text>
             <TextInput
               value={amount} onChangeText={setAmount}
@@ -519,7 +523,8 @@ export default function DivisionBudgetSection({
                     {canEdit && <MaterialIcons name="edit" size={12} color="#9ca3af" />}
                   </View>
                   <Text className="text-[11.5px] font-semibold text-gray-600">
-                    ₱<Text style={{ fontFamily: MONO }}>{fmt(row.utilized)}</Text>{" "}
+                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                    <Text style={{ fontFamily: MONO }}>{fmt(row.utilized)}</Text>{" "}
                     / <Text style={{ fontFamily: MONO }}>{fmt(row.allocated)}</Text>
                   </Text>
                 </View>
@@ -529,7 +534,9 @@ export default function DivisionBudgetSection({
                 <View className="flex-row justify-between mt-1">
                   <Text className="text-[10px] text-gray-400">{pct}% utilized</Text>
                   <Text className={`text-[10px] font-semibold ${remaining < 0 ? "text-red-500" : "text-gray-400"}`}>
-                    {remaining < 0 ? "Over by " : "Remaining: "}₱{fmt(Math.abs(remaining))}
+                    {remaining < 0 ? "Over by " : "Remaining: "}
+                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                    {fmt(Math.abs(remaining))}
                   </Text>
                 </View>
               </TouchableOpacity>

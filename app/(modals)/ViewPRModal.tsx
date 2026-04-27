@@ -122,7 +122,7 @@ ${rows}
 interface ViewPRModalProps {
   visible: boolean;
   record: PRRecord | null;
-  initialTab?: "details" | "pdf";
+  initialTab?: "details" | "pr" | "rfqs" | "resolution" | "abstract";
   onClose: () => void;
 }
 
@@ -132,11 +132,11 @@ export default function ViewPRModal({
   initialTab,
   onClose,
 }: ViewPRModalProps) {
-  const [tab, setTab] = useState<"details" | "pdf">("details");
-  const [header, setHeader] = useState<PRRecord | null>(null);
+  const [tab, setTab] = useState<"details" | "pr" | "rfqs" | "resolution" | "abstract">("details");
+  const [hdr, setHdr] = useState<PRRecord | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const webRef = useRef<WebView>(null);
 
   useEffect(() => {
@@ -152,7 +152,7 @@ export default function ViewPRModal({
     fetchPRWithItemsById(record.id)
       .then(({ header, items }) => {
         const display = toPRDisplay(header);
-        setHeader({
+        setHdr({
           ...display,
           entityName: header.entity_name ?? undefined,
           fundCluster: header.fund_cluster ?? undefined,
@@ -166,19 +166,19 @@ export default function ViewPRModal({
       })
       .catch((e: any) => {
         Alert.alert("Load failed", e?.message ?? "Failed to load PR");
-        setHeader(record);
+        setHdr(record);
         setItems([]);
       })
       .finally(() => setLoading(false));
   }, [visible, record, initialTab]);
 
   if (!record) return null;
-  const hdr = header ?? record;
-  const html = buildPRHtml(hdr, items);
-  const statusCfg = STATUS_CONFIG[hdr.statusId] ?? STATUS_FALLBACK;
+  const header = hdr ?? record;
+  const html = buildPRHtml(header, items);
+  const statusCfg = STATUS_CONFIG[header.statusId] ?? STATUS_FALLBACK;
   const statusLabel =
-    statuses.find((s) => s.id === hdr.statusId)?.status_name ??
-    `Status ${hdr.statusId}`;
+    statuses.find((s) => s.id === header.statusId)?.status_name ??
+    `Status ${header.statusId}`;
 
   const handlePrint = async () => {
     try {
@@ -219,10 +219,10 @@ export default function ViewPRModal({
                 className="text-[18px] font-black text-white mt-0.5"
                 style={{ fontFamily: MONO }}
               >
-                {hdr.prNo}
+                {header.prNo}
               </Text>
               <Text className="text-[11.5px] text-white/60 mt-0.5">
-                {hdr.officeSection} · {hdr.date}
+                {header.officeSection} · {header.date}
               </Text>
             </View>
             <View className="flex-row items-center gap-2">
@@ -250,24 +250,24 @@ export default function ViewPRModal({
             </View>
           </View>
           {/* Tab toggle */}
-          <View className="flex-row bg-black/20 rounded-xl p-1">
-            {(["details", "pdf"] as const).map((t) => (
+          <View className="flex-row bg-black/20 rounded-xl p-1 flex-wrap gap-1">
+            {(["details", "pr", "rfqs", "resolution", "abstract"] as const).map((t) => (
               <TouchableOpacity
                 key={t}
                 onPress={() => setTab(t)}
                 activeOpacity={0.8}
-                className={`flex-1 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}
+                className={`px-3 py-2 rounded-lg items-center ${tab === t ? "bg-white" : ""}`}
               >
                 <Text
-                  className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}
+                  className={`text-[12px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}
                 >
-                  {t === "details" ? "Details" : "PDF Preview"}
+                  {t === "details" ? "Details" : t.toUpperCase()}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-          {/* PDF actions */}
-          {tab === "pdf" && (
+          {/* Document actions */}
+          {tab !== "details" && (
             <View className="flex-row justify-end gap-2.5 pt-2 pb-1">
               <TouchableOpacity
                 onPress={handlePrint}
@@ -297,7 +297,7 @@ export default function ViewPRModal({
             </Text>
           </View>
         ) : tab === "details" ? (
-          <DetailsView record={hdr} items={items} statuses={statuses} />
+          <DetailsView record={header} items={items} statuses={statuses} />
         ) : (
           <WebView
             ref={webRef}
@@ -366,7 +366,15 @@ function DetailsView({
             </Text>
           </View>
         </InfoRow>
-        <InfoRow label="Total Cost" value={`₱${fmt(record.totalCost)}`} mono />
+        <InfoRow label="Total Cost" mono>
+          <Text
+            className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
+            style={{ fontFamily: MONO }}
+          >
+            <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+            {fmt(record.totalCost)}
+          </Text>
+        </InfoRow>
       </View>
       {!!record.purpose && (
         <View
@@ -425,10 +433,10 @@ function DetailsView({
                 ) : null}
                 <Chip label="Unit" value={item.unit} />
                 <Chip label="Qty" value={String(item.quantity)} />
-                <Chip label="Price" value={`₱${fmt(item.unit_price)}`} />
+                <Chip label="Price" value={`${"\u20B1"}${fmt(item.unit_price)}`} />
                 <Chip
                   label="Total"
-                  value={`₱${fmt(item.subtotal)}`}
+                  value={`${"\u20B1"}${fmt(item.subtotal)}`}
                   highlight
                 />
               </View>
@@ -444,7 +452,8 @@ function DetailsView({
           className="text-[20px] font-black text-white"
           style={{ fontFamily: MONO }}
         >
-          ₱{fmt(record.totalCost)}
+          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          {fmt(record.totalCost)}
         </Text>
       </View>
       {(record.reqName ||

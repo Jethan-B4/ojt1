@@ -30,27 +30,27 @@ import type { RemarkRow } from "@/lib/supabase-types";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
 import PORemarkSheet, {
-    type PORemarkSheetRecord,
+  type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
 import DeletePOModal from "../(modals)/DeletePOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
-    fetchLatestRemarkByPO,
-    fetchPOStatuses,
-    fetchPurchaseOrders,
-    fetchPurchaseOrdersByDivision,
-    type PORow,
+  fetchLatestRemarkByPO,
+  fetchPOStatuses,
+  fetchPurchaseOrders,
+  fetchPurchaseOrdersByDivision,
+  type PORow,
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
@@ -69,6 +69,8 @@ export interface PORecord {
   statusId: number;
   date: string;
   updatedAt: string;
+  createdAtMs: number;
+  updatedAtMs: number;
   elapsedTime: string;
 }
 
@@ -192,14 +194,56 @@ function getFlagFromId(id: number | null): StatusFlag | null {
 // Flag badge styling
 const STATUS_FLAGS: Record<
   StatusFlag,
-  { bg: string; text: string; dot: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }
+  {
+    bg: string;
+    text: string;
+    dot: string;
+    label: string;
+    icon: keyof typeof MaterialIcons.glyphMap;
+  }
 > = {
-  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete", icon: "check-circle" },
-  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete", icon: "error-outline" },
-  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info", icon: "report-problem" },
-  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision", icon: "refresh" },
-  on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold", icon: "pause-circle" },
-  urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent", icon: "priority-high" },
+  complete: {
+    bg: "#f0fdf4",
+    text: "#15803d",
+    dot: "#22c55e",
+    label: "Complete",
+    icon: "check-circle",
+  },
+  incomplete_info: {
+    bg: "#fef2f2",
+    text: "#dc2626",
+    dot: "#ef4444",
+    label: "Incomplete",
+    icon: "error-outline",
+  },
+  wrong_information: {
+    bg: "#fff7ed",
+    text: "#f97316",
+    dot: "#f97316",
+    label: "Wrong Info",
+    icon: "report-problem",
+  },
+  needs_revision: {
+    bg: "#fefce8",
+    text: "#eab308",
+    dot: "#eab308",
+    label: "Needs Revision",
+    icon: "refresh",
+  },
+  on_hold: {
+    bg: "#f3f4f6",
+    text: "#6b7280",
+    dot: "#9ca3af",
+    label: "On Hold",
+    icon: "pause-circle",
+  },
+  urgent: {
+    bg: "#fef2f2",
+    text: "#dc2626",
+    dot: "#ef4444",
+    label: "Urgent",
+    icon: "priority-high",
+  },
 };
 
 // ─── Row → display record ─────────────────────────────────────────────────────
@@ -225,6 +269,8 @@ function rowToPORecord(row: PORow): PORecord {
     statusId: Number(row.status_id) || 12,
     date: created.toLocaleDateString("en-PH"),
     updatedAt: updated.toLocaleDateString("en-PH"),
+    createdAtMs: created.getTime(),
+    updatedAtMs: updated.getTime(),
     elapsedTime: elapsed,
   };
 }
@@ -270,12 +316,7 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   filterActive: boolean;
   onFilterToggle: () => void;
-}> = ({
-  value,
-  onChange,
-  filterActive,
-  onFilterToggle,
-}) => (
+}> = ({ value, onChange, filterActive, onFilterToggle }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <MaterialIcons name="search" size={16} color="#9ca3af" />
@@ -526,10 +567,10 @@ interface MoreSheetProps {
   record: PORecord | null;
   roleId: number;
   onClose: () => void;
-  onRemarks: () => void;
-  onViewDocuments: () => void;
+  onRemarks: (r: PORecord) => void;
+  onViewDocuments: (r: PORecord) => void;
   /** Admin-only: open the Delete PO confirmation modal. */
-  onDelete: () => void;
+  onDelete: (r: PORecord) => void;
 }
 
 const MoreSheet: React.FC<MoreSheetProps> = ({
@@ -562,7 +603,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
       bg: "#ecfdf5",
       onPress: () => {
         onClose();
-        onRemarks();
+        onRemarks(record);
       },
     },
     {
@@ -573,7 +614,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
       bg: "#eff6ff",
       onPress: () => {
         onClose();
-        onViewDocuments();
+        onViewDocuments(record);
       },
     },
     // Admin-only: Delete action
@@ -587,7 +628,7 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
             bg: "#fee2e2",
             onPress: () => {
               onClose();
-              onDelete();
+              onDelete(record);
             },
           },
         ] as Action[])
@@ -703,20 +744,11 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
 const RecordCard: React.FC<{
   record: PORecord;
   isEven: boolean;
-  roleId: number;
   statuses: { id: number; status_name: string }[];
   latestFlag: RemarkRow | null;
   onView: (r: PORecord) => void;
   onMore: (r: PORecord) => void;
-}> = ({
-  record,
-  isEven,
-  roleId,
-  statuses,
-  latestFlag,
-  onView,
-  onMore,
-}) => {
+}> = ({ record, isEven, statuses, latestFlag, onView, onMore }) => {
   const statusLabel =
     statuses.find((s) => s.id === record.statusId)?.status_name ??
     poCfgFor(record.statusId).label;
@@ -858,83 +890,90 @@ const Pagination: React.FC<{
   totalPages: number;
   total: number;
   onPage: (p: number) => void;
-}> = ({ page, totalPages, total, onPage }) => (
-  <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t border-gray-100">
-    <Text className="text-[12px] text-gray-400">
-      <Text className="font-semibold text-gray-600">{total}</Text> records
-    </Text>
-    <View className="flex-row items-center gap-1.5">
-      {[
-        { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
-        ...Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(
-          (p) => ({
-            label: String(p),
-            page: p,
-            disabled: false,
-            active: p === page,
-          }),
-        ),
-        {
-          label: "next",
-          page: Math.min(totalPages, page + 1),
-          disabled: page === totalPages,
-        },
-      ].map((btn, i) => (
-        <TouchableOpacity
-          key={i}
-          onPress={() => onPage(btn.page)}
-          disabled={btn.disabled}
-          activeOpacity={0.8}
-          className={`w-8 h-8 rounded-lg items-center justify-center border ${
-            (btn as any).active
-              ? "bg-[#064E3B] border-[#064E3B]"
-              : btn.disabled
-                ? "bg-gray-50 border-gray-100"
-                : "bg-white border-gray-200"
-          }`}
-        >
-          {btn.label === "prev" ? (
-            <MaterialIcons
-              name="chevron-left"
-              size={18}
-              color={
-                (btn as any).active
-                  ? "#ffffff"
+}> = ({ page, totalPages, total, onPage }) => {
+  type PageBtn =
+    | { kind: "prev" | "next"; page: number; disabled: boolean }
+    | { kind: "page"; page: number; active: boolean; disabled: false };
+
+  const windowSize = 5;
+  const start = Math.max(
+    1,
+    Math.min(page - Math.floor(windowSize / 2), totalPages - windowSize + 1),
+  );
+  const end = Math.min(totalPages, start + windowSize - 1);
+
+  const buttons: PageBtn[] = [
+    { kind: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
+    ...Array.from({ length: end - start + 1 }, (_, i) => {
+      const p = start + i;
+      return {
+        kind: "page",
+        page: p,
+        active: p === page,
+        disabled: false,
+      } as const;
+    }),
+    {
+      kind: "next",
+      page: Math.min(totalPages, page + 1),
+      disabled: page === totalPages,
+    },
+  ];
+
+  return (
+    <View className="flex-row items-center justify-between px-4 py-3 bg-white border-t border-gray-100">
+      <Text className="text-[12px] text-gray-400">
+        <Text className="font-semibold text-gray-600">{total}</Text> records
+      </Text>
+      <View className="flex-row items-center gap-1.5">
+        {buttons.map((btn) => {
+          const isActive = btn.kind === "page" && btn.active;
+          return (
+            <TouchableOpacity
+              key={`${btn.kind}-${btn.page}`}
+              onPress={() => onPage(btn.page)}
+              disabled={btn.disabled}
+              activeOpacity={0.8}
+              className={`w-8 h-8 rounded-lg items-center justify-center border ${
+                isActive
+                  ? "bg-[#064E3B] border-[#064E3B]"
                   : btn.disabled
-                    ? "#d1d5db"
-                    : "#6b7280"
-              }
-            />
-          ) : btn.label === "next" ? (
-            <MaterialIcons
-              name="chevron-right"
-              size={18}
-              color={
-                (btn as any).active
-                  ? "#ffffff"
-                  : btn.disabled
-                    ? "#d1d5db"
-                    : "#6b7280"
-              }
-            />
-          ) : (
-            <Text
-              className={`text-[12px] font-bold ${
-                (btn as any).active
-                  ? "text-white"
-                  : btn.disabled
-                    ? "text-gray-300"
-                    : "text-gray-500"
+                    ? "bg-gray-50 border-gray-100"
+                    : "bg-white border-gray-200"
               }`}
             >
-              {btn.label}
-            </Text>
-          )}
-        </TouchableOpacity>
-      ))}
+              {btn.kind === "prev" ? (
+                <MaterialIcons
+                  name="chevron-left"
+                  size={18}
+                  color={btn.disabled ? "#d1d5db" : "#6b7280"}
+                />
+              ) : btn.kind === "next" ? (
+                <MaterialIcons
+                  name="chevron-right"
+                  size={18}
+                  color={btn.disabled ? "#d1d5db" : "#6b7280"}
+                />
+              ) : (
+                <Text
+                  className={`text-[12px] font-bold ${
+                    isActive
+                      ? "text-white"
+                      : btn.disabled
+                        ? "text-gray-300"
+                        : "text-gray-500"
+                  }`}
+                >
+                  {btn.page}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 // ─── POModule ─────────────────────────────────────────────────────────────────
 
@@ -968,9 +1007,9 @@ export default function POModule() {
 
   const [viewRecord, setViewRecord] = useState<PORecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
-  const [viewInitialTab, setViewInitialTab] = useState<"details" | "pdf">(
-    "details",
-  );
+  const [viewInitialTab, setViewInitialTab] = useState<
+    "details" | "po" | "ors"
+  >("details");
 
   const [moreRecord, setMoreRecord] = useState<PORecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
@@ -1085,14 +1124,18 @@ export default function POModule() {
     })
     .sort((a, b) => {
       if (sortBy === "date_modified") {
-        const d = b.updatedAt.localeCompare(a.updatedAt);
+        const d = b.updatedAtMs - a.updatedAtMs;
         return d !== 0 ? d : b.statusId - a.statusId;
       }
-      return b.date.localeCompare(a.date);
+      return b.createdAtMs - a.createdAtMs;
     });
 
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1197,7 +1240,6 @@ export default function POModule() {
                 <RecordCard
                   record={record}
                   isEven={idx % 2 === 0}
-                  roleId={roleId}
                   statuses={statuses}
                   latestFlag={latestRemarks[record.id] ?? null}
                   onView={(r) => {
@@ -1256,30 +1298,26 @@ export default function POModule() {
           setMoreVisible(false);
           setMoreRecord(null);
         }}
-        onRemarks={() => {
-          if (moreRecord) {
-            setRemarkRecord({
-              id: moreRecord.id,
-              poNo: moreRecord.poNo,
-              prNo: moreRecord.prNo,
-              linkedPrId: moreRecord.prId,
-              supplier: moreRecord.supplier,
-            });
-            setRemarkVisible(true);
-          }
+        onRemarks={(r) => {
+          setRemarkRecord({
+            id: r.id,
+            poNo: r.poNo,
+            prNo: r.prNo,
+            linkedPrId: r.prId,
+            supplier: r.supplier,
+          });
+          setRemarkVisible(true);
         }}
-        onViewDocuments={() => {
-          if (!moreRecord) return;
-          setViewRecord(moreRecord);
-          setViewInitialTab("pdf");
+        onViewDocuments={(r) => {
+          setViewRecord(r);
+          const isOrs = r.statusId >= 13 && r.statusId <= 15;
+          setViewInitialTab(isOrs ? "ors" : "po");
           setViewVisible(true);
         }}
-        onDelete={() => {
-          if (moreRecord) {
-            setDeletePoId(moreRecord.id);
-            setDeletePoNo(moreRecord.poNo);
-            setDeleteVisible(true);
-          }
+        onDelete={(r) => {
+          setDeletePoId(r.id);
+          setDeletePoNo(r.poNo);
+          setDeleteVisible(true);
         }}
       />
 

@@ -1,26 +1,25 @@
 import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import DeletePRModal from "../(modals)/DeletePRModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-    fetchLatestRemarkByPR,
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision
+  fetchLatestRemarkByPR,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
@@ -166,14 +165,56 @@ const ID_TO_FLAG: Record<number, StatusFlag> = {
 // Flag badge styling (matches STATUS_CFG pattern)
 const STATUS_FLAGS: Record<
   StatusFlag,
-  { bg: string; text: string; dot: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }
+  {
+    bg: string;
+    text: string;
+    dot: string;
+    label: string;
+    icon: keyof typeof MaterialIcons.glyphMap;
+  }
 > = {
-  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete", icon: "check-circle" },
-  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete", icon: "error-outline" },
-  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info", icon: "report-problem" },
-  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision", icon: "refresh" },
-  on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold", icon: "pause-circle" },
-  urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent", icon: "priority-high" },
+  complete: {
+    bg: "#f0fdf4",
+    text: "#15803d",
+    dot: "#22c55e",
+    label: "Complete",
+    icon: "check-circle",
+  },
+  incomplete_info: {
+    bg: "#fef2f2",
+    text: "#dc2626",
+    dot: "#ef4444",
+    label: "Incomplete",
+    icon: "error-outline",
+  },
+  wrong_information: {
+    bg: "#fff7ed",
+    text: "#f97316",
+    dot: "#f97316",
+    label: "Wrong Info",
+    icon: "report-problem",
+  },
+  needs_revision: {
+    bg: "#fefce8",
+    text: "#eab308",
+    dot: "#eab308",
+    label: "Needs Revision",
+    icon: "refresh",
+  },
+  on_hold: {
+    bg: "#f3f4f6",
+    text: "#6b7280",
+    dot: "#9ca3af",
+    label: "On Hold",
+    icon: "pause-circle",
+  },
+  urgent: {
+    bg: "#fef2f2",
+    text: "#dc2626",
+    dot: "#ef4444",
+    label: "Urgent",
+    icon: "priority-high",
+  },
 };
 
 /** Used by RecordCard to resolve the latest flag badge from its numeric ID. */
@@ -232,12 +273,7 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   filterActive: boolean;
   onFilterToggle: () => void;
-}> = ({
-  value,
-  onChange,
-  filterActive,
-  onFilterToggle,
-}) => (
+}> = ({ value, onChange, filterActive, onFilterToggle }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <Text className="text-gray-400 text-sm">🔍</Text>
@@ -488,15 +524,7 @@ const RecordCard: React.FC<{
   latestFlag: RemarkRow | null;
   onView: (r: PRRecord) => void;
   onMore: (r: PRRecord) => void;
-}> = ({
-  record,
-  isEven,
-  roleId,
-  statuses,
-  latestFlag,
-  onView,
-  onMore,
-}) => {
+}> = ({ record, isEven, roleId, statuses, latestFlag, onView, onMore }) => {
   const statusLabel =
     statuses.find((s) => s.id === record.statusId)?.status_name ??
     `Status ${record.statusId}`;
@@ -616,9 +644,9 @@ const MoreSheet: React.FC<{
   record: PRRecord | null;
   roleId: number;
   onClose: () => void;
-  onRemarks: () => void;
-  onViewDocuments: () => void;
-  onDelete: () => void;
+  onRemarks: (r: PRRecord) => void;
+  onViewDocuments: (r: PRRecord) => void;
+  onDelete: (r: PRRecord) => void;
 }> = ({
   visible,
   record,
@@ -648,7 +676,7 @@ const MoreSheet: React.FC<{
       bg: "#ecfdf5",
       onPress: () => {
         onClose();
-        onRemarks();
+        onRemarks(record);
       },
     },
     {
@@ -659,7 +687,7 @@ const MoreSheet: React.FC<{
       bg: "#eff6ff",
       onPress: () => {
         onClose();
-        onViewDocuments();
+        onViewDocuments(record);
       },
     },
     ...(roleId === 1
@@ -672,7 +700,7 @@ const MoreSheet: React.FC<{
             bg: "#fee2e2",
             onPress: () => {
               onClose();
-              onDelete();
+              onDelete(record);
             },
           },
         ] as Action[])
@@ -780,7 +808,6 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 export default function PRModule({
   initialSubTab,
 }: { initialSubTab?: SubTab } = {}) {
-  const navigation = useNavigation();
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
 
@@ -803,9 +830,9 @@ export default function PRModule({
   // View PR modal state
   const [viewRecord, setViewRecord] = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
-  const [viewInitialTab, setViewInitialTab] = useState<"details" | "pdf">(
-    "details",
-  );
+  const [viewInitialTab, setViewInitialTab] = useState<
+    "details" | "pr" | "rfqs" | "resolution" | "abstract"
+  >("details");
 
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
@@ -817,7 +844,6 @@ export default function PRModule({
   const [deleteRecord, setDeleteRecord] = useState<PRRecord | null>(null);
   const [deleteVisible, setDeleteVisible] = useState(false);
 
-  const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Load PR status lookup table once — labels come from DB, not hardcoded strings.
@@ -878,15 +904,14 @@ export default function PRModule({
 
   // No auto-navigation; we open Canvassing when user taps "Process" in the Canvass subtab.
 
-
   const filtered = records
     .filter((r) => {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.trim().toLowerCase();
+      const prNo = (r.prNo ?? "").toLowerCase();
+      const itemDesc = (r.itemDescription ?? "").toLowerCase();
+      const office = (r.officeSection ?? "").toLowerCase();
       const matchSearch =
-        !q ||
-        r.prNo.toLowerCase().includes(q) ||
-        r.itemDescription.toLowerCase().includes(q) ||
-        r.officeSection.toLowerCase().includes(q);
+        !q || prNo.includes(q) || itemDesc.includes(q) || office.includes(q);
       const matchSection =
         sectionFilter === "All" || r.officeSection === sectionFilter;
       const matchStatus = statusFilter === null || r.statusId === statusFilter;
@@ -908,9 +933,27 @@ export default function PRModule({
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
+  useEffect(() => {
+    setPage(1);
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
+
   return (
     <View className="flex-1 bg-gray-50">
-      <SubTabRow active={activeSubTab} onSelect={setActiveSubTab} />
+      <SubTabRow
+        active={activeSubTab}
+        onSelect={(t) => {
+          setActiveSubTab(t);
+          setFilterOpen(false);
+          setStatusFilter(null);
+          setSectionFilter("All");
+          setSearchQuery("");
+          setPage(1);
+        }}
+      />
       <SearchBar
         value={searchQuery}
         onChange={(t) => {
@@ -993,7 +1036,7 @@ export default function PRModule({
               isEven={idx % 2 === 0}
               roleId={roleId}
               statuses={statuses}
-              latestFlag={latestRemarks[record.id] ?? null}
+              latestFlag={latestRemarks[String(record.id)] ?? null}
               onView={(r) => {
                 setViewRecord(r);
                 setViewInitialTab("details");
@@ -1015,49 +1058,85 @@ export default function PRModule({
           records
         </Text>
         <View className="flex-row items-center gap-1.5">
-          {[
-            { label: "‹", page: Math.max(1, page - 1), disabled: page === 1 },
-            ...Array.from(
-              { length: Math.min(5, totalPages) },
-              (_, i) => i + 1,
-            ).map((p) => ({
-              label: String(p),
-              page: p,
-              disabled: false,
-              active: p === page,
-            })),
-            {
-              label: "›",
-              page: Math.min(totalPages, page + 1),
-              disabled: page === totalPages,
-            },
-          ].map((btn, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => setPage(btn.page)}
-              disabled={btn.disabled}
-              activeOpacity={0.8}
-              className={`w-8 h-8 rounded-lg items-center justify-center border ${
-                (btn as any).active
-                  ? "bg-[#064E3B] border-[#064E3B]"
-                  : btn.disabled
-                    ? "bg-gray-50 border-gray-100"
-                    : "bg-white border-gray-200"
-              }`}
-            >
-              <Text
-                className={`text-[12px] font-bold ${
-                  (btn as any).active
-                    ? "text-white"
+          {(() => {
+            type PageBtn =
+              | {
+                  kind: "prev" | "next";
+                  label: string;
+                  page: number;
+                  disabled: boolean;
+                }
+              | {
+                  kind: "page";
+                  label: string;
+                  page: number;
+                  active: boolean;
+                  disabled: false;
+                };
+
+            const windowSize = 5;
+            const start = Math.max(
+              1,
+              Math.min(
+                page - Math.floor(windowSize / 2),
+                totalPages - windowSize + 1,
+              ),
+            );
+            const end = Math.min(totalPages, start + windowSize - 1);
+
+            const btns: PageBtn[] = [
+              {
+                kind: "prev",
+                label: "‹",
+                page: Math.max(1, page - 1),
+                disabled: page === 1,
+              },
+              ...Array.from({ length: end - start + 1 }, (_, i) => {
+                const p = start + i;
+                return {
+                  kind: "page",
+                  label: String(p),
+                  page: p,
+                  active: p === page,
+                  disabled: false,
+                } as const;
+              }),
+              {
+                kind: "next",
+                label: "›",
+                page: Math.min(totalPages, page + 1),
+                disabled: page === totalPages,
+              },
+            ];
+
+            return btns.map((btn) => (
+              <TouchableOpacity
+                key={`${btn.kind}-${btn.page}`}
+                onPress={() => setPage(btn.page)}
+                disabled={btn.disabled}
+                activeOpacity={0.8}
+                className={`w-8 h-8 rounded-lg items-center justify-center border ${
+                  btn.kind === "page" && btn.active
+                    ? "bg-[#064E3B] border-[#064E3B]"
                     : btn.disabled
-                      ? "text-gray-300"
-                      : "text-gray-500"
+                      ? "bg-gray-50 border-gray-100"
+                      : "bg-white border-gray-200"
                 }`}
               >
-                {btn.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  className={`text-[12px] font-bold ${
+                    btn.kind === "page" && btn.active
+                      ? "text-white"
+                      : btn.disabled
+                        ? "text-gray-300"
+                        : "text-gray-500"
+                  }`}
+                >
+                  {btn.label}
+                </Text>
+              </TouchableOpacity>
+            ));
+          })()}
         </View>
       </View>
 
@@ -1081,20 +1160,17 @@ export default function PRModule({
           setMoreVisible(false);
           setMoreRecord(null);
         }}
-        onRemarks={() => {
-          if (!moreRecord) return;
-          setRemarkRecord(moreRecord);
+        onRemarks={(r) => {
+          setRemarkRecord(r);
           setRemarkVisible(true);
         }}
-        onViewDocuments={() => {
-          if (!moreRecord) return;
-          setViewRecord(moreRecord);
-          setViewInitialTab("pdf");
+        onViewDocuments={(r) => {
+          setViewRecord(r);
+          setViewInitialTab("pr");
           setViewVisible(true);
         }}
-        onDelete={() => {
-          if (!moreRecord) return;
-          setDeleteRecord(moreRecord);
+        onDelete={(r) => {
+          setDeleteRecord(r);
           setDeleteVisible(true);
         }}
       />
@@ -1122,17 +1198,6 @@ export default function PRModule({
           setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
-
-      {/* Saving overlay */}
-      {saving && (
-        <View className="absolute inset-0 bg-black/20 items-center justify-center">
-          <View className="bg-white rounded-2xl px-6 py-4">
-            <Text className="text-[14px] font-semibold text-gray-700">
-              Saving…
-            </Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

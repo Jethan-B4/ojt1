@@ -20,7 +20,6 @@
  */
 
 import {
-  deleteOrsEntry,
   fetchBudgets,
   fetchOrsEntries,
   insertDivisionBudget,
@@ -33,7 +32,6 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   RefreshControl,
   ScrollView,
@@ -41,8 +39,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import DivisionBudgetSection, { YearPickerModal } from "../(components)/DivisionBudgetModule";
-import { ORSSection, type OrsForm } from "../(components)/ORSModule";
+import DivisionBudgetSection, {
+  YearPickerModal,
+} from "../(components)/DivisionBudgetModule";
+import { ORSSection } from "../(components)/ORSModule";
 import { useAuth } from "../AuthContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -68,6 +68,7 @@ export default function BudgetScreen() {
   const roleId = currentUser?.role_id ?? 0;
   const divisionId = currentUser?.division_id ?? null;
   const canEdit = EDIT_ROLES.has(roleId);
+  const canEditOrs = false;
   const isEndUser = roleId === ENDUSER_ROLE;
 
   const [year, setYear] = useState(CURRENT_YEAR);
@@ -158,62 +159,6 @@ export default function BudgetScreen() {
   ) => {
     await insertDivisionBudget(divId, yr, amount, notes);
     await load(true);
-  };
-
-  // ── ORS handlers (passed down to ORSSection) ──────────────────────────────
-
-  const handleSaveOrs = async (form: OrsForm, existing?: OrsEntryRow) => {
-    // Import helpers lazily to keep this file lean
-    const { generateOrsNumber, insertOrsEntry, updateOrsEntry } =
-      await import("@/lib/supabase");
-    const amount = parseFloat(form.amount.replace(/,/g, ""));
-    const divId = form.division_id ? parseInt(form.division_id) : null;
-    if (existing) {
-      await updateOrsEntry(existing.id, {
-        ors_no: form.ors_no.trim(),
-        pr_no: form.pr_no.trim() || null,
-        amount,
-        status: form.status,
-        notes: form.notes.trim() || null,
-      } as any);
-    } else {
-      const autoNo = form.ors_no.trim() || (await generateOrsNumber());
-      await insertOrsEntry({
-        ors_no: autoNo,
-        pr_id: null,
-        pr_no: form.pr_no.trim() || null,
-        division_id: divId,
-        fiscal_year: year,
-        amount,
-        status: form.status,
-        prepared_by: currentUser?.id ?? null,
-        approved_by: null,
-        notes: form.notes.trim() || null,
-      });
-    }
-    await load(true);
-  };
-
-  const handleDeleteOrs = (entry: OrsEntryRow) => {
-    Alert.alert(
-      "Delete ORS Entry",
-      `Remove ${entry.ors_no ?? "this ORS entry"}? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteOrsEntry(entry.id);
-              await load(true);
-            } catch (e: any) {
-              Alert.alert("Delete failed", e?.message);
-            }
-          },
-        },
-      ],
-    );
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -400,13 +345,13 @@ export default function BudgetScreen() {
         <ORSSection
           orsEntries={orsEntries}
           year={year}
-          canEdit={canEdit}
+          canEdit={canEditOrs}
           isEndUser={isEndUser}
           budgets={budgets}
           prStatusByNo={prStatusByNo}
           currentUserId={currentUser?.id}
-          onSave={handleSaveOrs}
-          onDelete={handleDeleteOrs}
+          onSave={async () => {}}
+          onDelete={() => {}}
         />
 
         {/* ── Read-only notice ── */}

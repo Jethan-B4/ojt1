@@ -26,20 +26,21 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Dimensions,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Dimensions,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
+import { YearPickerModal } from "../(components)/DivisionBudgetModule";
 import type { PRRow, PRStatusRow } from "../../lib/supabase";
 import {
-  fetchPRStatuses,
-  fetchPurchaseRequests,
-  fetchPurchaseRequestsByDivision,
+    fetchPRStatuses,
+    fetchPurchaseRequests,
+    fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase";
 import { supabase } from "../../lib/supabase/client";
 import { useAuth } from "../AuthContext";
@@ -87,6 +88,10 @@ const CLR = {
   brand500: "#10B981",
   brand100: "#A7F3D0",
 } as const;
+
+// Fiscal year filtering - Philippine fiscal year is calendar year (Jan 1 - Dec 31)
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_RANGE = Array.from({ length: 7 }, (_, i) => CURRENT_YEAR - 5 + i);
 
 /**
  * Visual config keyed by status_id — mirrors the full public.status table.
@@ -348,9 +353,63 @@ function rowToSummary(row: PRRow, statuses: PRStatusRow[]): PRSummary {
 
 // ─── Data hooks ───────────────────────────────────────────────────────────────
 
-function useAdminData() {
+async function fetchPurchaseRequestsByYear(year: number): Promise<PRRow[]> {
+  const startDate = `${year}-01-01T00:00:00.000Z`;
+  const endDate = `${year}-12-31T23:59:59.999Z`;
+  const { data, error } = await supabase
+    .from("purchase_requests")
+    .select("*")
+    .gte("created_at", startDate)
+    .lte("created_at", endDate)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PRRow[];
+}
+
+async function fetchPurchaseOrdersByYear(year: number): Promise<any[]> {
+  const startDate = `${year}-01-01T00:00:00.000Z`;
+  const endDate = `${year}-12-31T23:59:59.999Z`;
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .gte("created_at", startDate)
+    .lte("created_at", endDate);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function fetchDeliveriesByYear(year: number): Promise<any[]> {
+  const startDate = `${year}-01-01T00:00:00.000Z`;
+  const endDate = `${year}-12-31T23:59:59.999Z`;
+  const { data, error } = await supabase
+    .from("deliveries")
+    .select("*")
+    .gte("created_at", startDate)
+    .lte("created_at", endDate);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function fetchPaymentsByYear(year: number): Promise<any[]> {
+  const startDate = `${year}-01-01T00:00:00.000Z`;
+  const endDate = `${year}-12-31T23:59:59.999Z`;
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .gte("created_at", startDate)
+    .lte("created_at", endDate);
+  if (error) throw error;
+  return data ?? [];
+}
+
+function useAdminData(year: number) {
   const [rows, setRows] = useState<PRRow[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
+  const [phaseCounts, setPhaseCounts] = useState({
+    pr: 0,
+    po: 0,
+    delivery: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -360,19 +419,26 @@ function useAdminData() {
     setLoading(true);
     setError(null);
     try {
-      const [allRows, allStatuses] = await Promise.all([
-        fetchPurchaseRequests(),
+      const [allRows, allStatuses, poCount, deliveryCount] = await Promise.all([
+        fetchPurchaseRequestsByYear(year),
         fetchPRStatuses(),
+        fetchPurchaseOrdersByYear(year),
+        fetchDeliveriesByYear(year),
       ]);
       setRows(allRows);
       setStatuses(allStatuses);
+      setPhaseCounts({
+        pr: allRows.length,
+        po: poCount.length,
+        delivery: deliveryCount.length,
+      });
       setLastRefresh(new Date());
     } catch (e: any) {
       setError(e?.message ?? "Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [year]);
 
   // Real-time subscription — Admin sees all rows, so we listen to every change.
   useEffect(() => {
@@ -455,6 +521,7 @@ function useAdminData() {
     statCards,
     statusBreakdown,
     statuses,
+    phaseCounts,
     loading,
     error,
     refresh: load,
@@ -1419,19 +1486,16 @@ const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
         icon: "manage-accounts",
         nav: "UserManagement",
       },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     2: [
       { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
       { label: "All PRs", icon: "description", nav: "Procurement" },
       { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     3: [
       { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
       { label: "All PRs", icon: "description", nav: "Procurement" },
       { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     4: [
       { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
@@ -1443,22 +1507,18 @@ const ACTION_GRID: Record<number, { label: string; icon: any; nav: string }[]> =
       { label: "Review Queue", icon: "pending-actions", nav: "Procurement" },
       { label: "All PRs", icon: "description", nav: "Procurement" },
       { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     6: [
       { label: "New PR", icon: "add-circle-outline", nav: "Procurement" },
       { label: "Track PR", icon: "track-changes", nav: "Procurement" },
       { label: "View History", icon: "history", nav: "ProcurementLog" },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     8: [
       { label: "All PRs", icon: "description", nav: "Procurement" },
       { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
       { label: "Purchase Orders", icon: "receipt-long", nav: "PurchaseOrder" },
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
     ],
     7: [
-      { label: "Canvassing", icon: "gavel", nav: "Canvassing" },
       { label: "View PRs", icon: "description", nav: "Procurement" },
       { label: "Procurement Log", icon: "history", nav: "ProcurementLog" },
     ],
@@ -1841,17 +1901,20 @@ export default function DashboardScreen({ navigation }: any) {
 
 function AdminDashboard({ navigation }: any) {
   const { fullname, roleName } = useCurrentUser();
+  const [year, setYear] = useState(CURRENT_YEAR);
+  const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const {
     prs,
     recent,
     statCards,
     statusBreakdown,
     statuses,
+    phaseCounts,
     loading,
     error,
     refresh,
     lastRefresh,
-  } = useAdminData();
+  } = useAdminData(year);
 
   useFocusEffect(
     useCallback(() => {
@@ -1881,15 +1944,49 @@ function AdminDashboard({ navigation }: any) {
         />
       }
     >
-      <WelcomeHeader
-        roleLabel={roleName}
-        username={fullname || "Administrator"}
-      />
+      {/* ── Page header ── */}
+      <View style={{ backgroundColor: "#064E3B", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <View>
+            <Text style={{ fontSize: 9.5, fontWeight: "600", letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.4)" }}>
+              DAR · Procurement
+            </Text>
+            <Text style={{ fontSize: 20, fontWeight: "800", color: "#ffffff", marginTop: 2 }}>
+              Dashboard
+            </Text>
+            <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+              System-wide monitoring and KPIs
+            </Text>
+          </View>
+          {/* Year selector */}
+          <TouchableOpacity
+            onPress={() => setYearPickerOpen(true)}
+            activeOpacity={0.8}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "rgba(255,255,255,0.1)",
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              marginTop: 4,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.15)",
+            }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#ffffff" }}>
+              FY {year}
+            </Text>
+            <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {error && <ErrorBanner message={error} onRetry={refresh} />}
       <LastRefreshedBadge time={lastRefresh} />
 
-      {/* ── KPI tiles — 4 across ── */}
+      {/* ── Phase Counts KPI tiles — 4 across ── */}
       <View
         style={{
           flexDirection: "row",
@@ -1898,9 +1995,42 @@ function AdminDashboard({ navigation }: any) {
           gap: 6,
         }}
       >
-        {statCards.map((card) => (
-          <StatTile key={card.label} card={card} />
-        ))}
+        <StatTile
+          key="PR"
+          card={{
+            label: "PR",
+            value: phaseCounts.pr,
+            icon: "description",
+            accent: CLR.brand700,
+          }}
+        />
+        <StatTile
+          key="PO"
+          card={{
+            label: "PO",
+            value: phaseCounts.po,
+            icon: "receipt",
+            accent: "#047857",
+          }}
+        />
+        <StatTile
+          key="Delivery"
+          card={{
+            label: "Delivery",
+            value: phaseCounts.delivery,
+            icon: "local-shipping",
+            accent: "#0369a1",
+          }}
+        />
+        <StatTile
+          key="Payment"
+          card={{
+            label: "Payment",
+            value: 0,
+            icon: "payment",
+            accent: "#7c3aed",
+          }}
+        />
       </View>
 
       <LifecycleSummaryCard prs={prs} />
@@ -1969,6 +2099,16 @@ function AdminDashboard({ navigation }: any) {
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={1} />
+
+      <YearPickerModal
+        visible={yearPickerOpen}
+        selected={year}
+        onSelect={(y: number) => {
+          setYear(y);
+          setYearPickerOpen(false);
+        }}
+        onClose={() => setYearPickerOpen(false)}
+      />
     </ScrollView>
   );
 }

@@ -11,25 +11,25 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import POPreviewPanel, {
-  buildPOHtml,
-  usePOPreviewActions,
-  type POPreviewData,
+    buildPOHtml,
+    usePOPreviewActions,
+    type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import {
-  fetchPOStatuses,
-  fetchPOWithItemsById,
-  type POItemRow,
-  type PORow,
+    fetchPOStatuses,
+    fetchPOWithItemsById,
+    type POItemRow,
+    type PORow,
 } from "../../lib/supabase/po";
 import type { PORecord } from "../procurement/POModule";
 
@@ -98,7 +98,7 @@ function poCfgFor(id: number | null | undefined) {
 interface ViewPOModalProps {
   visible: boolean;
   record: PORecord | null;
-  initialTab?: "details" | "pdf";
+  initialTab?: "details" | "po" | "ors";
   onClose: () => void;
 }
 
@@ -110,7 +110,7 @@ export default function ViewPOModal({
   initialTab,
   onClose,
 }: ViewPOModalProps) {
-  const [tab, setTab] = useState<"details" | "pdf">("details");
+  const [tab, setTab] = useState<"details" | "po" | "ors">("details");
   const [header, setHeader] = useState<PORow | null>(null);
   const [items, setItems] = useState<POItemRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -226,7 +226,7 @@ export default function ViewPOModal({
 
           {/* Tab toggle */}
           <View className="flex-row bg-black/20 rounded-xl p-1">
-            {(["details", "pdf"] as const).map((t) => (
+            {(["details", "po", "ors"] as const).map((t) => (
               <TouchableOpacity
                 key={t}
                 onPress={() => setTab(t)}
@@ -236,7 +236,7 @@ export default function ViewPOModal({
                 <Text
                   className={`text-[12.5px] font-bold ${tab === t ? "text-[#064E3B]" : "text-white/50"}`}
                 >
-                  {t === "details" ? "Details" : "PDF Preview"}
+                  {t === "details" ? "Details" : t.toUpperCase()}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -251,8 +251,8 @@ export default function ViewPOModal({
           </View>
         )}
 
-        {/* PDF tab */}
-        {!loading && tab === "pdf" && (
+        {/* PO/ORS Document tab */}
+        {!loading && tab !== "details" && (
           <POPreviewPanel
             html={html}
             showActions
@@ -336,12 +336,15 @@ function DetailsView({
               </Text>
             </View>
           </InfoRow>
-          <InfoRow
-            label="Total Amount"
-            value={`₱${fmt(record.totalAmount)}`}
-            mono
-            last
-          />
+          <InfoRow label="Total Amount" mono last>
+            <Text
+              className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
+              style={{ fontFamily: MONO }}
+            >
+              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              {fmt(record.totalAmount)}
+            </Text>
+          </InfoRow>
         </View>
       </View>
 
@@ -380,10 +383,10 @@ function DetailsView({
                 ) : null}
                 <Chip label="Unit" value={item.unit} />
                 <Chip label="Qty" value={String(item.quantity)} />
-                <Chip label="Price" value={`₱${fmt(item.unit_price)}`} />
+                <Chip label="Price" value={`${"\u20B1"}${fmt(item.unit_price)}`} />
                 <Chip
                   label="Total"
-                  value={`₱${fmt(item.subtotal)}`}
+                  value={`${"\u20B1"}${fmt(item.subtotal)}`}
                   highlight
                 />
               </View>
@@ -401,7 +404,8 @@ function DetailsView({
           className="text-[20px] font-black text-white"
           style={{ fontFamily: MONO }}
         >
-          ₱{fmt(record.totalAmount)}
+          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          {fmt(record.totalAmount)}
         </Text>
       </View>
 

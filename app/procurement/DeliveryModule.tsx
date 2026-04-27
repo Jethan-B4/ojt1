@@ -5,12 +5,7 @@ import {
   fetchDeliveryPOContext,
   fetchDeliveryStatuses,
   fetchIARByDelivery,
-  fetchLOAByDelivery,
-  insertDeliveryProcessRemark,
-  updateDelivery,
-  upsertDVByDelivery,
-  upsertIARByDelivery,
-  upsertLOAByDelivery,
+  fetchLOAByDelivery
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -29,8 +24,6 @@ import PORemarkSheet, {
   type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
-import ProcessDeliveryModal from "../(modals)/ProcessDeliveryModal";
-import { type StatusFlag } from "../(modals)/ProcessPRModal";
 import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
@@ -399,25 +392,17 @@ const MoreSheet: React.FC<{
   visible: boolean;
   record: DeliveryRecord | null;
   roleId: number;
-  canProcess: boolean;
-  statusLabel: string;
   onClose: () => void;
   onRemarks: () => void;
   onView: () => void;
-  onProcess: () => void;
-  onOverride: () => void;
   onDelete: () => void;
 }> = ({
   visible,
   record,
   roleId,
-  canProcess,
-  statusLabel,
   onClose,
   onRemarks,
   onView,
-  onProcess,
-  onOverride,
   onDelete,
 }) => {
   if (!record) return null;
@@ -455,34 +440,8 @@ const MoreSheet: React.FC<{
         onView();
       },
     },
-    ...(canProcess
-      ? ([
-          {
-            icon: "arrow-forward",
-            label: "Process",
-            sublabel: "Update fields and advance to next step",
-            color: "#064E3B",
-            bg: "#ecfdf5",
-            onPress: () => {
-              onClose();
-              onProcess();
-            },
-          },
-        ] as Action[])
-      : []),
     ...(roleId === 1
       ? ([
-          {
-            icon: "admin-panel-settings",
-            label: "Override Status",
-            sublabel: "Force delivery to any Phase 3 status",
-            color: "#1d4ed8",
-            bg: "#eff6ff",
-            onPress: () => {
-              onClose();
-              onOverride();
-            },
-          },
           {
             icon: "delete-forever",
             label: "Delete Delivery",
@@ -543,7 +502,7 @@ const MoreSheet: React.FC<{
                   className="text-[10.5px] font-bold"
                   style={{ color: c.text }}
                 >
-                  {statusLabel}
+                  {cfg(record.statusId).label}
                 </Text>
               </View>
             </View>
@@ -643,12 +602,17 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   </View>
 );
 
-const canRoleProcess = (roleId: number, statusId: number) => {
-  if (roleId === 1) return true;
-  if (roleId === 8 && [18, 19, 20, 21, 22, 23].includes(statusId)) return true;
-  if (roleId === 2 && statusId === 24) return true;
-  return false;
-};
+// Monitoring-only: no processing
+const canRoleProcess = (_roleId: number, _statusId: number) => false;
+
+// Status flags for remarks
+type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
 
 const FLAG_TO_ID: Record<StatusFlag, number> = {
   complete: 2,
@@ -657,6 +621,27 @@ const FLAG_TO_ID: Record<StatusFlag, number> = {
   needs_revision: 5,
   on_hold: 6,
   urgent: 7,
+};
+
+const ID_TO_FLAG: Record<number, StatusFlag> = {
+  2: "complete",
+  3: "incomplete_info",
+  4: "wrong_information",
+  5: "needs_revision",
+  6: "on_hold",
+  7: "urgent",
+};
+
+const STATUS_FLAGS: Record<
+  StatusFlag,
+  { bg: string; text: string; dot: string; label: string }
+> = {
+  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete" },
+  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete" },
+  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info" },
+  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision" },
+  on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold" },
+  urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent" },
 };
 
 const cfg = (id: number) =>
@@ -766,8 +751,6 @@ export default function DeliveryModule() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [viewOpen, setViewOpen] = useState(false);
-  const [active, setActive] = useState<any>(null);
-  const [processOpen, setProcessOpen] = useState(false);
   const [moreRecord, setMoreRecord] = useState<DeliveryRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [deleteVisible, setDeleteVisible] = useState(false);
@@ -775,19 +758,6 @@ export default function DeliveryModule() {
     string | number | null
   >(null);
   const [deleteDeliveryNo, setDeleteDeliveryNo] = useState<string | null>(null);
-  const [overrideVisible, setOverrideVisible] = useState(false);
-  const [overrideRecord, setOverrideRecord] = useState<DeliveryRecord | null>(
-    null,
-  );
-
-  const [drNo, setDrNo] = useState("");
-  const [soaNo, setSoaNo] = useState("");
-  const [notes, setNotes] = useState("");
-  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
-  const [flagPickerOpen, setFlagPickerOpen] = useState(false);
-  const [iar, setIar] = useState<any>(null);
-  const [loa, setLoa] = useState<any>(null);
-  const [dv, setDv] = useState<any>(null);
   const [viewTab, setViewTab] = useState<"iar" | "loa" | "dv">("iar");
   const [remarkVisible, setRemarkVisible] = useState(false);
   const [remarkRecord, setRemarkRecord] = useState<PORemarkSheetRecord | null>(
@@ -861,162 +831,16 @@ export default function DeliveryModule() {
 
   const openView = async (r: DeliveryRecord) => {
     try {
-      setActive(r.raw);
       const [i, l, d] = await Promise.all([
         fetchIARByDelivery(r.id),
         fetchLOAByDelivery(r.id),
         fetchDVByDelivery(r.id),
       ]);
-      setIar(i);
-      setLoa(l);
-      setDv(d);
-      setViewTab("iar");
       setViewOpen(true);
     } catch (e: any) {
       Alert.alert(
         "Load failed",
         e?.message ?? "Could not load delivery documents.",
-      );
-    }
-  };
-
-  const openProcess = async (r: DeliveryRecord) => {
-    try {
-      setActive(r.raw);
-      setDrNo(r.raw?.dr_no ?? "");
-      setSoaNo(r.raw?.soa_no ?? "");
-      setNotes(r.raw?.notes ?? "");
-      setStatusFlag(null);
-      const [i, l, d] = await Promise.all([
-        fetchIARByDelivery(r.id),
-        fetchLOAByDelivery(r.id),
-        fetchDVByDelivery(r.id),
-      ]);
-      setIar(i);
-      setLoa(l);
-      setDv(d);
-      setProcessOpen(true);
-    } catch (e: any) {
-      Alert.alert(
-        "Load failed",
-        e?.message ?? "Could not load processing details.",
-      );
-    }
-  };
-
-  const submitProcess = async () => {
-    if (!active) return;
-    try {
-      const currentStatus = Number(active.status_id ?? 0);
-      let nextStatus = currentStatus;
-      if (active.status_id === 18) {
-        nextStatus = 19;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          dr_no: drNo || null,
-          soa_no: soaNo || null,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 19) {
-        nextStatus = 20;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          dr_no: drNo || null,
-          soa_no: soaNo || null,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 20) {
-        await upsertIARByDelivery(active.id, {
-          iar_no: iar?.iar_no ?? "",
-          invoice_no: iar?.invoice_no ?? "",
-          invoice_date: iar?.invoice_date ?? "",
-          requisitioning_office:
-            iar?.requisitioning_office ?? active.office_section ?? "",
-          responsibility_center: iar?.responsibility_center ?? "",
-          inspected_at: iar?.inspected_at ?? "",
-          received_at: iar?.received_at ?? "",
-          inspector_name: iar?.inspector_name ?? "",
-          supply_officer_name: iar?.supply_officer_name ?? "",
-        });
-        nextStatus = 21;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 21) {
-        nextStatus = 22;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 22) {
-        await upsertLOAByDelivery(active.id, {
-          loa_no: loa?.loa_no ?? "",
-          invoice_no: loa?.invoice_no ?? "",
-          invoice_date: loa?.invoice_date ?? "",
-          accepted_at: loa?.accepted_at ?? "",
-          accepted_by_name: loa?.accepted_by_name ?? "",
-          accepted_by_title: loa?.accepted_by_title ?? "",
-        });
-        nextStatus = 23;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 23) {
-        await upsertDVByDelivery(active.id, {
-          dv_no: dv?.dv_no ?? "",
-          fund_cluster: dv?.fund_cluster ?? "",
-          ors_no: dv?.ors_no ?? "",
-          payee: dv?.payee ?? active.supplier ?? "",
-          payee_tin: dv?.payee_tin ?? "",
-          address: dv?.address ?? "",
-          amount_due: dv?.amount_due ?? "",
-          particulars: dv?.particulars ?? "",
-          responsibility_center: dv?.responsibility_center ?? "",
-          mfo_pap: dv?.mfo_pap ?? "",
-          mode_of_payment: dv?.mode_of_payment ?? "",
-          certified_by: dv?.certified_by ?? "",
-          approved_by: dv?.approved_by ?? "",
-        });
-        nextStatus = 24;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          notes: notes || null,
-        });
-      } else if (active.status_id === 24) {
-        nextStatus = 35;
-        await updateDelivery(active.id, {
-          status_id: nextStatus,
-          notes: notes || null,
-        });
-      } else {
-        await updateDelivery(active.id, { notes: notes || null });
-      }
-
-      const flagId = statusFlag ? FLAG_TO_ID[statusFlag] : null;
-      const statusLabel =
-        statuses.find((s) => s.id === nextStatus)?.status_name ??
-        cfg(nextStatus).label;
-      const noteText =
-        notes.trim() ||
-        `Forwarded delivery from status ${currentStatus} to ${nextStatus} (${statusLabel}).`;
-      await insertDeliveryProcessRemark(
-        Number(active.id),
-        (currentUser as any)?.id ?? null,
-        noteText,
-        flagId ?? null,
-        "delivery",
-      );
-
-      setProcessOpen(false);
-      setStatusFlag(null);
-      await load();
-      Alert.alert("Success", "Delivery status updated.");
-    } catch (e: any) {
-      Alert.alert(
-        "Process failed",
-        e?.message ?? "Could not process delivery.",
       );
     }
   };
@@ -1257,15 +1081,6 @@ export default function DeliveryModule() {
         visible={moreVisible}
         record={moreRecord}
         roleId={roleId}
-        canProcess={
-          moreRecord ? canRoleProcess(roleId, moreRecord.statusId) : false
-        }
-        statusLabel={
-          moreRecord
-            ? (statuses.find((s) => s.id === moreRecord.statusId)
-                ?.status_name ?? cfg(moreRecord.statusId).label)
-            : ""
-        }
         onClose={() => {
           setMoreVisible(false);
           setMoreRecord(null);
@@ -1278,10 +1093,6 @@ export default function DeliveryModule() {
           if (!moreRecord) return;
           void openView(moreRecord);
         }}
-        onProcess={() => {
-          if (!moreRecord) return;
-          void openProcess(moreRecord);
-        }}
         onDelete={() => {
           if (!moreRecord) return;
           setDeleteDeliveryId(moreRecord.id);
@@ -1290,11 +1101,6 @@ export default function DeliveryModule() {
           setMoreVisible(false);
           setMoreRecord(null);
         }}
-        onOverride={() => {
-          if (!moreRecord) return;
-          setOverrideRecord(moreRecord);
-          setOverrideVisible(true);
-        }}
       />
 
       <ViewDeliveryModal
@@ -1302,54 +1108,8 @@ export default function DeliveryModule() {
         onClose={() => setViewOpen(false)}
         viewTab={viewTab}
         setViewTab={setViewTab}
-        active={active}
-        iar={iar}
-        loa={loa}
-        dv={dv}
+        deliveryId={moreRecord?.id}
       />
-      <ProcessDeliveryModal
-        visible={processOpen}
-        onClose={() => setProcessOpen(false)}
-        onSubmit={submitProcess}
-        active={active}
-        statusLabel={
-          statuses.find((s) => s.id === Number(active?.status_id ?? 0))
-            ?.status_name ?? cfg(active?.status_id ?? 18).label
-        }
-        drNo={drNo}
-        setDrNo={setDrNo}
-        soaNo={soaNo}
-        setSoaNo={setSoaNo}
-        notes={notes}
-        setNotes={setNotes}
-        iar={iar}
-        setIar={setIar}
-        loa={loa}
-        setLoa={setLoa}
-        dv={dv}
-        setDv={setDv}
-        onPreviewIAR={() => {
-          setViewTab("iar");
-          setViewOpen(true);
-        }}
-        onPreviewLOA={() => {
-          setViewTab("loa");
-          setViewOpen(true);
-        }}
-        onPreviewDV={() => {
-          setViewTab("dv");
-          setViewOpen(true);
-        }}
-        statusFlag={statusFlag}
-        onPressStatusFlag={() => setFlagPickerOpen(true)}
-        flagPickerOpen={flagPickerOpen}
-        onCloseFlagPicker={() => setFlagPickerOpen(false)}
-        onSelectStatusFlag={(f: StatusFlag | null) => {
-          setStatusFlag(f);
-          setFlagPickerOpen(false);
-        }}
-      />
-
       <PORemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
@@ -1376,73 +1136,6 @@ export default function DeliveryModule() {
           setDeleteDeliveryNo(null);
         }}
       />
-
-      <Modal
-        visible={overrideVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setOverrideVisible(false);
-          setOverrideRecord(null);
-        }}
-      >
-        <View className="flex-1 bg-black/50 justify-center px-5">
-          <View className="bg-white rounded-2xl p-4 max-h-[80%]">
-            <Text className="text-[13px] font-extrabold text-gray-900 mb-1">
-              Override delivery status
-            </Text>
-            <Text className="text-[11px] text-gray-500 mb-3">
-              {overrideRecord?.deliveryNo ?? ""} · Admin only
-            </Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {[18, 19, 20, 21, 22, 23, 24, 27].map((sid) => {
-                const label =
-                  statuses.find((s) => s.id === sid)?.status_name ??
-                  cfg(sid).label;
-                return (
-                  <TouchableOpacity
-                    key={sid}
-                    onPress={async () => {
-                      if (!overrideRecord) return;
-                      try {
-                        await updateDelivery(overrideRecord.id, {
-                          status_id: sid,
-                        });
-                        setOverrideVisible(false);
-                        setOverrideRecord(null);
-                        await load();
-                        Alert.alert("Success", "Delivery status updated.");
-                      } catch (e: any) {
-                        Alert.alert(
-                          "Failed",
-                          e?.message ?? "Could not override status.",
-                        );
-                      }
-                    }}
-                    className="py-3 border-b border-gray-100"
-                  >
-                    <Text className="text-[12px] font-bold text-gray-800">
-                      {label}
-                    </Text>
-                    <Text className="text-[10px] text-gray-400">ID {sid}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <TouchableOpacity
-              onPress={() => {
-                setOverrideVisible(false);
-                setOverrideRecord(null);
-              }}
-              className="mt-3 py-2.5 rounded-xl bg-gray-100 items-center"
-            >
-              <Text className="text-[12px] font-bold text-gray-600">
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

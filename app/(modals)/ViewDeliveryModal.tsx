@@ -1,7 +1,8 @@
 import DVPreviewPanel, { buildDVHtml } from "@/app/(components)/DVPreviewPanel";
 import IARPreviewPanel, { buildIARHtml } from "@/app/(components)/IARPreviewPanel";
 import LOAPreviewPanel, { buildLOAHtml } from "@/app/(components)/LOAPreviewPanel";
-import React from "react";
+import { fetchDVByDelivery, fetchDeliveryById, fetchIARByDelivery, fetchLOAByDelivery } from "@/lib/supabase/delivery";
+import React, { useEffect, useState } from "react";
 import { Modal, Text, TouchableOpacity, View } from "react-native";
 
 export default function ViewDeliveryModal({
@@ -9,20 +10,40 @@ export default function ViewDeliveryModal({
   onClose,
   viewTab,
   setViewTab,
-  active,
-  iar,
-  loa,
-  dv,
+  deliveryId,
 }: {
   visible: boolean;
   onClose: () => void;
   viewTab: "iar" | "loa" | "dv";
   setViewTab: (v: "iar" | "loa" | "dv") => void;
-  active: any;
-  iar: any;
-  loa: any;
-  dv: any;
+  deliveryId?: string | number | null;
 }) {
+  const [active, setActive] = useState<any>(null);
+  const [iar, setIar] = useState<any>(null);
+  const [loa, setLoa] = useState<any>(null);
+  const [dv, setDv] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (visible && deliveryId) {
+      setLoading(true);
+      const id = Number(deliveryId);
+      Promise.all([
+        fetchDeliveryById(id),
+        fetchIARByDelivery(id),
+        fetchLOAByDelivery(id),
+        fetchDVByDelivery(id),
+      ]).then(([deliveryData, iarData, loaData, dvData]) => {
+        setActive(deliveryData);
+        setIar(iarData);
+        setLoa(loaData);
+        setDv(dvData);
+        setLoading(false);
+      }).catch(() => {
+        setLoading(false);
+      });
+    }
+  }, [visible, deliveryId]);
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 bg-white">
