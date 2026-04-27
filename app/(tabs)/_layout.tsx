@@ -1,10 +1,10 @@
 /* eslint-disable import/namespace, import/no-named-as-default, import/no-named-as-default-member */
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import {
-    createDrawerNavigator,
-    DrawerContentScrollView,
-    DrawerItem,
-    DrawerItemList,
+  createDrawerNavigator,
+  DrawerContentScrollView,
+  DrawerItem,
+  DrawerItemList,
 } from "@react-navigation/drawer";
 import { Image } from "expo-image";
 import * as Notifications from "expo-notifications";
@@ -307,7 +307,9 @@ function CustomDrawer(props: any & { onSignOut: () => void }) {
             icon={({ color, size }) => (
               <MaterialIcons name="manage-accounts" size={size} color={color} />
             )}
-            focused={props.state.routes[props.state.index].name === "UserManagement"}
+            focused={
+              props.state.routes[props.state.index].name === "UserManagement"
+            }
             activeTintColor="#ffffff"
             activeBackgroundColor="#10B981"
             inactiveTintColor="#CBD5E1"

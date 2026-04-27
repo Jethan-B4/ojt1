@@ -7,4 +7,10 @@ module.exports = defineConfig([
   {
     ignores: ['dist/*'],
   },
+  {
+    files: ['app/(tabs)/procurement.tsx'],
+    rules: {
+      'import/namespace': 'off',
+    },
+  },
 ]);

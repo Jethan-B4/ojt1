@@ -4,32 +4,23 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
-import CancelPRModal from "../(modals)/CancelPRModal";
 import DeletePRModal from "../(modals)/DeletePRModal";
-import ProcessPRModal, {
-  STATUS_FLAGS,
-  type ProcessRecord,
-  type StatusFlag,
-} from "../(modals)/ProcessPRModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-  fetchLatestRemarkByPR,
-  fetchPRStatuses,
-  fetchPurchaseRequests,
-  fetchPurchaseRequestsByDivision,
-  updatePRStatus,
+    fetchLatestRemarkByPR,
+    fetchPRStatuses,
+    fetchPurchaseRequests,
+    fetchPurchaseRequestsByDivision
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 
@@ -152,8 +143,14 @@ const fmt = (n: number) =>
 
 type SortBy = "date_created" | "date_modified";
 
-// role_id 2 = Division Head, 3 = BAC, 4 = Budget, 5 = PARPO
-const PROCESS_ROLES = new Set([2, 3, 4, 5]);
+// Status flags for remark badges
+type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
 
 // ─── Flag ID helpers (display only — full mapping lives in RemarkSheet) ───────
 
@@ -164,6 +161,19 @@ const ID_TO_FLAG: Record<number, StatusFlag> = {
   5: "needs_revision",
   6: "on_hold",
   7: "urgent",
+};
+
+// Flag badge styling (matches STATUS_CFG pattern)
+const STATUS_FLAGS: Record<
+  StatusFlag,
+  { bg: string; text: string; dot: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }
+> = {
+  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete", icon: "check-circle" },
+  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete", icon: "error-outline" },
+  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info", icon: "report-problem" },
+  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision", icon: "refresh" },
+  on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold", icon: "pause-circle" },
+  urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent", icon: "priority-high" },
 };
 
 /** Used by RecordCard to resolve the latest flag badge from its numeric ID. */
@@ -477,7 +487,6 @@ const RecordCard: React.FC<{
   statuses: PRStatusRow[];
   latestFlag: RemarkRow | null;
   onView: (r: PRRecord) => void;
-  onProcess: (r: PRRecord) => void;
   onMore: (r: PRRecord) => void;
 }> = ({
   record,
@@ -486,7 +495,6 @@ const RecordCard: React.FC<{
   statuses,
   latestFlag,
   onView,
-  onProcess,
   onMore,
 }) => {
   const statusLabel =
@@ -592,20 +600,11 @@ const RecordCard: React.FC<{
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => onProcess(record)}
-          activeOpacity={0.8}
-          className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
-        >
-          <Text className="text-white text-[12px] font-bold">Process</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
-          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
+          className="flex-1 bg-emerald-700 rounded-xl py-2 items-center"
         >
-          <Text className="text-white text-[11px] font-bold tracking-widest">
-            •••
-          </Text>
+          <Text className="text-white text-[12px] font-bold">More</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -619,7 +618,6 @@ const MoreSheet: React.FC<{
   onClose: () => void;
   onRemarks: () => void;
   onViewDocuments: () => void;
-  onCancel: () => void;
   onDelete: () => void;
 }> = ({
   visible,
@@ -628,7 +626,6 @@ const MoreSheet: React.FC<{
   onClose,
   onRemarks,
   onViewDocuments,
-  onCancel,
   onDelete,
 }) => {
   if (!record) return null;
@@ -668,21 +665,10 @@ const MoreSheet: React.FC<{
     ...(roleId === 1
       ? ([
           {
-            icon: "cancel",
-            label: "Cancel PR",
-            sublabel: "Void this PR and stop further processing",
-            color: "#b91c1c",
-            bg: "#fff1f2",
-            onPress: () => {
-              onClose();
-              onCancel();
-            },
-          },
-          {
-            icon: "delete-forever",
+            icon: "delete-outline",
             label: "Delete PR",
-            sublabel: "Permanently remove PR and linked records",
-            color: "#7f1d1d",
+            sublabel: "Permanently remove this PR from the system",
+            color: "#dc2626",
             bg: "#fee2e2",
             onPress: () => {
               onClose();
@@ -821,30 +807,15 @@ export default function PRModule({
     "details",
   );
 
-  // Process PR modal state (Division Head / BAC / Budget)
-  const [processRecord, setProcessRecord] = useState<ProcessRecord | null>(
-    null,
-  );
-  const [processVisible, setProcessVisible] = useState(false);
-  const [processRoleOverride, setProcessRoleOverride] = useState<number | null>(
-    null,
-  );
-  const [cancelVisible, setCancelVisible] = useState(false);
-  const [cancelRecord, setCancelRecord] = useState<{
-    id: string;
-    prNo: string;
-  } | null>(null);
-  const [deleteVisible, setDeleteVisible] = useState(false);
-  const [deleteRecord, setDeleteRecord] = useState<{
-    id: string;
-    prNo: string;
-  } | null>(null);
-
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [remarkRecord, setRemarkRecord] = useState<PRRecord | null>(null);
   const [remarkVisible, setRemarkVisible] = useState(false);
+
+  // Delete modal state (Admin only)
+  const [deleteRecord, setDeleteRecord] = useState<PRRecord | null>(null);
+  const [deleteVisible, setDeleteVisible] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -860,9 +831,8 @@ export default function PRModule({
   const loadPRs = useCallback(async () => {
     try {
       let rows: PRRow[] = [];
-      // role_id 1 (Admin), PROCESS_ROLES (2-5), and role_id 8 (Supply) see all PRs.
-      const canSeeAll =
-        roleId === 1 || roleId === 8 || PROCESS_ROLES.has(roleId);
+      // role_id 1 (Admin) and role_id 8 (Supply) see all PRs.
+      const canSeeAll = roleId === 1 || roleId === 8;
 
       const allRows = canSeeAll
         ? await fetchPurchaseRequests()
@@ -1029,170 +999,6 @@ export default function PRModule({
                 setViewInitialTab("details");
                 setViewVisible(true);
               }}
-              onProcess={async (r) => {
-                // End User initial processing: Pending (1) → Div. Head (2)
-                if (roleId === 6 && r.statusId === 1) {
-                  Alert.alert(
-                    "Forward to Division Head",
-                    "Do you want to forward this PR to the Division Head for review?",
-                    [
-                      {
-                        text: "Cancel",
-                        onPress: () => {},
-                        style: "cancel",
-                      },
-                      {
-                        text: "Confirm",
-                        onPress: async () => {
-                          try {
-                            setSaving(true);
-                            await updatePRStatus(r.id, 2);
-                            setRecords((prev) =>
-                              prev.map((x) =>
-                                x.id === r.id ? { ...x, statusId: 2 } : x,
-                              ),
-                            );
-                            Alert.alert(
-                              "Success",
-                              "PR forwarded to Division Head.",
-                            );
-                          } catch (e: any) {
-                            Alert.alert(
-                              "Failed",
-                              e?.message ?? "Could not update PR status.",
-                            );
-                          } finally {
-                            setSaving(false);
-                          }
-                        },
-                        style: "default",
-                      },
-                    ],
-                  );
-                  return;
-                }
-                if (roleId === 1) {
-                  if (r.statusId >= 6 && r.statusId < 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                    return;
-                  }
-                  if (r.statusId === 11) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
-                    return;
-                  }
-                  const mapped =
-                    r.statusId === 2 ||
-                    r.statusId === 3 ||
-                    r.statusId === 4 ||
-                    r.statusId === 5
-                      ? r.statusId
-                      : 2;
-                  setProcessRoleOverride(mapped);
-                  setProcessRecord({ id: r.id, prNo: r.prNo });
-                  setProcessVisible(true);
-                  return;
-                }
-                // Division Head can process when status <= 2
-                if (roleId === 2) {
-                  if (r.statusId <= 2) {
-                    try {
-                      if (r.statusId !== 2) {
-                        setSaving(true);
-                        await updatePRStatus(r.id, 2);
-                        setRecords((prev) =>
-                          prev.map((x) =>
-                            x.id === r.id ? { ...x, statusId: 2 } : x,
-                          ),
-                        );
-                      }
-                    } catch (e: any) {
-                      Alert.alert(
-                        "Failed",
-                        e?.message ?? "Could not update PR status.",
-                      );
-                    } finally {
-                      setSaving(false);
-                    }
-                    setProcessRecord({ id: r.id, prNo: r.prNo });
-                    setProcessVisible(true);
-                    return;
-                  }
-                  Alert.alert(
-                    "Not Available",
-                    "This PR is already beyond the Division Head step.",
-                  );
-                  return;
-                }
-                if (roleId === 3) {
-                  if (r.statusId === 3) {
-                    setProcessRecord({ id: r.id, prNo: r.prNo });
-                    setProcessVisible(true);
-                    return;
-                  }
-                  if (r.statusId >= 6 && r.statusId <= 9) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                    return;
-                  }
-                  if (r.statusId === 10) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
-                    return;
-                  }
-                  Alert.alert(
-                    "Not Available",
-                    "This PR is not yet in the BAC step or canvassing phase.",
-                  );
-                  return;
-                }
-                if (roleId === 7 || roleId === 6) {
-                  if (r.statusId >= 6 && r.statusId <= 9) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo } as never,
-                    );
-                    return;
-                  }
-                  if (r.statusId === 10) {
-                    (navigation as any).navigate(
-                      "Canvassing" as never,
-                      { prNo: r.prNo, targetStage: "aaa_preparation" } as never,
-                    );
-                    return;
-                  }
-                  Alert.alert(
-                    "Not Available",
-                    "This PR is not yet in the canvassing phase.",
-                  );
-                  return;
-                }
-                if (!PROCESS_ROLES.has(roleId)) {
-                  Alert.alert(
-                    "Not Allowed",
-                    "You cannot process this purchase request from this screen.",
-                  );
-                  return;
-                }
-                if (r.statusId !== roleId) {
-                  Alert.alert(
-                    "Not Available",
-                    "Only the role that matches this PR's status can process it.",
-                  );
-                  return;
-                }
-                setProcessRecord({ id: r.id, prNo: r.prNo });
-                setProcessVisible(true);
-              }}
               onMore={(r) => {
                 setMoreRecord(r);
                 setMoreVisible(true);
@@ -1286,14 +1092,9 @@ export default function PRModule({
           setViewInitialTab("pdf");
           setViewVisible(true);
         }}
-        onCancel={() => {
-          if (!moreRecord) return;
-          setCancelRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
-          setCancelVisible(true);
-        }}
         onDelete={() => {
           if (!moreRecord) return;
-          setDeleteRecord({ id: moreRecord.id, prNo: moreRecord.prNo });
+          setDeleteRecord(moreRecord);
           setDeleteVisible(true);
         }}
       />
@@ -1308,38 +1109,7 @@ export default function PRModule({
         }}
       />
 
-      {/* Process PR modal — Division Head / BAC / Budget */}
-      <ProcessPRModal
-        visible={processVisible}
-        record={processRecord}
-        roleId={processRoleOverride ?? roleId}
-        onClose={() => {
-          setProcessVisible(false);
-          setProcessRecord(null);
-          setProcessRoleOverride(null);
-        }}
-        onProcessed={(id, newStatusId) => {
-          // newStatusId is the raw status_id integer from status.
-          // Update the record in-place so the list reflects the new state immediately.
-          setRecords((prev) =>
-            prev.map((r) =>
-              r.id === id ? { ...r, statusId: Number(newStatusId) } : r,
-            ),
-          );
-        }}
-      />
-      <CancelPRModal
-        visible={cancelVisible}
-        prId={cancelRecord?.id ?? null}
-        prNo={cancelRecord?.prNo ?? null}
-        onClose={() => {
-          setCancelVisible(false);
-          setCancelRecord(null);
-        }}
-        onCancelled={(id) => {
-          setRecords((prev) => prev.filter((r) => r.id !== id));
-        }}
-      />
+      {/* Delete PR modal — Admin only */}
       <DeletePRModal
         visible={deleteVisible}
         prId={deleteRecord?.id ?? null}

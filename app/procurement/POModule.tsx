@@ -43,14 +43,7 @@ import { ORSInlinePanel } from "../(components)/ORSModule";
 import PORemarkSheet, {
     type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
-import CancelPOModal from "../(modals)/CancelPOModal";
 import DeletePOModal from "../(modals)/DeletePOModal";
-import ProcessPOModal, {
-    STATUS_FLAGS,
-    canRoleProcessPO,
-    type ProcessPORecord,
-    type StatusFlag,
-} from "../(modals)/ProcessPOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
     fetchLatestRemarkByPO,
@@ -175,6 +168,14 @@ const fmt = (n: number) =>
 
 // ─── Flag ID helpers (mirrors PRModule) ──────────────────────────────────────
 
+type StatusFlag =
+  | "complete"
+  | "incomplete_info"
+  | "wrong_information"
+  | "needs_revision"
+  | "on_hold"
+  | "urgent";
+
 const ID_TO_FLAG: Record<number, StatusFlag> = {
   2: "complete",
   3: "incomplete_info",
@@ -187,6 +188,19 @@ const ID_TO_FLAG: Record<number, StatusFlag> = {
 function getFlagFromId(id: number | null): StatusFlag | null {
   return id ? (ID_TO_FLAG[id] ?? null) : null;
 }
+
+// Flag badge styling
+const STATUS_FLAGS: Record<
+  StatusFlag,
+  { bg: string; text: string; dot: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }
+> = {
+  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete", icon: "check-circle" },
+  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete", icon: "error-outline" },
+  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info", icon: "report-problem" },
+  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision", icon: "refresh" },
+  on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold", icon: "pause-circle" },
+  urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent", icon: "priority-high" },
+};
 
 // ─── Row → display record ─────────────────────────────────────────────────────
 
@@ -514,9 +528,6 @@ interface MoreSheetProps {
   onClose: () => void;
   onRemarks: () => void;
   onViewDocuments: () => void;
-  onOverride: () => void;
-  /** Admin-only: open the Cancel PO confirmation modal. */
-  onCancel: () => void;
   /** Admin-only: open the Delete PO confirmation modal. */
   onDelete: () => void;
 }
@@ -528,8 +539,6 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
   onClose,
   onRemarks,
   onViewDocuments,
-  onOverride,
-  onCancel,
   onDelete,
 }) => {
   if (!record) return null;
@@ -567,31 +576,9 @@ const MoreSheet: React.FC<MoreSheetProps> = ({
         onViewDocuments();
       },
     },
-    // Admin-only: Override Status action
+    // Admin-only: Delete action
     ...(roleId === 1
       ? ([
-          {
-            icon: "admin-panel-settings",
-            label: "Override Status",
-            sublabel: "Force this PO to any lifecycle status",
-            color: "#1d4ed8",
-            bg: "#eff6ff",
-            onPress: () => {
-              onClose();
-              onOverride();
-            },
-          },
-          {
-            icon: "cancel",
-            label: "Cancel PO",
-            sublabel: "Void this PO and reject any linked ORS entry",
-            color: "#b91c1c",
-            bg: "#fff1f2",
-            onPress: () => {
-              onClose();
-              onCancel();
-            },
-          },
           {
             icon: "delete-forever",
             label: "Delete PO",
@@ -719,9 +706,7 @@ const RecordCard: React.FC<{
   roleId: number;
   statuses: { id: number; status_name: string }[];
   latestFlag: RemarkRow | null;
-  canProcess: boolean;
   onView: (r: PORecord) => void;
-  onProcess: (r: PORecord) => void;
   onMore: (r: PORecord) => void;
 }> = ({
   record,
@@ -729,9 +714,7 @@ const RecordCard: React.FC<{
   roleId,
   statuses,
   latestFlag,
-  canProcess,
   onView,
-  onProcess,
   onMore,
 }) => {
   const statusLabel =
@@ -841,41 +824,13 @@ const RecordCard: React.FC<{
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
 
-        {/* Process / Override — admin always sees "Override"; others see Process or Locked */}
-        {roleId === 1 ? (
-          <TouchableOpacity
-            onPress={() => onProcess(record)}
-            activeOpacity={0.8}
-            className="flex-1 bg-indigo-600 rounded-xl py-2 items-center flex-row justify-center gap-1"
-          >
-            <MaterialIcons name="admin-panel-settings" size={13} color="#fff" />
-            <Text className="text-white text-[12px] font-bold">Override</Text>
-          </TouchableOpacity>
-        ) : canProcess ? (
-          <TouchableOpacity
-            onPress={() => onProcess(record)}
-            activeOpacity={0.8}
-            className="flex-1 bg-violet-600 rounded-xl py-2 items-center"
-          >
-            <Text className="text-white text-[12px] font-bold">Process</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            disabled
-            activeOpacity={1}
-            className="flex-1 bg-gray-200 rounded-xl py-2 items-center"
-          >
-            <Text className="text-gray-400 text-[12px] font-bold">Locked</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ••• sheet — Remarks + Edit (role-gated) */}
+        {/* More — always shown */}
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
-          className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
+          className="flex-1 bg-emerald-700 rounded-xl py-2 items-center"
         >
-          <MaterialIcons name="more-horiz" size={20} color="#ffffff" />
+          <Text className="text-white text-[12px] font-bold">More</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1017,11 +972,6 @@ export default function POModule() {
     "details",
   );
 
-  const [processRecord, setProcessRecord] = useState<ProcessPORecord | null>(
-    null,
-  );
-  const [processVisible, setProcessVisible] = useState(false);
-
   const [moreRecord, setMoreRecord] = useState<PORecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
 
@@ -1031,10 +981,6 @@ export default function POModule() {
   );
   const [remarkVisible, setRemarkVisible] = useState(false);
 
-  // CancelPOModal state — admin only
-  const [cancelPoId, setCancelPoId] = useState<string | null>(null);
-  const [cancelPoNo, setCancelPoNo] = useState<string | null>(null);
-  const [cancelVisible, setCancelVisible] = useState(false);
   const [deletePoId, setDeletePoId] = useState<string | null>(null);
   const [deletePoNo, setDeletePoNo] = useState<string | null>(null);
   const [deleteVisible, setDeleteVisible] = useState(false);
@@ -1115,18 +1061,7 @@ export default function POModule() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handlePOProcessed = useCallback((id: string, newStatusId: number) => {
-    setRecords((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, statusId: newStatusId } : r)),
-    );
-  }, []);
-
-  /** Remove the cancelled PO from the local list immediately. */
-  const handlePOCancelled = useCallback((id: string) => {
-    setRecords((prev) => prev.filter((r) => r.id !== id));
-    setPage(1);
-  }, []);
-
+  /** Remove the deleted PO from the local list immediately. */
   const handlePODeleted = useCallback((id: string) => {
     setRecords((prev) => prev.filter((r) => r.id !== id));
     setPage(1);
@@ -1257,8 +1192,6 @@ export default function POModule() {
           <EmptyState label="No purchase orders found" />
         ) : (
           paged.map((record, idx) => {
-            const canProcess = canRoleProcessPO(roleId, record.statusId);
-
             return (
               <React.Fragment key={record.id}>
                 <RecordCard
@@ -1267,20 +1200,10 @@ export default function POModule() {
                   roleId={roleId}
                   statuses={statuses}
                   latestFlag={latestRemarks[record.id] ?? null}
-                  canProcess={canProcess}
                   onView={(r) => {
                     setViewRecord(r);
                     setViewInitialTab("details");
                     setViewVisible(true);
-                  }}
-                  onProcess={(r) => {
-                    setProcessRecord({
-                      id: r.id,
-                      poNo: r.poNo,
-                      statusId: r.statusId,
-                      prNo: r.prNo,
-                    });
-                    setProcessVisible(true);
                   }}
                   onMore={(r) => {
                     setMoreRecord(r);
@@ -1324,18 +1247,7 @@ export default function POModule() {
         }}
       />
 
-      <ProcessPOModal
-        visible={processVisible}
-        record={processRecord}
-        roleId={roleId}
-        onClose={() => {
-          setProcessVisible(false);
-          setProcessRecord(null);
-        }}
-        onProcessed={handlePOProcessed}
-      />
-
-      {/* MoreSheet — Remarks + Edit (role-gated) + Admin Override + Admin Cancel */}
+      {/* MoreSheet — Remarks + Delete */}
       <MoreSheet
         visible={moreVisible}
         record={moreRecord}
@@ -1362,24 +1274,6 @@ export default function POModule() {
           setViewInitialTab("pdf");
           setViewVisible(true);
         }}
-        onOverride={() => {
-          if (moreRecord) {
-            setProcessRecord({
-              id: moreRecord.id,
-              poNo: moreRecord.poNo,
-              statusId: moreRecord.statusId,
-              prNo: moreRecord.prNo,
-            });
-            setProcessVisible(true);
-          }
-        }}
-        onCancel={() => {
-          if (moreRecord) {
-            setCancelPoId(moreRecord.id);
-            setCancelPoNo(moreRecord.poNo);
-            setCancelVisible(true);
-          }
-        }}
         onDelete={() => {
           if (moreRecord) {
             setDeletePoId(moreRecord.id);
@@ -1400,23 +1294,6 @@ export default function POModule() {
         }}
       />
 
-      {/* CancelPOModal — admin only */}
-      <CancelPOModal
-        visible={cancelVisible}
-        poId={cancelPoId}
-        poNo={cancelPoNo}
-        onClose={() => {
-          setCancelVisible(false);
-          setCancelPoId(null);
-          setCancelPoNo(null);
-        }}
-        onCancelled={(id) => {
-          handlePOCancelled(id);
-          setCancelVisible(false);
-          setCancelPoId(null);
-          setCancelPoNo(null);
-        }}
-      />
       <DeletePOModal
         visible={deleteVisible}
         poId={deletePoId}

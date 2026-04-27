@@ -1,32 +1,32 @@
 import {
-    fetchDVByDelivery,
-    fetchDeliveries,
-    fetchDeliveriesByDivision,
-    fetchDeliveryPOContext,
-    fetchDeliveryStatuses,
-    fetchIARByDelivery,
-    fetchLOAByDelivery,
-    insertDeliveryProcessRemark,
-    updateDelivery,
-    upsertDVByDelivery,
-    upsertIARByDelivery,
-    upsertLOAByDelivery,
+  fetchDVByDelivery,
+  fetchDeliveries,
+  fetchDeliveriesByDivision,
+  fetchDeliveryPOContext,
+  fetchDeliveryStatuses,
+  fetchIARByDelivery,
+  fetchLOAByDelivery,
+  insertDeliveryProcessRemark,
+  updateDelivery,
+  upsertDVByDelivery,
+  upsertIARByDelivery,
+  upsertLOAByDelivery,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import PORemarkSheet, {
-    type PORemarkSheetRecord,
+  type PORemarkSheetRecord,
 } from "../(components)/PORemarkSheet";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
 import ProcessDeliveryModal from "../(modals)/ProcessDeliveryModal";
@@ -158,12 +158,7 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   filterActive: boolean;
   onFilterToggle: () => void;
-}> = ({
-  value,
-  onChange,
-  filterActive,
-  onFilterToggle,
-}) => (
+}> = ({ value, onChange, filterActive, onFilterToggle }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <MaterialIcons name="search" size={16} color="#9ca3af" />
@@ -648,11 +643,12 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   </View>
 );
 
-const canRoleProcess = (roleId: number, statusId: number) =>
-  roleId === 1 ||
-  (roleId === 8 && [18, 19, 20, 22, 23].includes(statusId)) ||
-  (roleId === 9 && statusId === 21) ||
-  (roleId === 2 && statusId === 24);
+const canRoleProcess = (roleId: number, statusId: number) => {
+  if (roleId === 1) return true;
+  if (roleId === 8 && [18, 19, 20, 21, 22, 23].includes(statusId)) return true;
+  if (roleId === 2 && statusId === 24) return true;
+  return false;
+};
 
 const FLAG_TO_ID: Record<StatusFlag, number> = {
   complete: 2,
@@ -770,8 +766,8 @@ export default function DeliveryModule() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [viewOpen, setViewOpen] = useState(false);
+  const [active, setActive] = useState<any>(null);
   const [processOpen, setProcessOpen] = useState(false);
-  const [active, setActive] = useState<any | null>(null);
   const [moreRecord, setMoreRecord] = useState<DeliveryRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [deleteVisible, setDeleteVisible] = useState(false);
@@ -1231,22 +1227,6 @@ export default function DeliveryModule() {
                       View
                     </Text>
                   </TouchableOpacity>
-                  {canProcess && (
-                    <TouchableOpacity
-                      onPress={() => void openProcess(r)}
-                      activeOpacity={0.85}
-                      className="flex-row items-center gap-1 px-3 py-1.5 rounded-xl bg-[#064E3B]"
-                    >
-                      <MaterialIcons
-                        name="arrow-forward"
-                        size={14}
-                        color="#fff"
-                      />
-                      <Text className="text-[12px] font-semibold text-white">
-                        Process
-                      </Text>
-                    </TouchableOpacity>
-                  )}
                   <TouchableOpacity
                     onPress={() => {
                       setMoreRecord(r);
@@ -1302,16 +1282,18 @@ export default function DeliveryModule() {
           if (!moreRecord) return;
           void openProcess(moreRecord);
         }}
-        onOverride={() => {
-          if (!moreRecord) return;
-          setOverrideRecord(moreRecord);
-          setOverrideVisible(true);
-        }}
         onDelete={() => {
           if (!moreRecord) return;
           setDeleteDeliveryId(moreRecord.id);
           setDeleteDeliveryNo(moreRecord.deliveryNo);
           setDeleteVisible(true);
+          setMoreVisible(false);
+          setMoreRecord(null);
+        }}
+        onOverride={() => {
+          if (!moreRecord) return;
+          setOverrideRecord(moreRecord);
+          setOverrideVisible(true);
         }}
       />
 
