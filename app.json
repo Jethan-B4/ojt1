@@ -7,19 +7,14 @@
     "icon": "./assets/images/dar.png",
     "scheme": "ojt1",
     "userInterfaceStyle": "automatic",
-    // "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "package": "com.ojt1.app",
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      // "edgeToEdgeEnabled": true,
+      "package": "gov.ph.dar.procurement",
+      "name": "DAR Procurement System",
+      "icon": "./assets/images/dar.png",
+      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {

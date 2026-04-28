@@ -906,12 +906,7 @@ const Pagination: React.FC<{
     { kind: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
     ...Array.from({ length: end - start + 1 }, (_, i) => {
       const p = start + i;
-      return {
-        kind: "page",
-        page: p,
-        active: p === page,
-        disabled: false,
-      } as const;
+      return { kind: "page", page: p, active: p === page, disabled: false } as const;
     }),
     {
       kind: "next",
