@@ -20,6 +20,11 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import ORSPreviewPanel, {
+    buildORSHtml,
+    useORSPreviewActions,
+    type ORSPreviewData,
+} from "../(components)/ORSPreviewPanel";
 import POPreviewPanel, {
     buildPOHtml,
     usePOPreviewActions,
@@ -169,6 +174,27 @@ export default function ViewPOModal({
   const html = previewData ? buildPOHtml(previewData) : "";
   const { handlePrint, handleDownload } = usePOPreviewActions(html);
 
+  // Build ORS preview data from PO header
+  const orsPreviewData: ORSPreviewData | null = header
+    ? {
+        orsNo: header.ors_no ?? undefined,
+        prNo: header.pr_no ?? undefined,
+        divisionName: header.office_section ?? undefined,
+        entityName: "DAR — CARAGA Region",
+        fundCluster: header.fund_cluster ?? undefined,
+        fiscalYear: new Date().getFullYear(),
+        amount: Number(header.ors_amount) || 0,
+        particulars: `PO: ${header.po_no} — ${header.supplier}`,
+        dateCreated: header.ors_date ?? undefined,
+        preparedByName: header.accountant_name ?? undefined,
+        preparedByDesig: header.accountant_desig ?? undefined,
+        approvedByName: header.official_name ?? undefined,
+        approvedByDesig: header.official_desig ?? undefined,
+      }
+    : null;
+  const orsHtml = orsPreviewData ? buildORSHtml(orsPreviewData) : "";
+  const { handlePrint: handleORSPrint, handleDownload: handleORSDownload } = useORSPreviewActions(orsHtml);
+
   if (!visible) return null;
   if (!record) return null;
 
@@ -251,13 +277,23 @@ export default function ViewPOModal({
           </View>
         )}
 
-        {/* PO/ORS Document tab */}
-        {!loading && tab !== "details" && (
+        {/* PO Document tab */}
+        {!loading && tab === "po" && (
           <POPreviewPanel
             html={html}
             showActions
             onPrint={handlePrint}
             onDownload={handleDownload}
+          />
+        )}
+
+        {/* ORS Document tab */}
+        {!loading && tab === "ors" && (
+          <ORSPreviewPanel
+            html={orsHtml}
+            showActions
+            onPrint={handleORSPrint}
+            onDownload={handleORSDownload}
           />
         )}
 
