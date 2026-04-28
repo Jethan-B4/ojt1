@@ -21,6 +21,7 @@ import {
     notifyPOEdited,
     notifyPOStatusChanged,
 } from "@/lib/supabase/notifications";
+import { assertOnline } from "@/lib/network";
 import { supabase, withTimeout } from "./client";
 
 // ─── Row types ────────────────────────────────────────────────────────────────
@@ -148,6 +149,7 @@ export async function updatePOStatus(
   poId: string,
   statusId: number,
 ): Promise<void> {
+  await assertOnline("update PO status");
   // Fetch the PO's po_no for the notification body before mutating.
   const { data: poRow } = await supabase
     .from("purchase_orders")
@@ -177,6 +179,7 @@ export async function updatePO(
   patch: POPatchPayload,
   items?: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<void> {
+  await assertOnline("update PO");
   // Grab po_no for notification (prefer patch value, fall back to DB).
   let poNo: string | null = patch.po_no ?? null;
   if (!poNo) {
@@ -229,6 +232,7 @@ export async function insertPurchaseOrder(
   po: POInsertPayload,
   items: Omit<POItemRow, "id" | "po_id">[],
 ): Promise<PORow> {
+  await assertOnline("create PO");
   const now = new Date().toISOString();
   const initialStatus =
     po.status_id != null && Number(po.status_id) > 0

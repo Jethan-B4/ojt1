@@ -7,8 +7,20 @@ import React, {
   useState,
 } from "react";
 import { Alert, Platform } from "react-native";
+import { hasInternetConnection } from "../lib/network";
 import { supabase, updateLastLogin } from "../lib/supabase";
 import type { DatabaseUser } from "../types/user";
+
+function isNetworkError(e: unknown): boolean {
+  const msg = String((e as any)?.message ?? "");
+  if (!msg) return false;
+  return (
+    msg.toLowerCase().includes("network request failed") ||
+    msg.toLowerCase().includes("failed to fetch") ||
+    msg.toLowerCase().includes("timeout") ||
+    msg.toLowerCase().includes("timed out")
+  );
+}
 
 interface AuthContextType {
   [x: string]: any;
@@ -59,6 +71,15 @@ export function AuthProvider({
 
       if (error) {
         console.error("Custom Sign-in Error:", error.message);
+        if (isNetworkError(error)) {
+          const ok = await hasInternetConnection();
+          return {
+            success: false,
+            message: ok
+              ? "Cannot reach the server right now. Please try again."
+              : "No internet connection. Please connect and try again.",
+          };
+        }
         return { success: false, message: "Invalid credentials" };
       }
 
@@ -105,6 +126,15 @@ export function AuthProvider({
       }
     } catch (error) {
       console.error("Sign in error:", error);
+      if (isNetworkError(error)) {
+        const ok = await hasInternetConnection();
+        return {
+          success: false,
+          message: ok
+            ? "Cannot reach the server right now. Please try again."
+            : "No internet connection. Please connect and try again.",
+        };
+      }
       return { success: false, message: "An error occurred during sign in" };
     }
   };

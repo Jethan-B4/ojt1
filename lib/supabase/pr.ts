@@ -12,6 +12,7 @@ import {
   notifyPREdited,
   notifyPRStatusChanged,
 } from "@/lib/supabase/notifications";
+import { assertOnline } from "@/lib/network";
 import { supabase, withTimeout } from "./client";
 
 // ─── Status label helper ──────────────────────────────────────────────────────
@@ -119,6 +120,7 @@ export async function insertRemark(
   remark: string,
   statusFlagId?: number | null,
 ) {
+  await assertOnline("add PR remark");
   const payload: Record<string, any> = {
     pr_id: prId,
     remark,
@@ -175,6 +177,7 @@ export async function fetchPRWithItemsById(prId: string) {
  * @param statusId New status_id from public.status
  */
 export async function updatePRStatus(prId: string | number, statusId: number) {
+  await assertOnline("update PR status");
   // Prefetch pr_no so the notification body is human-readable.
   const { data: prRow } = await supabase
     .from("purchase_requests")
@@ -205,6 +208,7 @@ export async function insertPurchaseRequest(
   pr: Record<string, any>,
   items: Record<string, any>[],
 ) {
+  await assertOnline("create PR");
   const now = new Date().toISOString();
   const base: Record<string, any> = {
     pr_no: pr.pr_no,
@@ -287,6 +291,7 @@ export async function updatePurchaseRequest(
     subtotal: number;
   }[],
 ): Promise<void> {
+  await assertOnline("update PR");
   const now = new Date().toISOString();
 
   // Prefetch pr_no for the notification body.

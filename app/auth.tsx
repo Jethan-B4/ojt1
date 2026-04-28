@@ -1,12 +1,9 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StatusBar,
@@ -17,169 +14,15 @@ import {
   View,
 } from 'react-native';
 import { JSX } from 'react/jsx-runtime';
-import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
 const { height: SCREEN_H } = Dimensions.get('window');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DEV-ONLY · UserListModal
-// Shows all users from the `users` table joined with division_name + role_name.
-// TO REMOVE: delete everything between the two DEV-ONLY fence comments,
-//            then remove <DEV_UserListModal /> and the "Dev Tools" button below.
-// ─────────────────────────────────────────────────────────────────────────────
-
-//Add designation field to DevUser interface
-interface DevUser {
-  fullname: string;
-  username: string; // login
-  password: string;
-  division_name: string | null;
-  role_name: string | null;
-}
-
-function DEV_UserListModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const [users,   setUsers]   = useState<DevUser[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
-
-  // Fetch once every time the modal opens
-  React.useEffect(() => {
-    if (!visible) return;
-    setLoading(true);
-    setError(null);
-    supabase
-      .from('users')
-      .select(`
-        fullname,
-        username,
-        password,
-        divisions ( division_name ),
-        roles     ( role_name )
-      `)
-      .order('fullname')
-      .then(({ data, error: err }) => {
-        if (err) { setError(err.message); return; }
-        setUsers(
-          (data ?? []).map((r: any) => ({
-            fullname:      r.fullname,
-            username:      r.username,
-            password:      r.password,
-            division_name: r.divisions?.division_name ?? null,
-            role_name:     r.roles?.role_name ?? null,
-          }))
-        );
-      })
-      setLoading(false);
-  }, [visible]);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={devStyles.overlay}>
-        <View style={devStyles.sheet}>
-
-          {/* Header */}
-          <View style={devStyles.header}>
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <MaterialIcons name="warning-amber" size={14} color="#f59e0b" />
-                <Text style={devStyles.headerEyebrow}>DEV ONLY</Text>
-              </View>
-              <Text style={devStyles.headerTitle}>User Accounts</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={12} style={devStyles.closeBtn}>
-              <MaterialIcons name="close" size={18} color="#9ca3af" />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={devStyles.warning}>
-            This panel is for development only. Remove before production.
-          </Text>
-
-          {/* Content */}
-          {loading ? (
-            <View style={devStyles.center}>
-              <ActivityIndicator color="#064E3B" />
-              <Text style={devStyles.loadingText}>Fetching users…</Text>
-            </View>
-          ) : error ? (
-            <View style={devStyles.center}>
-              <Text style={devStyles.errorText}>Error: {error}</Text>
-            </View>
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Table header */}
-              <View style={[devStyles.row, devStyles.tableHead]}>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.2 }]}>Full Name</Text>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1 }]}>Username</Text>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1 }]}>Password</Text>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.3 }]}>Division</Text>
-                <Text style={[devStyles.cell, devStyles.headCell, { flex: 1.2 }]}>Role</Text>
-              </View>
-
-              {users.length === 0 ? (
-                <Text style={devStyles.emptyText}>No users found.</Text>
-              ) : (
-                users.map((u, i) => (
-                  <View key={u.username} style={[devStyles.row, i % 2 === 1 && devStyles.rowAlt]}>
-                    <Text style={[devStyles.cell, { flex: 1.2 }]} numberOfLines={1}>{u.fullname}</Text>
-                    <Text style={[devStyles.cell, devStyles.monoCell, { flex: 1.2 }]} numberOfLines={1}>{u.username}</Text>
-                    <Text style={[devStyles.cell, devStyles.monoCell, { flex: 1 }]} numberOfLines={1}>{u.password}</Text>
-                    <Text style={[devStyles.cell, { flex: 1.3 }]} numberOfLines={2}>{u.division_name ?? '—'}</Text>
-                    <Text style={[devStyles.cell, devStyles.roleCell, { flex: 1.2 }]} numberOfLines={2}>{u.role_name ?? '—'}</Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const devStyles = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  sheet:       { backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-                 maxHeight: '80%', paddingBottom: 32 },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                 paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
-  headerEyebrow: { fontSize: 9.5, fontWeight: '800', color: '#b45309',
-                   textTransform: 'uppercase', letterSpacing: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginTop: 2 },
-  closeBtn:    { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f3f4f6',
-                 alignItems: 'center', justifyContent: 'center' },
-  closeBtnText:{ fontSize: 14, color: '#6b7280', fontWeight: '700' },
-  warning:     { marginHorizontal: 20, marginBottom: 12, backgroundColor: '#fffbeb',
-                 borderWidth: 1, borderColor: '#fde68a', borderRadius: 10,
-                 paddingHorizontal: 12, paddingVertical: 8,
-                 fontSize: 11, color: '#92400e' },
-  center:      { paddingVertical: 32, alignItems: 'center', gap: 8 },
-  loadingText: { fontSize: 12, color: '#9ca3af' },
-  errorText:   { fontSize: 12, color: '#dc2626', textAlign: 'center', paddingHorizontal: 20 },
-  emptyText:   { fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingVertical: 24 },
-  tableHead:   { backgroundColor: '#064E3B' },
-  row:         { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 9,
-                 borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  rowAlt:      { backgroundColor: '#f9fafb' },
-  cell:        { fontSize: 11.5, color: '#374151', paddingRight: 6 },
-  headCell:    { fontSize: 9.5, fontWeight: '700', color: '#ffffff',
-                 textTransform: 'uppercase', letterSpacing: 0.5 },
-  monoCell:    { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', color: '#6b7280' },
-  roleCell:    { color: '#047857', fontWeight: '600' },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// END DEV-ONLY · UserListModal
-// ─────────────────────────────────────────────────────────────────────────────
-
 
 export default function AuthScreen(): JSX.Element {
   const [user_id,      setUserID]       = useState<string>('');
   const [password,     setPassword]     = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isLoading,    setIsLoading]    = useState<boolean>(false);
-  /* DEV-ONLY */ const [devModalOpen, setDevModalOpen] = useState(false); /* DEV-ONLY */
 
   const passwordRef = useRef<TextInput>(null);
   const { handleSignIn } = useAuth();
@@ -300,16 +143,6 @@ export default function AuthScreen(): JSX.Element {
               {isLoading ? 'Signing In…' : 'Sign In'}
             </Text>
           </TouchableOpacity>
-
-          {/* DEV-ONLY ── Dev tools trigger ── DEV-ONLY */}
-          <TouchableOpacity
-            onPress={() => setDevModalOpen(true)}
-            activeOpacity={0.7}
-            style={styles.devButton}>
-            <Text style={styles.devButtonText}>🛠 Dev: View Users</Text>
-          </TouchableOpacity>
-          <DEV_UserListModal visible={devModalOpen} onClose={() => setDevModalOpen(false)} />
-          {/* END DEV-ONLY */}
         </View>
 
         {/* ── Footer ── */}
@@ -479,21 +312,4 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
   },
-
-  // ── DEV-ONLY ────────────────────────────────────────────────────────────────
-  devButton: {
-    marginTop: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    backgroundColor: '#fffbeb',
-    alignItems: 'center',
-  },
-  devButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#92400e',
-  },
-  // ── END DEV-ONLY ────────────────────────────────────────────────────────────
 });

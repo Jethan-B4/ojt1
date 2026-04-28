@@ -1,8 +1,10 @@
+import { assertOnline } from "@/lib/network";
 import type { PRRow, PRStatusRow, RemarkRow } from "@/lib/supabase-types";
 import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  Alert,
   Modal,
   Platform,
   RefreshControl,
@@ -22,6 +24,7 @@ import {
   fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
+import { useEntityChanges } from "../RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -856,6 +859,7 @@ export default function PRModule({
   // ── Load PRs — shared by initial load, subtab change, and pull-to-refresh ──
   const loadPRs = useCallback(async () => {
     try {
+      await assertOnline("load PRs");
       let rows: PRRow[] = [];
       // role_id 1 (Admin) and role_id 8 (Supply) see all PRs.
       const canSeeAll = roleId === 1 || roleId === 8;
@@ -888,12 +892,29 @@ export default function PRModule({
         }),
       );
       setLatestRemarks(Object.fromEntries(remarkEntries));
-    } catch {}
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      if (msg.toLowerCase().includes("no internet connection")) {
+        Alert.alert("No Internet Connection", msg);
+      } else if (msg) {
+        Alert.alert("Load failed", msg);
+      }
+    }
   }, [activeSubTab, roleId, currentUser?.division_id]);
 
   useEffect(() => {
     loadPRs();
   }, [loadPRs]);
+
+  // ── Live refresh: auto-reload on realtime changes ──
+  useEntityChanges("pr", (event) => {
+    console.log(
+      "[PRModule] Realtime change detected:",
+      event.table,
+      event.eventType,
+    );
+    loadPRs();
+  });
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {

@@ -557,10 +557,7 @@ export default function PaymentModule() {
         onClose={() => setViewOpen(false)}
         viewTab={viewTab}
         setViewTab={setViewTab}
-        active={viewActive}
-        iar={iar}
-        loa={loa}
-        dv={dv}
+        deliveryId={viewActive?.id ?? null}
       />
 
       <PORemarkSheet

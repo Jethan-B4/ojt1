@@ -6,7 +6,11 @@ function timeout(ms: number, label: string): Promise<never> {
   });
 }
 
-async function timed<T>(p: Promise<T>, label: string, ms = 60000): Promise<T> {
+async function timed<T>(
+  p: PromiseLike<T>,
+  label: string,
+  ms = 60000,
+): Promise<T> {
   return Promise.race([p, timeout(ms, label)]) as Promise<T>;
 }
 

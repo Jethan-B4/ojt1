@@ -15,31 +15,31 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Linking,
+    Modal,
+    Platform,
+    Pressable,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import {
-  FlagButton,
-  STATUS_FLAGS,
-  StatusFlagPicker,
-  type StatusFlag,
+    FlagButton,
+    STATUS_FLAGS,
+    StatusFlagPicker,
+    type StatusFlag,
 } from "../(modals)/ProcessPRModal";
 import {
-  buildRemotePath,
-  guessContentType,
-  insertRemark,
-  supabase,
-  uploadPRFile,
+    buildRemotePath,
+    guessContentType,
+    insertRemark,
+    supabase,
+    uploadPRFile,
 } from "../../lib/supabase";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -676,7 +676,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                       </View>
 
                       {/* Remark text */}
-                      <View>
+                      <View pointerEvents="auto">
                         <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
                           Remark <Text className="text-red-400">*</Text>
                         </Text>
@@ -686,6 +686,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
                           placeholder="Add a note about this PR…"
                           placeholderTextColor="#9ca3af"
                           multiline
+                          editable={!saving}
                           className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
                           style={{ minHeight: 72, textAlignVertical: "top" }}
                         />

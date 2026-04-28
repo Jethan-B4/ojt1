@@ -16,6 +16,8 @@
  * Consumed by BACResolutionPreviewModal via WebView.
  */
 
+import { getBagongPilipinasLogoHTML, getDARLogoHTML } from "../lib/documentAssets";
+
 export interface BACResolutionData {
   /** e.g. "2025-231" */
   resolutionNo: string;
@@ -44,9 +46,11 @@ export interface BACResolutionData {
   /** Provincial/regional office label */
   provincialOffice: string;  // e.g. "DARPO-CAMARINES SUR I"
 
-  /** BAC signatories */
+  /** BAC signatories - with underlines for signatures */
   bacChairperson:    string;   // right side
+  bacChairpersonSign?: string;  // signature filename or mark
   bacViceChairperson: string;  // left side
+  bacViceChairpersonSign?: string;
   bacMembers:        string[]; // 2 members bottom row
   approvedBy:        string;   // bottom-left "Approved by:"
   approvedByDesig:   string;   // e.g. "HOPE"
@@ -64,7 +68,7 @@ const CSS = `
     font-size: 9.5pt;
     color: #000;
     background: #fff;
-    padding: 12mm 14mm 10mm 14mm;
+    padding: 10mm 12mm 10mm 12mm;
   }
   table { border-collapse: collapse; width: 100%; }
   td, th {
@@ -81,9 +85,17 @@ const CSS = `
   .bold   { font-weight: bold; }
   .italic { font-style: italic; }
   .underline { text-decoration: underline; }
-  .small  { font-size: 8pt; }
-  p { margin-bottom: 6px; line-height: 1.5; text-align: justify; }
+  .small  { font-size: 8.5pt; }
+  p { margin-bottom: 8px; line-height: 1.4; text-align: justify; }
   .indent { text-indent: 2em; }
+  .signature-line {
+    border-bottom: 1px solid #000;
+    min-height: 24px;
+    margin-bottom: 2px;
+    width: 85%;
+    margin-left: auto;
+    margin-right: auto;
+  }
 `;
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -113,50 +125,40 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
 </head>
 <body>
 
-<!-- ── Letterhead ──────────────────────────────────────────────────── -->
-<table style="margin-bottom: 6px;">
+<!-- ── Letterhead with Official Logos ───────────────────────────────── -->
+<table style="margin-bottom: 6px; width:100%;">
   <colgroup>
-    <col style="width: 15%"/>
-    <col style="width: 70%"/>
-    <col style="width: 15%"/>
+    <col style="width: 18%"/>
+    <col style="width: 64%"/>
+    <col style="width: 18%"/>
   </colgroup>
   <tbody>
     <tr>
-      <td style="vertical-align: middle; text-align: center;">
-        <!-- Bagong Pilipinas / DAR seal placeholder -->
-        <div style="width:50px; height:50px; border:1px solid #999; border-radius:50%;
-          display:inline-flex; align-items:center; justify-content:center;
-          font-size:6pt; color:#555; text-align:center; padding:4px;">
-          BAGONG<br/>PILIPINAS
-        </div>
+      <td style="vertical-align: middle; text-align: center; padding:4px;">
+        ${getDARLogoHTML(65)}
       </td>
-      <td style="text-align: center; vertical-align: middle;">
-        <div style="font-size: 8.5pt; line-height: 1.4;">
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 8.5pt; line-height: 1.4; margin-bottom:2px;">
           REPUBLIC OF THE PHILIPPINES
         </div>
         <div style="font-size: 13pt; font-weight: bold; line-height: 1.3;">
           DEPARTMENT OF AGRARIAN REFORM
         </div>
-        <div style="font-size: 8pt; font-style: italic; line-height: 1.3;">
+        <div style="font-size: 8pt; font-style: italic; line-height: 1.3; color:#555;">
           Tunay na Pagbabago sa Repormang Agraryo
         </div>
-        <div style="font-size: 8.5pt; font-weight: bold; margin-top: 3px;">
+        <div style="font-size: 8.5pt; font-weight: bold; margin-top: 3px; color:#064E3B;">
           ${d.provincialOffice}
         </div>
       </td>
-      <td style="vertical-align: middle; text-align: center;">
-        <!-- Certified / DAR badge placeholder -->
-        <div style="width:50px; height:50px; border:2px solid #064E3B; border-radius:50%;
-          display:inline-flex; align-items:center; justify-content:center;
-          font-size:6pt; color:#064E3B; text-align:center; padding:4px; font-weight:bold;">
-          DAR<br/>CERTIFIED
-        </div>
+      <td style="vertical-align: middle; text-align: center; padding:4px;">
+        ${getBagongPilipinasLogoHTML(65)}
       </td>
     </tr>
   </tbody>
 </table>
 
-<hr style="border: 1.5px solid #000; margin-bottom: 8px;"/>
+<hr style="border: none; border-top: 2px solid #000; margin: 6px 0 10px 0;"/>
 
 <!-- ── BAC label ────────────────────────────────────────────────────── -->
 <div style="text-align: center; font-size: 9pt; font-weight: bold; margin-bottom: 2px;">
@@ -211,12 +213,12 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
   <span class="bold">RESOLVE</span>, as it is hereby <span class="bold">RESOLVED</span>, ${d.nowThereforeText}
 </p>
 
-<p style="margin-bottom: 14px;">
-  <span class="bold">RESOLVED</span> at the ${d.location}, this ${d.resolvedDate}.
+<p style="margin-bottom: 12px;">
+  <span class="bold">RESOLVED</span>, at the ${d.location}, this ${d.resolvedDate}.
 </p>
 
 <!-- ── Signature block ──────────────────────────────────────────────── -->
-<table style="width: 100%; margin-bottom: 16px;">
+<table style="width: 100%; margin-bottom: 12px; margin-top: 16px;">
   <colgroup>
     <col style="width: 50%"/>
     <col style="width: 50%"/>
@@ -224,15 +226,15 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
   <tbody>
     <!-- Row 1: Vice-Chairperson (left) | Chairperson (right) -->
     <tr>
-      <td style="text-align: center; vertical-align: bottom; padding: 0 20px 4px 20px;">
-        <div style="border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 2px;"></div>
+      <td style="text-align: center; vertical-align: bottom; padding: 0 25px 4px 25px;">
+        <div class="signature-line"></div>
         <div style="font-size: 9.5pt; font-weight: bold; text-transform: uppercase; text-decoration: underline;">
           ${d.bacViceChairperson}
         </div>
         <div style="font-size: 8.5pt;">BAC Vice-Chairperson</div>
       </td>
-      <td style="text-align: center; vertical-align: bottom; padding: 0 20px 4px 20px;">
-        <div style="border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 2px;"></div>
+      <td style="text-align: center; vertical-align: bottom; padding: 0 25px 4px 25px;">
+        <div class="signature-line"></div>
         <div style="font-size: 9.5pt; font-weight: bold; text-transform: uppercase; text-decoration: underline;">
           ${d.bacChairperson}
         </div>
@@ -243,22 +245,22 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
 </table>
 
 <!-- BAC Members row -->
-<table style="width: 100%; margin-bottom: 20px;">
+<table style="width: 100%; margin-bottom: 16px;">
   <colgroup>
     <col style="width: 50%"/>
     <col style="width: 50%"/>
   </colgroup>
   <tbody>
     <tr>
-      <td style="text-align: center; vertical-align: bottom; padding: 0 20px 4px 20px;">
-        <div style="border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 2px;"></div>
+      <td style="text-align: center; vertical-align: bottom; padding: 0 25px 4px 25px;">
+        <div class="signature-line"></div>
         <div style="font-size: 9.5pt; font-weight: bold; text-transform: uppercase; text-decoration: underline;">
           ${member0}
         </div>
         <div style="font-size: 8.5pt;">BAC Member</div>
       </td>
-      <td style="text-align: center; vertical-align: bottom; padding: 0 20px 4px 20px;">
-        <div style="border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 2px;"></div>
+      <td style="text-align: center; vertical-align: bottom; padding: 0 25px 4px 25px;">
+        <div class="signature-line"></div>
         <div style="font-size: 9.5pt; font-weight: bold; text-transform: uppercase; text-decoration: underline;">
           ${member1}
         </div>
@@ -269,7 +271,7 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
 </table>
 
 <!-- Approved by -->
-<table style="width: 100%;">
+<table style="width: 100%; margin-top: 10px;">
   <colgroup>
     <col style="width: 50%"/>
     <col style="width: 50%"/>
@@ -278,7 +280,7 @@ export function buildBACResolutionHTML(d: BACResolutionData): string {
     <tr>
       <td style="vertical-align: bottom; padding: 0 20px 4px 20px;">
         <div style="font-size: 8.5pt; margin-bottom: 4px;">Approved by:</div>
-        <div style="border-bottom: 1px solid #000; min-height: 28px; margin-bottom: 2px;"></div>
+        <div class="signature-line"></div>
         <div style="font-size: 9.5pt; font-weight: bold; text-transform: uppercase; text-decoration: underline;">
           ${d.approvedBy}
         </div>

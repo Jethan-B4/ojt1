@@ -30,6 +30,7 @@ import type { RemarkRow } from "@/lib/supabase-types";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  Alert,
   Modal,
   Platform,
   RefreshControl,
@@ -45,6 +46,7 @@ import PORemarkSheet, {
 } from "../(components)/PORemarkSheet";
 import DeletePOModal from "../(modals)/DeletePOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
+import { assertOnline } from "@/lib/network";
 import {
   fetchLatestRemarkByPO,
   fetchPOStatuses,
@@ -1039,6 +1041,7 @@ export default function POModule() {
 
   const loadPOs = useCallback(async () => {
     try {
+      await assertOnline("load POs");
       // Fetch the full dataset once — subtab filtering is done client-side by status_id range.
       const allRows: PORow[] = canSeeAll
         ? await fetchPurchaseOrders()
@@ -1080,7 +1083,14 @@ export default function POModule() {
         }),
       );
       setLatestRemarks(Object.fromEntries(remarkEntries));
-    } catch {}
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      if (msg.toLowerCase().includes("no internet connection")) {
+        Alert.alert("No Internet Connection", msg);
+      } else if (msg) {
+        Alert.alert("Load failed", msg);
+      }
+    }
   }, [canSeeAll, activeSubTab, currentUser?.division_id]);
 
   useEffect(() => {

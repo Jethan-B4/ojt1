@@ -1,4 +1,5 @@
 import { supabase, withTimeout } from "./client";
+import { assertOnline } from "@/lib/network";
 
 export interface DeliveryRow {
   id: number;
@@ -147,6 +148,7 @@ export async function insertDelivery(payload: {
   expected_delivery_date?: string | null;
   created_by?: number | null;
 }) {
+  await assertOnline("create delivery");
   const { data, error } = await withTimeout(
     supabase
       .from("deliveries")
@@ -180,6 +182,7 @@ export async function updateDelivery(
     >
   >,
 ) {
+  await assertOnline("update delivery");
   const { data, error } = await withTimeout(
     supabase
       .from("deliveries")
@@ -200,6 +203,7 @@ export async function insertDeliveryProcessRemark(
   statusFlagId: number | null,
   phase: DeliveryRemarkPhase,
 ) {
+  await assertOnline("add delivery/payment remark");
   const ctx = await fetchDeliveryPOContext(deliveryId);
   if (!ctx?.poId) {
     throw new Error("Linked PO not found for this delivery record.");
@@ -233,6 +237,7 @@ export async function upsertIARByDelivery(
   deliveryId: number,
   payload: Record<string, any>,
 ) {
+  await assertOnline("save IAR");
   const existing = await fetchIARByDelivery(deliveryId);
   if (existing?.id) {
     const { data, error } = await withTimeout(
@@ -278,6 +283,7 @@ export async function upsertLOAByDelivery(
   deliveryId: number,
   payload: Record<string, any>,
 ) {
+  await assertOnline("save LOA");
   const existing = await fetchLOAByDelivery(deliveryId);
   if (existing?.id) {
     const { data, error } = await withTimeout(
@@ -323,6 +329,7 @@ export async function upsertDVByDelivery(
   deliveryId: number,
   payload: Record<string, any>,
 ) {
+  await assertOnline("save DV");
   const existing = await fetchDVByDelivery(deliveryId);
   if (existing?.id) {
     const { data, error } = await withTimeout(
