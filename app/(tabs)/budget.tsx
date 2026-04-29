@@ -135,7 +135,10 @@ export default function BudgetScreen() {
   // ── Derived totals ────────────────────────────────────────────────────────
 
   const totalAllocated = budgets.reduce((s, r) => s + r.allocated, 0);
-  const totalUtilized = budgets.reduce((s, r) => s + r.utilized, 0);
+  
+  // Calculate utilized amount from ORS entries instead of budget utilized field
+  const totalUtilized = orsEntries.reduce((s, entry) => s + entry.amount, 0);
+  
   const totalRemaining = totalAllocated - totalUtilized;
   const utilizationPct =
     totalAllocated > 0 ? Math.round((totalUtilized / totalAllocated) * 100) : 0;
@@ -340,6 +343,7 @@ export default function BudgetScreen() {
           canEdit={canEdit}
           onUpdate={handleUpdateAllocation}
           onInsert={handleInsertAllocation}
+          orsEntries={orsEntries}
         />
 
         {/* ── ORS Processing (ORSModule) ── */}

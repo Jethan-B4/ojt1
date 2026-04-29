@@ -36,6 +36,7 @@ import {
     View,
 } from "react-native";
 import { YearPickerModal } from "../(components)/DivisionBudgetModule";
+import FAQSection from "../(components)/FAQSection";
 import type { PRRow, PRStatusRow } from "../../lib/supabase";
 import {
     fetchPRStatuses,
@@ -1731,6 +1732,8 @@ function SupplyDashboard({ navigation }: any) {
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={8} />
+
+      <FAQSection navigation={navigation} />
     </ScrollView>
   );
 }
@@ -1874,6 +1877,8 @@ function CanvasserDashboard({ navigation }: any) {
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={7} />
+
+      <FAQSection navigation={navigation} />
     </ScrollView>
   );
 }
@@ -2100,6 +2105,8 @@ function AdminDashboard({ navigation }: any) {
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={1} />
 
+      <FAQSection navigation={navigation} />
+
       <YearPickerModal
         visible={yearPickerOpen}
         selected={year}
@@ -2318,6 +2325,8 @@ function ProcessorDashboard({
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={roleId} />
+
+      <FAQSection navigation={navigation} />
     </ScrollView>
   );
 }
@@ -2439,6 +2448,8 @@ function EndUserDashboard({ navigation }: any) {
       {/* ── Quick actions ── */}
       <SectionHeader title="Quick Actions" />
       <QuickActionGrid navigation={navigation} roleId={roleId} />
+
+      <FAQSection navigation={navigation} />
     </ScrollView>
   );
 }

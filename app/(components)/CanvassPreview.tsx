@@ -84,15 +84,6 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
     assignedDivision = "",
   } = data;
 
-  const certifiedBadgeHTML = `
-    <div style="display:inline-flex; align-items:center; justify-content:center; border:2px solid #111; border-radius:10px; padding:6px 10px; text-align:center;">
-      <div>
-        <div style="font-size:7pt; font-weight:bold; letter-spacing:0.4px;">ISO</div>
-        <div style="font-size:9pt; font-weight:900; margin-top:1px;">CERTIFIED</div>
-      </div>
-    </div>
-  `;
-
   const canvasserBlock = canvasserNames.join(" / ") || "—";
 
   const lines: Array<{

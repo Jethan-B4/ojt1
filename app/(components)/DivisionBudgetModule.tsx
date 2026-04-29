@@ -439,6 +439,7 @@ export interface DivisionBudgetSectionProps {
   canEdit: boolean;
   onUpdate: (id: string, year: number, amount: number, notes: string) => Promise<void>;
   onInsert: (divId: number, year: number, amount: number, notes: string) => Promise<void>;
+  orsEntries?: any[]; // ORS entries for calculating utilization
 }
 
 /**
@@ -452,6 +453,7 @@ export default function DivisionBudgetSection({
   canEdit,
   onUpdate,
   onInsert,
+  orsEntries = [],
 }: DivisionBudgetSectionProps) {
   const [editBudget,      setEditBudget]      = useState<DivisionBudgetRow | null>(null);
   const [createAllocOpen, setCreateAllocOpen] = useState(false);
@@ -503,10 +505,14 @@ export default function DivisionBudgetSection({
           </View>
         ) : (
           budgets.map((row, i) => {
+            // Calculate utilized amount from ORS entries for this division
+            const divisionOrsEntries = orsEntries.filter(entry => entry.division_id === row.division_id);
+            const utilized = divisionOrsEntries.reduce((sum, entry) => sum + entry.amount, 0);
+            
             const pct = row.allocated > 0
-              ? Math.min(Math.round((row.utilized / row.allocated) * 100), 100) : 0;
+              ? Math.min(Math.round((utilized / row.allocated) * 100), 100) : 0;
             const barColor  = pct >= 90 ? "#ef4444" : pct >= 70 ? "#f59e0b" : "#10b981";
-            const remaining = row.allocated - row.utilized;
+            const remaining = row.allocated - utilized;
             return (
               <TouchableOpacity
                 key={row.id}
@@ -524,12 +530,12 @@ export default function DivisionBudgetSection({
                   </View>
                   <Text className="text-[11.5px] font-semibold text-gray-600">
                     <Text>₱</Text>
-                    <Text style={{ fontFamily: MONO }}>{fmt(row.utilized)}</Text>{" "}
+                    <Text style={{ fontFamily: MONO }}>{fmt(utilized)}</Text>{" "}
                     / <Text style={{ fontFamily: MONO }}>{fmt(row.allocated)}</Text>
                   </Text>
                 </View>
 
-                <ProgressBar allocated={row.allocated} utilized={row.utilized} />
+                <ProgressBar allocated={row.allocated} utilized={utilized} />
 
                 <View className="flex-row justify-between mt-1">
                   <Text className="text-[10px] text-gray-400">{pct}% utilized</Text>

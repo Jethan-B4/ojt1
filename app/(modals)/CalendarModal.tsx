@@ -12,7 +12,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useMemo, useState } from "react";
 import {
-  Modal, Pressable, ScrollView, Text, TouchableOpacity, View,
+    Modal, Pressable, ScrollView, Text, TouchableOpacity, View,
 } from "react-native";
 
 export interface CalendarModalProps {
@@ -22,6 +22,8 @@ export interface CalendarModalProps {
   onSelectDate?: (date: Date) => void;
   /** Initial date to highlight (defaults to today) */
   initialDate?: Date;
+  /** Array of dates when PRs were created to show indicators */
+  prCreationDates?: Date[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ function isSameDay(a: Date, b: Date) {
 // ─── CalendarModal ────────────────────────────────────────────────────────────
 
 export function CalendarModal({
-  visible, onClose, onSelectDate, initialDate,
+  visible, onClose, onSelectDate, initialDate, prCreationDates = [],
 }: CalendarModalProps) {
   const today     = useMemo(() => new Date(), []);
   const [cursor,  setCursor]   = useState(() => initialDate ?? new Date());
@@ -131,6 +133,7 @@ export function CalendarModal({
                   const isToday   = isSameDay(thisDate, today);
                   const isSel     = selected ? isSameDay(thisDate, selected) : false;
                   const isPast    = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                  const hasPR     = prCreationDates.some(date => isSameDay(date, thisDate));
 
                   return (
                     <TouchableOpacity
@@ -144,15 +147,20 @@ export function CalendarModal({
                                   "",
                       ].join(" ")}
                     >
-                      <Text className={[
-                        "text-[14px] font-semibold",
-                        isSel   ? "text-white"       :
-                        isToday ? "text-emerald-700"  :
-                        isPast  ? "text-gray-300"     :
-                                  "text-gray-700",
-                      ].join(" ")}>
-                        {day}
-                      </Text>
+                      <View className="items-center">
+                        <Text className={[
+                          "text-[14px] font-semibold",
+                          isSel   ? "text-white"       :
+                          isToday ? "text-emerald-700"  :
+                          isPast  ? "text-gray-300"     :
+                                    "text-gray-700",
+                        ].join(" ")}>
+                          {day}
+                        </Text>
+                        {hasPR && (
+                          <View className="w-1.5 h-1.5 bg-[#064E3B] rounded-full mt-0.5" />
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}

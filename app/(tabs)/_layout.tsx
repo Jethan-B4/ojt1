@@ -12,6 +12,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import "../global-typography";
 
+import { supabase } from "@/lib/supabase";
 import { bootstrapNotifications } from "@/lib/supabase/notifications";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
@@ -175,6 +176,31 @@ function CanvassingScreen({ navigation, route }: any) {
 
 function BrandHeader({ navigation }: { navigation: any }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [prCreationDates, setPrCreationDates] = useState<Date[]>([]);
+
+  // ── Fetch PR creation dates for calendar ───────────────────────────────────────────
+  useEffect(() => {
+    const fetchPRCreationDates = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('pr')
+          .select('created_at')
+          .not('created_at', 'is', null);
+        
+        if (error) {
+          console.error('Error fetching PR dates:', error);
+          return;
+        }
+        
+        const dates = data?.map((pr: { created_at: string }) => new Date(pr.created_at)) || [];
+        setPrCreationDates(dates);
+      } catch (err) {
+        console.error('Error fetching PR dates:', err);
+      }
+    };
+    
+    fetchPRCreationDates();
+  }, []);
   return (
     <>
       <View
@@ -213,21 +239,7 @@ function BrandHeader({ navigation }: { navigation: any }) {
           >
             <MaterialIcons name="calendar-month" size={22} color="#064E3B" />
           </Pressable>
-          <Pressable
-            style={{
-              height: 40,
-              width: 40,
-              borderRadius: 20,
-              backgroundColor: "#ffffff",
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-              borderColor: "#e5e7eb",
-            }}
-          >
-            <MaterialIcons name="notifications" size={22} color="#064E3B" />
-          </Pressable>
-        </View>
+                  </View>
       </View>
 
       <CalendarModal
@@ -237,6 +249,7 @@ function BrandHeader({ navigation }: { navigation: any }) {
           console.log("Selected:", date.toISOString());
           setCalendarOpen(false);
         }}
+        prCreationDates={prCreationDates}
       />
     </>
   );
