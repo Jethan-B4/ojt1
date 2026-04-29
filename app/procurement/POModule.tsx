@@ -42,7 +42,9 @@ import {
   View,
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
-import PORemarkSheet, { type PORemarkSheetRecord } from "../(components)/PORemarkSheet";
+import PORemarkSheet, {
+  type PORemarkSheetRecord,
+} from "../(components)/PORemarkSheet";
 import DeletePOModal from "../(modals)/DeletePOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
@@ -984,7 +986,7 @@ export default function POModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
   const { tick } = useRealtime();
-  const { year, setYearPickerOpen, yearPickerOpen } = useFiscalYear();
+  const { year } = useFiscalYear();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -993,7 +995,7 @@ export default function POModule() {
   const [sortBy, setSortBy] = useState<SortBy>("date_created");
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
-    const [records, setRecords] = useState<PORecord[]>([]);
+  const [records, setRecords] = useState<PORecord[]>([]);
 
   // Status rows fetched from public.status — labels come from DB, not hardcoded
   const [statuses, setStatuses] = useState<
@@ -1160,7 +1162,6 @@ export default function POModule() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      
       {/* Subtab navigation */}
       <SubTabRow
         active={activeSubTab}
@@ -1379,7 +1380,6 @@ export default function POModule() {
           </View>
         </View>
       )} */}
-
-          </View>
+    </View>
   );
 }

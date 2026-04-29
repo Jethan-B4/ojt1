@@ -1,7 +1,9 @@
+import { RemarkRow, supabase } from "@/lib/supabase";
 import {
   fetchDeliveries,
   fetchDeliveriesByDivision,
-  fetchDeliveryStatuses
+  fetchDeliveryPOContext,
+  fetchDeliveryStatuses,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,11 +19,12 @@ import {
   View,
 } from "react-native";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
+import ViewDeliveryDetailsModal from "../(modals)/ViewDeliveryDetailsModal";
+import ViewDeliveryDocumentsModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../contexts/AuthContext";
 import { useFiscalYear } from "../contexts/FiscalYearContext";
 import { useRealtime } from "../contexts/RealtimeContext";
-import { DeliveryRemarkSheet } from "./DeliveryRemarkSheet";
-import { PODetailsModal } from "./PODetailsModal";
+import { DeliveryRemarkSheet, DeliveryRemarkSheetRecord } from "./DeliveryRemarkSheet";
 
 type SubTab = "all" | "deliveries" | "inspection" | "acceptance";
 type SortBy = "date_created" | "date_modified";
@@ -41,6 +44,10 @@ type DeliveryRecord = {
   expectedDeliveryDate: string | null;
   elapsedTime: string;
   raw: any;
+  /** PO context for remarks linking */
+  poId?: number | null;
+  prId?: string | null;
+  prNo?: string;
 };
 
 const STATUS_CFG: Record<
@@ -388,18 +395,11 @@ const MoreSheet: React.FC<{
   record: DeliveryRecord | null;
   roleId: number;
   onClose: () => void;
-  onRemarks: () => void;
-  onView: () => void;
-  onDelete: () => void;
-}> = ({
-  visible,
-  record,
-  roleId,
-  onClose,
-  onRemarks,
-  onView,
-  onDelete,
-}) => {
+  onRemarks: (r: DeliveryRecord) => void;
+  onView: (r: DeliveryRecord) => void;
+  onViewDocuments: (r: DeliveryRecord) => void;
+  onDelete: (r: DeliveryRecord) => void;
+}> = ({ visible, record, roleId, onClose, onRemarks, onView, onViewDocuments, onDelete }) => {
   if (!record) return null;
   const c = cfg(record.statusId);
 
@@ -420,19 +420,30 @@ const MoreSheet: React.FC<{
       color: "#1d4ed8",
       bg: "#eff6ff",
       onPress: () => {
+        onRemarks(record);
         onClose();
-        onRemarks();
       },
     },
     {
-      icon: "visibility",
-      label: "View Documents",
-      sublabel: "Open IAR / LOA / DV previews",
+      icon: "info",
+      label: "View Details",
+      sublabel: "Delivery info, IAR/LOA/DV status",
       color: "#065f46",
       bg: "#ecfdf5",
       onPress: () => {
+        onView(record);
         onClose();
-        onView();
+      },
+    },
+    {
+      icon: "description",
+      label: "View Documents",
+      sublabel: "PO / IAR / LOA / DV forms",
+      color: "#7c3aed",
+      bg: "#f5f3ff",
+      onPress: () => {
+        onViewDocuments(record);
+        onClose();
       },
     },
     ...(roleId === 1
@@ -444,8 +455,8 @@ const MoreSheet: React.FC<{
             color: "#7f1d1d",
             bg: "#fee2e2",
             onPress: () => {
+              onDelete(record);
               onClose();
-              onDelete();
             },
           },
         ] as Action[])
@@ -597,9 +608,6 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
   </View>
 );
 
-// Monitoring-only: no processing
-const canRoleProcess = (_roleId: number, _statusId: number) => false;
-
 // Status flags for remarks
 type StatusFlag =
   | "complete"
@@ -608,15 +616,6 @@ type StatusFlag =
   | "needs_revision"
   | "on_hold"
   | "urgent";
-
-const FLAG_TO_ID: Record<StatusFlag, number> = {
-  complete: 2,
-  incomplete_info: 3,
-  wrong_information: 4,
-  needs_revision: 5,
-  on_hold: 6,
-  urgent: 7,
-};
 
 const ID_TO_FLAG: Record<number, StatusFlag> = {
   2: "complete",
@@ -627,14 +626,38 @@ const ID_TO_FLAG: Record<number, StatusFlag> = {
   7: "urgent",
 };
 
+function getFlagFromId(id: number | null): StatusFlag | null {
+  return id ? (ID_TO_FLAG[id] ?? null) : null;
+}
+
 const STATUS_FLAGS: Record<
   StatusFlag,
   { bg: string; text: string; dot: string; label: string }
 > = {
-  complete: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e", label: "Complete" },
-  incomplete_info: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Incomplete" },
-  wrong_information: { bg: "#fff7ed", text: "#f97316", dot: "#f97316", label: "Wrong Info" },
-  needs_revision: { bg: "#fefce8", text: "#eab308", dot: "#eab308", label: "Needs Revision" },
+  complete: {
+    bg: "#f0fdf4",
+    text: "#15803d",
+    dot: "#22c55e",
+    label: "Complete",
+  },
+  incomplete_info: {
+    bg: "#fef2f2",
+    text: "#dc2626",
+    dot: "#ef4444",
+    label: "Incomplete",
+  },
+  wrong_information: {
+    bg: "#fff7ed",
+    text: "#f97316",
+    dot: "#f97316",
+    label: "Wrong Info",
+  },
+  needs_revision: {
+    bg: "#fefce8",
+    text: "#eab308",
+    dot: "#eab308",
+    label: "Needs Revision",
+  },
   on_hold: { bg: "#f3f4f6", text: "#6b7280", dot: "#9ca3af", label: "On Hold" },
   urgent: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444", label: "Urgent" },
 };
@@ -745,8 +768,14 @@ export default function DeliveryModule() {
   const [sortBy, setSortBy] = useState<SortBy>("date_created");
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
+  // Latest remark per delivery id (FK context) — for status-flag badges
+  const [latestRemarks, setLatestRemarks] = useState<
+    Record<string, RemarkRow | null>
+  >({});
 
-  const [viewOpen, setViewOpen] = useState(false);
+  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
+  const [viewDocsOpen, setViewDocsOpen] = useState(false);
+  const [viewDeliveryId, setViewDeliveryId] = useState<number | null>(null);
   const [moreRecord, setMoreRecord] = useState<DeliveryRecord | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [deleteVisible, setDeleteVisible] = useState(false);
@@ -755,9 +784,7 @@ export default function DeliveryModule() {
   >(null);
   const [deleteDeliveryNo, setDeleteDeliveryNo] = useState<string | null>(null);
   const [remarkVisible, setRemarkVisible] = useState(false);
-  const [remarkRecord, setRemarkRecord] = useState<DeliveryRecord | null>(
-    null,
-  );
+  const [remarkRecord, setRemarkRecord] = useState<DeliveryRemarkSheetRecord | null>(null);
 
   useEffect(() => {
     fetchDeliveryStatuses()
@@ -770,7 +797,30 @@ export default function DeliveryModule() {
       roleId === 1 || divisionId == null
         ? await fetchDeliveries()
         : await fetchDeliveriesByDivision(Number(divisionId));
-    setRecords((rows ?? []).map(toRecord));
+    const records = (rows ?? []).map(toRecord);
+    setRecords(records);
+
+    // Fetch latest [DELIVERY] remark for each delivery record in parallel
+    const remarkEntries = await Promise.all(
+      records.map(async (r) => {
+        if (!r.raw?.po_id)
+          return [String(r.id), null] as [string, RemarkRow | null];
+        const { data } = await supabase
+          .from("remarks")
+          .select("remark, status_flag_id, users(fullname)")
+          .eq("po_id", r.raw.po_id)
+          .ilike("remark", "[DELIVERY]%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        return [
+          String(r.id),
+          data ? { ...data, username: (data as any).users?.fullname } : null,
+        ] as [string, RemarkRow | null];
+      }),
+    );
+    setLatestRemarks(Object.fromEntries(remarkEntries));
   }, [roleId, divisionId]);
 
   useEffect(() => {
@@ -791,11 +841,11 @@ export default function DeliveryModule() {
     return records
       .filter((r) => {
         if (subTab !== "all" && !tabStatuses.includes(r.statusId)) return false;
-        
+
         // Filter by fiscal year (based on creation date)
         const createdYear = new Date(r.createdAtIso).getFullYear();
         if (createdYear !== year) return false;
-        
+
         const q = searchQuery.toLowerCase();
         const matchSearch =
           !q ||
@@ -830,21 +880,26 @@ export default function DeliveryModule() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const openView = async (r: DeliveryRecord) => {
-    try {
-      setMoreRecord(r);
-      setViewOpen(true);
-    } catch (e: any) {
-      Alert.alert(
-        "Load failed",
-        e?.message ?? "Could not load PO details.",
-      );
-    }
+  const openViewDetails = (r: DeliveryRecord) => {
+    setViewDeliveryId(r.id);
+    setViewDetailsOpen(true);
+  };
+
+  const openViewDocuments = (r: DeliveryRecord) => {
+    setViewDeliveryId(r.id);
+    setViewDocsOpen(true);
   };
 
   const openRemarks = async (delivery: DeliveryRecord) => {
     try {
-      setRemarkRecord(delivery);
+      // Fetch PO and PR context for the remarks sheet to show unified history
+      const context = await fetchDeliveryPOContext(delivery.id);
+      setRemarkRecord({
+        ...delivery,
+        poId: context?.poId ?? null,
+        prId: context?.prId ?? null,
+        prNo: context?.prNo ?? "",
+      });
       setRemarkVisible(true);
     } catch (e: any) {
       Alert.alert("Load failed", e?.message ?? "Could not load remarks.");
@@ -944,8 +999,13 @@ export default function DeliveryModule() {
             const statusLabel =
               statuses.find((s) => s.id === r.statusId)?.status_name ??
               cfg(r.statusId).label;
-            const canProcess = canRoleProcess(roleId, r.statusId);
             const dueMeta = getDueMeta(r);
+            const latestFlag = latestRemarks[String(r.id)] ?? null;
+            const flagKey = latestFlag?.status_flag_id
+              ? getFlagFromId(latestFlag.status_flag_id)
+              : null;
+            const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
+
             return (
               <View
                 key={r.id}
@@ -1016,6 +1076,50 @@ export default function DeliveryModule() {
                     </View>
                   )}
                 </View>
+
+                {/* ── Latest status flag from delivery remarks ── */}
+                {flag && (
+                  <>
+                    <View className="h-px bg-gray-100 mx-4" />
+                    <View className="flex-row items-center gap-2 px-4 py-2">
+                      <View
+                        className="flex-row items-center gap-1.5 rounded-full px-2 py-0.5 border"
+                        style={{
+                          backgroundColor: flag.bg,
+                          borderColor: flag.dot + "40",
+                        }}
+                      >
+                        <View
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ backgroundColor: flag.dot }}
+                        />
+                        <Text
+                          className="text-[10.5px] font-bold"
+                          style={{ color: flag.text }}
+                        >
+                          {flag.label}
+                        </Text>
+                      </View>
+                      {latestFlag?.username && (
+                        <Text className="text-[10px] text-gray-400">
+                          by {latestFlag.username}
+                        </Text>
+                      )}
+                      {latestFlag?.remark && (
+                        <Text
+                          className="flex-1 text-[10.5px] text-gray-500"
+                          numberOfLines={1}
+                        >
+                          ·{" "}
+                          {latestFlag.remark
+                            .replace(/^\s*\[(DELIVERY|PAYMENT|PO|PR)\]\s*/i, "")
+                            .trimStart()}
+                        </Text>
+                      )}
+                    </View>
+                  </>
+                )}
+
                 <View className="h-px bg-gray-100 mx-4" />
                 <View className="flex-row items-center px-3 py-2.5 gap-2">
                   <View className="flex-1">
@@ -1024,7 +1128,7 @@ export default function DeliveryModule() {
                     </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => void openView(r)}
+                    onPress={() => void openViewDetails(r)}
                     activeOpacity={0.85}
                     className="flex-row items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 border border-gray-200"
                   >
@@ -1071,28 +1175,32 @@ export default function DeliveryModule() {
           setMoreVisible(false);
           setMoreRecord(null);
         }}
-        onRemarks={() => {
-          if (!moreRecord) return;
-          void openRemarks(moreRecord);
-        }}
-        onView={() => {
-          if (!moreRecord) return;
-          void openView(moreRecord);
-        }}
-        onDelete={() => {
-          if (!moreRecord) return;
-          setDeleteDeliveryId(moreRecord.id);
-          setDeleteDeliveryNo(moreRecord.deliveryNo);
+        onRemarks={(r) => void openRemarks(r)}
+        onView={(r) => void openViewDetails(r)}
+        onViewDocuments={(r) => void openViewDocuments(r)}
+        onDelete={(r) => {
+          setDeleteDeliveryId(r.id);
+          setDeleteDeliveryNo(r.deliveryNo);
           setDeleteVisible(true);
-          setMoreVisible(false);
-          setMoreRecord(null);
         }}
       />
 
-      <PODetailsModal
-        visible={viewOpen}
-        onClose={() => setViewOpen(false)}
-        deliveryId={moreRecord?.id ?? null}
+      <ViewDeliveryDetailsModal
+        visible={viewDetailsOpen}
+        onClose={() => {
+          setViewDetailsOpen(false);
+          setViewDeliveryId(null);
+        }}
+        deliveryId={viewDeliveryId}
+      />
+
+      <ViewDeliveryDocumentsModal
+        visible={viewDocsOpen}
+        onClose={() => {
+          setViewDocsOpen(false);
+          setViewDeliveryId(null);
+        }}
+        deliveryId={viewDeliveryId}
       />
       <DeliveryRemarkSheet
         visible={remarkVisible}
@@ -1120,6 +1228,7 @@ export default function DeliveryModule() {
           setDeleteDeliveryNo(null);
         }}
       />
+
     </View>
   );
 }

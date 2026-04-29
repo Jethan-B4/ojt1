@@ -561,9 +561,8 @@ export default function PaymentModule() {
       <ViewDeliveryModal
         visible={viewOpen}
         onClose={() => setViewOpen(false)}
-        viewTab={viewTab}
-        setViewTab={setViewTab}
         deliveryId={viewActive?.id ?? null}
+        initialTab={viewTab}
       />
 
       <PORemarkSheet

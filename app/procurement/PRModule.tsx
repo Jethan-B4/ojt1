@@ -35,9 +35,13 @@ type PRRecord = ReturnType<typeof toPRDisplay> & {
   itemDescription: string;
   quantity: number;
   elapsedTime: string;
+  createdAtIso: string;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_RANGE = Array.from({ length: 7 }, (_, i) => CURRENT_YEAR - 5 + i);
 
 /**
  * Visual config keyed by status_id (FK from status table).
@@ -242,6 +246,7 @@ function rowToRecord(row: PRRow, itemCount = 0): PRRecord {
     itemDescription: base.purpose,
     quantity: itemCount,
     elapsedTime: elapsed,
+    createdAtIso: created.toISOString(),
   };
 }
 
@@ -927,9 +932,9 @@ export default function PRModule({
   const filtered = records
     .filter((r) => {
       // Filter by fiscal year (based on creation date)
-      const createdYear = new Date(r.date).getFullYear();
+      const createdYear = new Date(r.createdAtIso).getFullYear();
       if (createdYear !== year) return false;
-      
+
       const q = searchQuery.trim().toLowerCase();
       const prNo = (r.prNo ?? "").toLowerCase();
       const itemDesc = (r.itemDescription ?? "").toLowerCase();
@@ -1222,6 +1227,7 @@ export default function PRModule({
           setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
+
     </View>
   );
 }
