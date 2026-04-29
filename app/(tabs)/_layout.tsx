@@ -14,14 +14,15 @@ import "../global-typography";
 
 import { supabase } from "@/lib/supabase/client";
 import { bootstrapNotifications } from "@/lib/supabase/notifications";
+import { BrandHeaderWithFiscalYear } from "../(components)/BrandHeaderWithFiscalYear";
 import CalendarModal from "../(modals)/CalendarModal";
-import { useAuth } from "../AuthContext";
-import { BrandHeaderWithFiscalYear } from "../components/BrandHeaderWithFiscalYear";
+import { useAuth } from "../contexts/AuthContext";
+import { FiscalYearProvider } from "../contexts/FiscalYearContext";
 import BudgetScreen from "./budget";
 import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
+import ProcurementScreen from "./procurement";
 import ProcurementLog from "./ProcurementLog";
-import ProcurementWithFiscalYear from "./ProcurementWithFiscalYear";
 import UserManagementScreen from "./UserManagement";
 
 // ─── Drawer navigator ─────────────────────────────────────────────────────────
@@ -77,29 +78,30 @@ export default function TabLayout() {
   }, []);
 
   return (
-    <Drawer.Navigator
-      initialRouteName="Dashboard"
-      detachInactiveScreens={true}
-      screenOptions={{
-        drawerActiveTintColor: "#ffffff",
-        drawerActiveBackgroundColor: "#10B981",
-        drawerLabelStyle: { color: "#CBD5E1" },
-        drawerStyle: { borderRadius: 0, backgroundColor: "#064E3B" },
-        drawerContentStyle: { paddingBottom: 12 },
-        headerShown: true,
-        headerStyle: { height: 60 },
-        headerTitle: "",
-        header: ({ navigation }) => {
-          // Check if current route is procurement to show fiscal year filter
-          const currentRoute = navigation.getState()?.routes[navigation.getState()?.index]?.name;
-          const showFiscalYear = currentRoute === "Procurement";
-          return <BrandHeaderWithFiscalYear navigation={navigation} showFiscalYear={showFiscalYear} />;
-        },
-      }}
-      drawerContent={(props) => (
-        <CustomDrawer {...props} onSignOut={handleSignOut} />
-      )}
-    >
+    <FiscalYearProvider>
+      <Drawer.Navigator
+        initialRouteName="Dashboard"
+        detachInactiveScreens={true}
+        screenOptions={{
+          drawerActiveTintColor: "#ffffff",
+          drawerActiveBackgroundColor: "#10B981",
+          drawerLabelStyle: { color: "#CBD5E1" },
+          drawerStyle: { borderRadius: 0, backgroundColor: "#064E3B" },
+          drawerContentStyle: { paddingBottom: 12 },
+          headerShown: true,
+          headerStyle: { height: 60 },
+          headerTitle: "",
+          header: ({ navigation }) => {
+            // Check if current route is procurement to show fiscal year filter
+            const currentRoute = navigation.getState()?.routes[navigation.getState()?.index]?.name;
+            const showFiscalYear = currentRoute === "Procurement";
+            return <BrandHeaderWithFiscalYear navigation={navigation} showFiscalYear={showFiscalYear} />;
+          },
+        }}
+        drawerContent={(props) => (
+          <CustomDrawer {...props} onSignOut={handleSignOut} />
+        )}
+      >
       <Drawer.Screen
         name="Dashboard"
         component={DashboardScreen}
@@ -111,7 +113,7 @@ export default function TabLayout() {
       />
       <Drawer.Screen
         name="Procurement"
-        component={ProcurementWithFiscalYear}
+        component={ProcurementScreen}
         options={{
           drawerIcon: ({ color, size }) => (
             <MaterialIcons name="shopping-bag" size={size} color={color} />
@@ -155,7 +157,8 @@ export default function TabLayout() {
         component={CanvassingScreen}
         options={{ title: "Canvassing", drawerItemStyle: { display: "none" } }}
       />
-    </Drawer.Navigator>
+      </Drawer.Navigator>
+    </FiscalYearProvider>
   );
 }
 

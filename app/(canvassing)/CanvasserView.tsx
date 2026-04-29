@@ -55,7 +55,7 @@ import {
 } from "react-native";
 import type { CanvassPreviewData } from "../(components)/CanvassPreview";
 import CanvassPreviewModal from "../(modals)/CanvassPreviewModal";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

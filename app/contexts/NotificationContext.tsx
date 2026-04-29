@@ -6,10 +6,10 @@
  * to trigger automatic refresh of data when changes occur.
  */
 
-import { supabase } from "@/lib/supabase/client";
 import { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
+import { supabase } from "../../lib/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

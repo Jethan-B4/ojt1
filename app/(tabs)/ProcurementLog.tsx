@@ -13,31 +13,31 @@
  */
 
 import {
-    fetchLatestRemarkByPR,
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision,
-    fetchRemarksByPR,
-    type PRRow,
-    type PRStatusRow,
-    type RemarkRow,
-    type StatusFlag,
+  fetchLatestRemarkByPR,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
+  fetchRemarksByPR,
+  type PRRow,
+  type PRStatusRow,
+  type RemarkRow,
+  type StatusFlag,
 } from "@/lib/supabase/index";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useWindowDimensions,
-    View,
+  ActivityIndicator,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from "react-native";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

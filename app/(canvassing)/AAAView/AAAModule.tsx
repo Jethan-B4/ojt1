@@ -63,7 +63,7 @@ import {
 import type { AAAPreviewData } from "../../(components)/AAAPreview";
 import { buildAAAPreviewHTML } from "../../(components)/AAAPreview";
 import AAAPreviewModal from "../../(modals)/AAAPreviewModal";
-import { useAuth } from "../../AuthContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { CompletedBanner, StepNav } from "../BACView/components";
 import RFQReviewModal from "../BACView/RFQReviewModal";
 import { Card, Divider, Field, Input } from "../BACView/ui";

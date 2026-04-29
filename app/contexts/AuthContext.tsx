@@ -7,9 +7,9 @@ import React, {
   useState,
 } from "react";
 import { Alert, Platform } from "react-native";
-import { hasInternetConnection } from "../lib/network";
-import { supabase, updateLastLogin } from "../lib/supabase";
-import type { DatabaseUser } from "../types/user";
+import { hasInternetConnection } from "../../lib/network";
+import { supabase, updateLastLogin } from "../../lib/supabase";
+import type { DatabaseUser } from "../../types/user";
 
 function isNetworkError(e: unknown): boolean {
   const msg = String((e as any)?.message ?? "");

@@ -52,9 +52,9 @@ import {
   fetchPurchaseOrdersByDivision,
   type PORow,
 } from "../../lib/supabase/po";
-import { useAuth } from "../AuthContext";
-import { useRealtime } from "../RealtimeContext";
+import { useAuth } from "../contexts/AuthContext";
 import { useFiscalYear } from "../contexts/FiscalYearContext";
+import { useRealtime } from "../contexts/RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

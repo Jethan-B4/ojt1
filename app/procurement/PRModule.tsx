@@ -23,9 +23,9 @@ import {
   fetchPurchaseRequests,
   fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase/pr";
-import { useAuth } from "../AuthContext";
-import { useEntityChanges } from "../RealtimeContext";
+import { useAuth } from "../contexts/AuthContext";
 import { useFiscalYear } from "../contexts/FiscalYearContext";
+import { useEntityChanges } from "../contexts/RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -44,7 +44,7 @@ import DivisionBudgetSection, {
   YearPickerModal,
 } from "../(components)/DivisionBudgetModule";
 import { ORSSection } from "../(components)/ORSModule";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

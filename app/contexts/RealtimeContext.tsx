@@ -1,13 +1,13 @@
 import React, {
-    createContext,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import { AppState } from "react-native";
-import { supabase } from "../lib/supabase/client";
+import { supabase } from "../../lib/supabase/client";
 import { useAuth } from "./AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

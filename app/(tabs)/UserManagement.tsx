@@ -28,7 +28,7 @@ import {
 import CreateUserModal from "../(modals)/CreateUserModal";
 import DeleteUserModal from "../(modals)/DeleteUserModal";
 import EditUserModal from "../(modals)/EditUserModal";
-import { useRealtime } from "../RealtimeContext";
+import { useRealtime } from "../contexts/RealtimeContext";
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 

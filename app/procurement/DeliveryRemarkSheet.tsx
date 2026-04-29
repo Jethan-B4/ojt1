@@ -1,15 +1,15 @@
-import { MaterialIcons } from "@expo/vector-icons";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { api } from "../services/api";
+import { supabase } from "../../lib/supabase/client";
 
 interface DeliveryRecord {
   id: string | number;
@@ -24,6 +24,15 @@ interface DeliveryRemarkSheetProps {
   onClose: () => void;
 }
 
+interface DeliveryRemark {
+  id: string;
+  delivery_id: string | number;
+  user_id: string;
+  user_name: string;
+  remark: string;
+  created_at: string;
+}
+
 export function DeliveryRemarkSheet({
   visible,
   record,
@@ -32,10 +41,9 @@ export function DeliveryRemarkSheet({
 }: DeliveryRemarkSheetProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deliveryRemarks, setDeliveryRemarks] = useState<DeliveryRemark[]>([]);
   const [newRemark, setNewRemark] = useState("");
-  const [deliveryRemarks, setDeliveryRemarks] = useState<any[]>([]);
 
-  // Load delivery remarks when sheet opens
   useEffect(() => {
     if (visible && record) {
       loadDeliveryRemarks();
@@ -48,8 +56,17 @@ export function DeliveryRemarkSheet({
     setLoading(true);
     try {
       // Fetch delivery-specific remarks
-      const response = await api.get(`/procurement/deliveries/${record.id}/remarks`);
-      setDeliveryRemarks(response.data || []);
+      const { data, error } = await supabase
+        .from('delivery_remarks')
+        .select('*')
+        .eq('delivery_id', record.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error("Failed to load delivery remarks:", error);
+      } else {
+        setDeliveryRemarks(data || []);
+      }
     } catch (error) {
       console.error("Failed to load delivery remarks:", error);
       setDeliveryRemarks([]);
@@ -71,13 +88,19 @@ export function DeliveryRemarkSheet({
         created_at: new Date().toISOString(),
       };
 
-      await api.post(`/procurement/deliveries/${record.id}/remarks`, remarkData);
+      const { error } = await supabase
+        .from('delivery_remarks')
+        .insert(remarkData);
       
-      // Refresh remarks list
-      await loadDeliveryRemarks();
-      setNewRemark("");
+      if (error) {
+        console.error("Failed to add remark:", error);
+        Alert.alert("Error", "Failed to add remark. Please try again.");
+      } else {
+        setNewRemark("");
+        await loadDeliveryRemarks(); // Reload remarks
+      }
     } catch (error) {
-      console.error("Failed to add delivery remark:", error);
+      console.error("Failed to add remark:", error);
       Alert.alert("Error", "Failed to add remark. Please try again.");
     } finally {
       setSaving(false);
@@ -88,101 +111,74 @@ export function DeliveryRemarkSheet({
 
   return (
     <View className="absolute inset-0 bg-black/50 z-50">
-      <View className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl">
-        {/* Header */}
-        <View className="bg-[#064E3B] px-4 py-4 rounded-t-3xl">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-[10px] font-semibold tracking-widest uppercase text-white/40">
-                Delivery Remarks
-              </Text>
-              <Text className="text-[16px] font-extrabold text-white">
-                {record?.deliveryNo || "Unknown Delivery"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              className="w-8 h-8 bg-white/10 rounded-full items-center justify-center"
-            >
-              <MaterialIcons name="close" size={18} color="white" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Content */}
-        <View className="flex-1" style={{ maxHeight: 400 }}>
-          {loading ? (
-            <View className="flex-1 items-center justify-center py-8">
-              <ActivityIndicator size="small" color="#064E3B" />
-              <Text className="text-gray-500 mt-2 text-sm">Loading remarks...</Text>
-            </View>
-          ) : (
-            <ScrollView className="flex-1 px-4 py-4">
-              {/* Existing remarks */}
-              {deliveryRemarks.length > 0 ? (
-                <View className="space-y-3 mb-4">
-                  {deliveryRemarks.map((remark, index) => (
-                    <View key={index} className="bg-gray-50 rounded-xl p-3">
-                      <View className="flex-row items-start justify-between mb-2">
-                        <View className="flex-1">
-                          <Text className="text-sm font-semibold text-gray-900">
-                            {remark.user_name}
-                          </Text>
-                          <Text className="text-xs text-gray-500">
-                            {new Date(remark.created_at).toLocaleString()}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text className="text-sm text-gray-700 leading-relaxed">
-                        {remark.remark}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <View className="items-center py-6">
-                  <MaterialIcons name="chat-bubble-outline" size={32} color="#d1d5db" />
-                  <Text className="text-gray-500 text-sm mt-2">No remarks yet</Text>
-                </View>
-              )}
-
-              {/* Add new remark */}
-              <View className="border-t border-gray-100 pt-4">
-                <Text className="text-sm font-semibold text-gray-700 mb-2">
-                  Add Remark
-                </Text>
-                <View className="bg-gray-50 rounded-xl p-3">
-                  <TextInput
-                    value={newRemark}
-                    onChangeText={setNewRemark}
-                    placeholder="Enter your remark..."
-                    multiline
-                    numberOfLines={3}
-                    className="text-sm text-gray-900 placeholder-gray-400"
-                    style={{ textAlignVertical: "top" }}
-                  />
-                </View>
-                <TouchableOpacity
-                  onPress={handleAddRemark}
-                  disabled={!newRemark.trim() || saving}
-                  activeOpacity={0.8}
-                  className="bg-[#064E3B] rounded-xl px-4 py-2.5 mt-3 flex-row items-center justify-center"
-                  style={{ opacity: newRemark.trim() && !saving ? 1 : 0.5 }}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="add" size={18} color="white" />
-                      <Text className="text-white font-semibold text-sm ml-1">
-                        Add Remark
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+      <View className="flex-1 justify-end">
+        <View className="bg-white rounded-t-3xl">
+          {/* Header */}
+          <View className="bg-[#064E3B] px-4 py-4 rounded-t-3xl">
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text className="text-white font-bold text-lg">Delivery Remarks</Text>
+                {record && (
+                  <Text className="text-white/80 text-sm">{record.deliveryNo}</Text>
+                )}
               </View>
-            </ScrollView>
-          )}
+              <TouchableOpacity onPress={onClose}>
+                <MaterialIcons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Add Remark Section */}
+          <View className="p-4 border-b border-gray-200">
+            <View className="flex-row gap-2">
+              <TextInput
+                value={newRemark}
+                onChangeText={setNewRemark}
+                placeholder="Add a remark..."
+                className="flex-1 bg-gray-100 rounded-lg px-3 py-2 text-base"
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                onPress={handleAddRemark}
+                disabled={!newRemark.trim() || saving}
+                className="bg-[#064E3B] px-4 py-2 rounded-lg items-center justify-center disabled:opacity-50"
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <MaterialIcons name="send" size={20} color="white" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Remarks List */}
+          <ScrollView className="flex-1 max-h-96">
+            {loading ? (
+              <View className="p-8 items-center">
+                <ActivityIndicator size="large" color="#064E3B" />
+                <Text className="mt-4 text-gray-600">Loading remarks...</Text>
+              </View>
+            ) : deliveryRemarks.length > 0 ? (
+              deliveryRemarks.map((remark) => (
+                <View key={remark.id} className="p-4 border-b border-gray-100">
+                  <View className="flex-row justify-between items-start mb-2">
+                    <Text className="font-semibold text-gray-900">{remark.user_name}</Text>
+                    <Text className="text-xs text-gray-500">
+                      {new Date(remark.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text className="text-gray-700">{remark.remark}</Text>
+                </View>
+              ))
+            ) : (
+              <View className="p-8 items-center">
+                <MaterialIcons name="chat-bubble-outline" size={48} color="#9ca3af" />
+                <Text className="mt-4 text-gray-500 text-center">No remarks yet. Add the first remark above.</Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </View>
     </View>

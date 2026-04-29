@@ -26,25 +26,25 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Dimensions,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { YearPickerModal } from "../(components)/DivisionBudgetModule";
 import FAQSection from "../(components)/FAQSection";
 import type { PRRow, PRStatusRow } from "../../lib/supabase";
 import {
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase";
 import { supabase } from "../../lib/supabase/client";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Centralised user accessor ────────────────────────────────────────────────
 
