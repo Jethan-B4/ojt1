@@ -375,7 +375,7 @@ function DetailsView({
               className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
               style={{ fontFamily: MONO }}
             >
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              <Text>₱</Text>
               {fmt(record.totalAmount)}
             </Text>
           </InfoRow>
@@ -417,10 +417,10 @@ function DetailsView({
                 ) : null}
                 <Chip label="Unit" value={item.unit} />
                 <Chip label="Qty" value={String(item.quantity)} />
-                <Chip label="Price" value={`${"\u20B1"}${fmt(item.unit_price)}`} />
+                <Chip label="Price" value={`₱${fmt(item.unit_price)}`} />
                 <Chip
                   label="Total"
-                  value={`${"\u20B1"}${fmt(item.subtotal)}`}
+                  value={`₱${fmt(item.subtotal)}`}
                   highlight
                 />
               </View>
@@ -438,7 +438,7 @@ function DetailsView({
           className="text-[20px] font-black text-white"
           style={{ fontFamily: MONO }}
         >
-          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          <Text>₱</Text>
           {fmt(record.totalAmount)}
         </Text>
       </View>

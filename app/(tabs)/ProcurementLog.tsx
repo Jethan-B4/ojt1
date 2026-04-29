@@ -13,28 +13,28 @@
  */
 
 import {
-  fetchLatestRemarkByPR,
-  fetchPRStatuses,
-  fetchPurchaseRequests,
-  fetchPurchaseRequestsByDivision,
-  fetchRemarksByPR,
-  type PRRow,
-  type PRStatusRow,
-  type RemarkRow,
-  type StatusFlag,
+    fetchLatestRemarkByPR,
+    fetchPRStatuses,
+    fetchPurchaseRequests,
+    fetchPurchaseRequestsByDivision,
+    fetchRemarksByPR,
+    type PRRow,
+    type PRStatusRow,
+    type RemarkRow,
+    type StatusFlag,
 } from "@/lib/supabase/index";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
+    ActivityIndicator,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { useAuth } from "../AuthContext";
 
@@ -595,7 +595,7 @@ function PRLogCard({
               </View>
               <View style={{ alignItems: "flex-end", gap: 4 }}>
                 <Text style={{ fontSize: 12.5, fontWeight: "800", color: "#374151" }}>
-                  <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                  <Text>₱</Text>
                   <Text style={{ fontFamily: MONO }}>
                     {Number(pr.total_cost).toLocaleString("en-PH")}
                   </Text>
@@ -676,7 +676,7 @@ function PRLogCard({
 
             <View style={{ alignItems: "flex-end", gap: 4 }}>
               <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}>
-                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                <Text>₱</Text>
                 <Text style={{ fontFamily: MONO }}>
                   {Number(pr.total_cost).toLocaleString("en-PH")}
                 </Text>

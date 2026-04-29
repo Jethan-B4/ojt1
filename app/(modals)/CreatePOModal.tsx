@@ -8,35 +8,35 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import POPreviewPanel, {
-  buildPOHtml,
-  toWords,
-  type POPreviewData,
+    buildPOHtml,
+    toWords,
+    type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import CalendarPickerModal from "../(modals)/CalendarModal";
 import {
-  insertPurchaseOrder,
-  type POInsertPayload,
-  type POItemRow,
-  type PORow,
+    insertPurchaseOrder,
+    type POInsertPayload,
+    type POItemRow,
+    type PORow,
 } from "../../lib/supabase/po";
 import {
-  fetchPRIdByNo,
-  fetchPRWithItemsById,
-  fetchPurchaseRequests,
+    fetchPRIdByNo,
+    fetchPRWithItemsById,
+    fetchPurchaseRequests,
 } from "../../lib/supabase/pr";
 
 export type POCreatePayload = PORow;
@@ -246,7 +246,7 @@ function PRPicker({
                       className="text-[11px] font-bold text-emerald-700"
                       style={{ fontFamily: MONO }}
                     >
-                      <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                      <Text>₱</Text>
                       {fmt(Number(item.total_cost) || 0)}
                     </Text>
                   </View>
@@ -1013,7 +1013,7 @@ export default function CreatePOModal({
                                 className="text-sm font-bold text-gray-700"
                                 style={{ fontFamily: MONO }}
                               >
-                                <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                                <Text>₱</Text>
                                 {fmt(sub)}
                               </Text>
                             </View>
@@ -1055,7 +1055,7 @@ export default function CreatePOModal({
                         className="text-[14px] font-extrabold text-[#064E3B]"
                         style={{ fontFamily: MONO }}
                       >
-                        <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                        <Text>₱</Text>
                         {fmt(totalAmount)}
                       </Text>
                     </View>

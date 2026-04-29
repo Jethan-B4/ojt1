@@ -3,42 +3,42 @@
  */
 
 import {
-    buildAAAPreviewHTML,
-    type AAAPreviewData,
+  buildAAAPreviewHTML,
+  type AAAPreviewData,
 } from "@/app/(components)/AAAPreview";
 import {
-    buildBACResolutionHTML,
-    type BACResolutionData,
+  buildBACResolutionHTML,
+  type BACResolutionData,
 } from "@/app/(components)/BACResolutionPreview";
 import {
-    buildCanvassHTML,
-    type CanvassPreviewData,
+  buildCanvassHTML,
+  type CanvassPreviewData,
 } from "@/app/(components)/CanvassPreview";
 import DocumentPreviewPanel from "@/app/(components)/DocumentPreviewPanel";
 import PRPreviewPanel, { buildPRHtml } from "@/app/(components)/PRPreviewPanel";
 import React, { useEffect, useState } from "react";
-import { preloadLogos } from "../lib/documentAssets";
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View
 } from "react-native";
 import {
-    fetchPRStatuses,
-    fetchPRWithItemsById,
-    type PRStatusRow,
+  fetchPRStatuses,
+  fetchPRWithItemsById,
+  type PRStatusRow,
 } from "../../lib/supabase";
 import {
-    PRDisplay,
-    PRLineItem,
-    toLineItemDisplay,
-    toPRDisplay,
+  PRDisplay,
+  PRLineItem,
+  toLineItemDisplay,
+  toPRDisplay,
 } from "../../types/model";
+import { preloadLogos } from "../lib/documentAssets";
 
 type PRRecord = PRDisplay & {
   entityName?: string;
@@ -179,51 +179,33 @@ export default function ViewPRModal({
     : "";
 
   // Resolution HTML
+  const totalCost = items
+    .reduce((sum, it) => sum + it.quantity * (it.unit_price || 0), 0)
+    .toLocaleString("en-PH", { minimumFractionDigits: 2 });
+
   const resolutionData: BACResolutionData = {
     resolutionNo: "",
     resolvedDate: header.date,
-    location: "",
-    prEntries: [
-      {
-        prNo: header.prNo,
-        date: header.date,
-        estimatedCost: items
-          .reduce((sum, it) => sum + it.quantity * (it.unit_price || 0), 0)
-          .toLocaleString("en-PH", { minimumFractionDigits: 2 }),
-        endUser: header.officeSection,
-        procMode: "SVP/Canvass",
-      },
-    ],
-    whereas1: `WHEREAS, the Purchase Request No. ${header.prNo} was submitted by ${header.officeSection} for the procurement of ${header.purpose};`,
-    whereas2: "WHEREAS, the Bids and Awards Committee has evaluated the request and found it to be valid and within the approved budget;",
-    whereas3: "WHEREAS, the BAC has determined that Small Value Procurement is the appropriate mode of procurement for this request;",
-    nowThereforeText: `NOW THEREFORE, the BAC RESOLVES to recommend the approval of Purchase Request No. ${header.prNo} for the procurement of ${header.purpose}.`,
     provincialOffice: "DARPO-CARAGA",
-    bacChairperson: "",
-    bacViceChairperson: "",
-    bacMembers: ["", ""],
-    approvedBy: "",
-    approvedByDesig: "",
+    projectTitle: header.purpose || "",
+    procurementMode: "Small Value Procurement",
+    approvedBudget: totalCost,
+    supplier: "",
+    awardedAmount: totalCost,
+    bacMembers: [],
   };
   const resolutionHtml = logosLoaded ? buildBACResolutionHTML(resolutionData) : "";
   const resolutionTemplateHtml = logosLoaded
     ? buildBACResolutionHTML({
         resolutionNo: "",
         resolvedDate: "",
-        location: "",
-        prEntries: [
-          { prNo: "", date: "", estimatedCost: "", endUser: "", procMode: "" },
-        ],
-        whereas1: "",
-        whereas2: "",
-        whereas3: "",
-        nowThereforeText: "",
         provincialOffice: "",
-        bacChairperson: "",
-        bacViceChairperson: "",
-        bacMembers: ["", ""],
-        approvedBy: "",
-        approvedByDesig: "",
+        projectTitle: "",
+        procurementMode: "",
+        approvedBudget: "",
+        supplier: "",
+        awardedAmount: "",
+        bacMembers: [],
       })
     : "";
 
@@ -446,7 +428,7 @@ function DetailsView({
             className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
             style={{ fontFamily: MONO }}
           >
-            <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+            <Text>₱</Text>
             {fmt(record.totalCost)}
           </Text>
         </InfoRow>
@@ -508,10 +490,10 @@ function DetailsView({
                 ) : null}
                 <Chip label="Unit" value={item.unit} />
                 <Chip label="Qty" value={String(item.quantity)} />
-                <Chip label="Price" value={`${"\u20B1"}${fmt(item.unit_price)}`} />
+                <Chip label="Price" value={`₱${fmt(item.unit_price)}`} />
                 <Chip
                   label="Total"
-                  value={`${"\u20B1"}${fmt(item.subtotal)}`}
+                  value={`₱${fmt(item.subtotal)}`}
                   highlight
                 />
               </View>
@@ -527,7 +509,7 @@ function DetailsView({
           className="text-[20px] font-black text-white"
           style={{ fontFamily: MONO }}
         >
-          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          <Text>₱</Text>
           {fmt(record.totalCost)}
         </Text>
       </View>

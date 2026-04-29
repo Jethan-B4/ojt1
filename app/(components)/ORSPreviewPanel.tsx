@@ -81,7 +81,7 @@ const fmtHtml = (n: number) =>
 
 // ─── buildORSHtml ─────────────────────────────────────────────────────────────
 
-/** Returns the full Appendix 11 ORS HTML string. */
+/** Returns the full Appendix 11 ORS HTML string, strictly matching the official form. */
 export function buildORSHtml(
   data: ORSPreviewData,
   opts?: { template?: boolean },
@@ -99,7 +99,6 @@ export function buildORSHtml(
     uacsCode = "",
     fiscalYear = defaultYear,
     amount = 0,
-    status = "Pending",
     particulars = "",
     mfoPap = "",
     preparedByName = "",
@@ -111,19 +110,16 @@ export function buildORSHtml(
     obligationRows = [],
   } = src;
 
+  // STATUS OF OBLIGATION rows
+  const BLANK_ROWS = 6;
   const obligationBody = template
-    ? Array.from({ length: 6 })
+    ? Array.from({ length: BLANK_ROWS })
         .map(
           () => `
-        <tr>
-          <td>&nbsp;</td>
-          <td>&nbsp;</td>
-          <td>&nbsp;</td>
-          <td class="num">&nbsp;</td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
+        <tr style="height:22px">
+          <td></td><td></td><td></td>
+          <td class="num"></td><td class="num"></td>
+          <td class="num"></td><td class="num"></td><td class="num"></td>
         </tr>`,
         )
         .join("")
@@ -131,38 +127,30 @@ export function buildORSHtml(
       ? obligationRows
           .map(
             (r) => `
-        <tr>
+        <tr style="height:22px">
           <td>${r.date}</td>
           <td>${r.particulars}</td>
           <td>${r.referenceNo}</td>
           <td class="num">${fmtHtml(r.amount)}</td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
+          <td class="num"></td>
+          <td class="num"></td>
+          <td class="num"></td>
+          <td class="num"></td>
         </tr>`,
           )
           .join("")
-      : `<tr>
-        <td colspan="8" style="text-align:center;color:#999;padding:8px">
-          No obligation entries recorded.
-        </td>
-      </tr>`;
+      : Array.from({ length: BLANK_ROWS })
+          .map(
+            () => `
+        <tr style="height:22px">
+          <td></td><td></td><td></td>
+          <td class="num"></td><td class="num"></td>
+          <td class="num"></td><td class="num"></td><td class="num"></td>
+        </tr>`,
+          )
+          .join("");
 
-  const statusColor: Record<string, string> = {
-    Pending: "#f59e0b",
-    Processing: "#3b82f6",
-    Approved: "#10b981",
-    Rejected: "#ef4444",
-  };
-  const statusBg: Record<string, string> = {
-    Pending: "#fffbeb",
-    Processing: "#eff6ff",
-    Approved: "#ecfdf5",
-    Rejected: "#fef2f2",
-  };
-  const sColor = statusColor[status] ?? "#6b7280";
-  const sBg = statusBg[status] ?? "#f9fafb";
+  const amountDisplay = !template && amount ? `&#x20B1;${fmtHtml(amount)}` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -172,148 +160,267 @@ export function buildORSHtml(
 <title>ORS ${orsNo}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Times New Roman", serif; font-size: 9.5pt; color: #000; padding: 18px; }
-  h1 { font-size: 12pt; text-align: center; margin-bottom: 2px; }
-  .subtitle { font-size: 8.5pt; text-align: center; margin-bottom: 8px; }
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  td, th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; }
-  .nob { border: none !important; }
-  .num { text-align: right; font-family: "Courier New", monospace; }
-  .bold { font-weight: bold; }
-  .small { font-size: 8pt; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 9pt;
+    color: #000;
+    padding: 14px 18px;
+    background: #fff;
+  }
+  .form-title {
+    text-align: center;
+    font-size: 11pt;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 1px;
+  }
+  .form-appendix {
+    text-align: center;
+    font-size: 8pt;
+    margin-bottom: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  td, th {
+    border: 1px solid #000;
+    padding: 3px 5px;
+    vertical-align: top;
+    font-size: 8.5pt;
+    word-wrap: break-word;
+  }
+  th {
+    font-weight: bold;
+    text-align: center;
+    font-size: 7.5pt;
+    vertical-align: middle;
+    background: #fff;
+  }
+  .label {
+    font-size: 7.5pt;
+    color: #333;
+    display: block;
+    margin-bottom: 1px;
+  }
+  .value {
+    font-size: 9pt;
+    font-weight: normal;
+    display: block;
+    min-height: 14px;
+  }
+  .num { text-align: right; font-family: "Courier New", Courier, monospace; }
   .center { text-align: center; }
-  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-weight: bold; font-size: 8pt; background: ${sBg}; color: ${sColor}; border: 1px solid ${sColor}; }
+  .bold { font-weight: bold; }
+  .section-header {
+    background: #fff;
+    font-weight: bold;
+    font-size: 8pt;
+    border-bottom: 1px solid #000;
+    padding: 3px 5px;
+  }
+  .no-border { border: none !important; }
+  .no-top { border-top: none !important; }
+  .no-bottom { border-bottom: none !important; }
+  .no-left { border-left: none !important; }
+  .no-right { border-right: none !important; }
 </style>
 </head>
 <body>
-  <h1>OBLIGATION REQUEST AND STATUS</h1>
-  <p class="subtitle">Appendix 11</p>
 
-  <table class="nob" style="margin-bottom:6px">
-    <tr><td class="nob center bold">OBLIGATION REQUEST AND STATUS</td></tr>
-    <tr><td class="nob center small">Appendix 11</td></tr>
+  <!-- ── FORM TITLE ── -->
+  <div class="form-title">OBLIGATION REQUEST AND STATUS</div>
+  <div class="form-appendix">Appendix 11</div>
+
+  <!-- ── TOP HEADER TABLE: Entity Name / Fund Cluster / Serial / Date / Office / Responsibility Center ── -->
+  <table style="margin-bottom:0">
+    <colgroup>
+      <col style="width:18%"/>
+      <col style="width:36%"/>
+      <col style="width:18%"/>
+      <col style="width:28%"/>
+    </colgroup>
+    <tbody>
+      <tr>
+        <td style="border-bottom:none">
+          <span class="label">Entity Name</span>
+          <span class="value">${entityName}</span>
+        </td>
+        <td colspan="1" style="border-bottom:none">
+          <span class="label">&nbsp;</span>
+          <span class="value">&nbsp;</span>
+        </td>
+        <td style="border-bottom:none">
+          <span class="label">Fund Cluster :</span>
+          <span class="value">${fundCluster}</span>
+        </td>
+        <td style="border-bottom:none">
+          <span class="label">&nbsp;</span>
+          <span class="value">${fundCluster ? "" : ""}&nbsp;</span>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="border-top:none; border-bottom:none">
+          <span class="label">&nbsp;</span>
+        </td>
+        <td style="border-top:none; border-bottom:none">
+          <span class="label">Serial No. :</span>
+          <span class="value bold">${orsNo}</span>
+        </td>
+        <td style="border-top:none; border-bottom:none">
+          <span class="label">Date :</span>
+          <span class="value">${dateCreated}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="border-top:none; border-bottom:none">
+          <span class="label">Office</span>
+        </td>
+        <td style="border-top:none; border-bottom:none">
+          <span class="value">${divisionName}</span>
+        </td>
+        <td style="border-top:none; border-bottom:none">
+          <span class="label">Responsibility Center</span>
+        </td>
+        <td style="border-top:none; border-bottom:none">
+          <span class="value">${responsibilityCenter}</span>
+        </td>
+      </tr>
+    </tbody>
   </table>
 
-  <table style="margin-bottom:8px">
-    <tr>
-      <td class="bold" style="width:20%">Entity Name</td>
-      <td style="width:46%">${entityName}</td>
-      <td class="bold" style="width:17%">Fund Cluster :</td>
-      <td style="width:17%">${fundCluster}</td>
-    </tr>
-    <tr>
-      <td class="bold">Serial No. :</td>
-      <td class="num bold">${orsNo}</td>
-      <td class="bold">Date :</td>
-      <td>${dateCreated}</td>
-    </tr>
-    <tr>
-      <td class="bold">Office</td>
-      <td>${divisionName}</td>
-      <td class="bold">Responsibility Center</td>
-      <td>${responsibilityCenter}</td>
-    </tr>
-    <tr>
-      <td class="bold">PR No.</td>
-      <td>${prNo}</td>
-      <td class="bold">Fiscal Year</td>
-      <td>${fiscalYear}</td>
-    </tr>
-  </table>
-
-  <table style="margin-bottom:8px">
+  <!-- ── OBLIGATION REQUEST TABLE ── -->
+  <table style="margin-top:0; margin-bottom:0">
+    <colgroup>
+      <col style="width:28%"/>
+      <col style="width:13%"/>
+      <col style="width:16%"/>
+      <col style="width:15%"/>
+      <col style="width:16%"/>
+      <col style="width:12%"/>
+    </colgroup>
     <thead>
       <tr>
-        <th class="small">Particulars</th>
-        <th class="small">MFO/PAP</th>
-        <th class="small">UACS Object Code</th>
-        <th class="small">Amount</th>
-        <th class="small">Payee</th>
-        <th class="small">Address</th>
+        <th>Particulars</th>
+        <th>MFO/PAP</th>
+        <th>UACS Object Code</th>
+        <th>Amount</th>
+        <th>Payee</th>
+        <th>Address</th>
       </tr>
     </thead>
     <tbody>
+      <tr style="height:40px">
+        <td>${particulars || "&nbsp;"}</td>
+        <td>${mfoPap || "&nbsp;"}</td>
+        <td style="font-family:'Courier New',monospace;text-align:center">${uacsCode || "&nbsp;"}</td>
+        <td class="num" style="font-weight:bold">${amountDisplay}</td>
+        <td>${divisionName || "&nbsp;"}</td>
+        <td>&nbsp;</td>
+      </tr>
       <tr>
-        <td>${particulars || "—"}</td>
-        <td>${mfoPap}</td>
-        <td class="mono">${uacsCode}</td>
-        <td class="num" style="font-weight:bold">₱${!template && amount ? fmtHtml(amount) : ""}</td>
-        <td>${divisionName}</td>
-        <td></td>
+        <td colspan="3" style="text-align:right; font-weight:bold; font-size:8pt">Total</td>
+        <td class="num bold">${amountDisplay}</td>
+        <td colspan="2">&nbsp;</td>
       </tr>
     </tbody>
-    <tfoot>
+  </table>
+
+  ${notes ? `<div style="border:1px solid #ccc;border-top:none;padding:4px 6px;font-size:8pt;color:#444"><strong>Notes:</strong> ${notes}</div>` : ""}
+
+  <!-- ── CERTIFICATION BLOCK A + B ── -->
+  <table style="margin-top:6px; margin-bottom:0">
+    <colgroup>
+      <col style="width:50%"/>
+      <col style="width:50%"/>
+    </colgroup>
+    <tbody>
       <tr>
-        <td colspan="3" style="text-align:right;font-weight:bold;background:#f0fdf4">TOTAL</td>
-        <td class="num" style="font-weight:bold;background:#f0fdf4">₱${!template && amount ? fmtHtml(amount) : ""}</td>
-        <td colspan="2" style="background:#f0fdf4"></td>
+        <td colspan="2" class="section-header">
+          A. Charges to appropriation/allotment are necessary, lawful and under my direct supervision; and
+        </td>
       </tr>
-    </tfoot>
+      <tr>
+        <td style="height:80px; vertical-align:bottom; padding-bottom:6px; border-right:none">
+          <div style="border-top:1px solid #000; width:75%; margin-bottom:2px"></div>
+          <div style="font-size:8.5pt; font-weight:bold">${preparedByName || "________________________________"}</div>
+          <div style="font-size:7.5pt">${preparedByDesig}</div>
+          <div style="font-size:7.5pt">Head, Requesting Office/Authorized Representative</div>
+          <div style="font-size:7.5pt; margin-top:4px">Date : ____________________</div>
+        </td>
+        <td style="height:80px; vertical-align:bottom; padding-bottom:6px; border-left:1px solid #000">
+          <div style="border-top:1px solid #000; width:75%; margin-bottom:2px"></div>
+          <div style="font-size:8.5pt; font-weight:bold">${approvedByName || "________________________________"}</div>
+          <div style="font-size:7.5pt">${approvedByDesig}</div>
+          <div style="font-size:7.5pt">Head, Budget Division/Unit/Authorized Representative</div>
+          <div style="font-size:7.5pt; margin-top:4px">Date : ____________________</div>
+        </td>
+      </tr>
+    </tbody>
   </table>
 
-  ${notes ? `<div style="border:1px solid #ddd;border-radius:4px;padding:6px 8px;margin-bottom:8px;font-size:9px;color:#555"><strong>Notes:</strong> ${notes}</div>` : ""}
-
-  <table style="margin-bottom:8px">
-    <tr>
-      <td colspan="2" class="small bold">A. Charges to appropriation/allotment are necessary, lawful and under my direct supervision; and</td>
-    </tr>
-    <tr>
-      <td style="width:50%;padding:16px 10px">
-        <div class="sig-block">
-          <div class="sig-name">${preparedByName || "________________________________"}</div><br/>
-          <span>${preparedByDesig}</span><br/>
-          <span style="color:#666">Head, Requesting Office/Authorized Representative</span><br/>
-          <span style="color:#999">Date: ______________________</span>
-        </div>
-      </td>
-      <td style="width:50%;padding:16px 10px">
-        <div class="sig-block">
-          <div class="sig-name">${approvedByName || "________________________________"}</div><br/>
-          <span>${approvedByDesig}</span><br/>
-          <span style="color:#666">Head, Budget Division/Unit/Authorized Representative</span><br/>
-          <span style="color:#999">Date: ______________________</span>
-        </div>
-      </td>
-    </tr>
+  <!-- ── CERTIFICATION BLOCK C ── -->
+  <table style="margin-top:0; margin-bottom:6px">
+    <tbody>
+      <tr>
+        <td class="section-header">
+          C. Certified: Allotment available and obligated for the purpose/adjustment indicated above as supporting documents valid, proper and legal
+        </td>
+      </tr>
+      <tr>
+        <td style="height:70px; vertical-align:bottom; padding-bottom:6px">
+          <div style="border-top:1px solid #000; width:38%; margin-bottom:2px"></div>
+          <div style="font-size:8pt">Signature : ______________________________</div>
+          <div style="font-size:8pt">Printed Name : ${approvedByName || "______________________________"}</div>
+          <div style="font-size:8pt">Position : ${approvedByDesig || "______________________________"}</div>
+          <div style="font-size:8pt">Date : ____________________________</div>
+        </td>
+      </tr>
+    </tbody>
   </table>
 
-  <table style="margin-bottom:8px">
-    <tr>
-      <td class="small bold">C. Certified: Allotment available and obligated for the purpose indicated above</td>
-    </tr>
-    <tr>
-      <td style="padding:12px 10px">
-        <div class="sig-block">
-          <div class="sig-name">${approvedByName || "________________________________"}</div><br/>
-          <span>${approvedByDesig}</span><br/>
-          <span style="color:#666">Signature / Printed Name / Position / Date</span>
-        </div>
-      </td>
-    </tr>
-  </table>
-
+  <!-- ── STATUS OF OBLIGATION TABLE ── -->
   <table>
-    <tr>
-      <td colspan="8" class="small bold">STATUS OF OBLIGATION</td>
-    </tr>
+    <colgroup>
+      <col style="width:10%"/>
+      <col style="width:22%"/>
+      <col style="width:18%"/>
+      <col style="width:10%"/>
+      <col style="width:10%"/>
+      <col style="width:10%"/>
+      <col style="width:10%"/>
+      <col style="width:10%"/>
+    </colgroup>
     <thead>
       <tr>
-        <th class="small">Date</th>
-        <th class="small">Particulars</th>
-        <th class="small">ORS/JEV/Check/ADA/TRA No.</th>
-        <th class="small">Obligation (a)</th>
-        <th class="small">Payable (b)</th>
-        <th class="small">Not Yet Due (a-b)</th>
-        <th class="small">Due and Demandable (c)</th>
-        <th class="small">Balance (b-c)</th>
+        <th colspan="8" style="text-align:left; font-size:8pt; padding:3px 5px; background:#fff">
+          STATUS OF OBLIGATION
+        </th>
+      </tr>
+      <tr>
+        <th rowspan="2">Date</th>
+        <th rowspan="2">Particulars</th>
+        <th rowspan="2">ORS/JEV/Check/<br/>ADA/TRA No.<br/><span style="font-weight:normal;font-size:7pt">Reference</span></th>
+        <th rowspan="2">Amount</th>
+        <th colspan="2">Payment</th>
+        <th rowspan="2">Not Yet Due<br/>(a-b)</th>
+        <th rowspan="2">Balance<br/>(b-c)</th>
+      </tr>
+      <tr>
+        <th>Obligation<br/><span style="font-weight:normal;font-size:7pt">(a)</span></th>
+        <th>Payable<br/><span style="font-weight:normal;font-size:7pt">(b)</span></th>
       </tr>
     </thead>
     <tbody>
       ${obligationBody}
-      <tr style="font-weight:bold;background:#f0fdf4">
-        <td colspan="3" style="text-align:right">TOTAL</td>
-        <td class="num">₱${!template && amount ? fmtHtml(amount) : ""}</td>
-        <td></td><td></td><td></td><td></td>
+      <tr style="font-weight:bold">
+        <td colspan="3" style="text-align:right; font-size:8pt">Total</td>
+        <td class="num">${amountDisplay}</td>
+        <td class="num"></td>
+        <td class="num"></td>
+        <td class="num"></td>
+        <td class="num"></td>
       </tr>
     </tbody>
   </table>

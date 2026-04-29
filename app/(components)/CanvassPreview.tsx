@@ -14,7 +14,8 @@
  *   supplierName / supplierAddress – pre-filled if a single supplier is known
  */
 
-import { getBagongPilipinasLogoHTML, getDARLogoHTML } from "../lib/documentAssets";
+import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../lib/documentAssets";
+
 
 export interface CanvassPreviewData {
   prNo:            string;
@@ -147,62 +148,92 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
 </head>
 <body>
 
-<!-- ── Top header (mirrors sample) ─────────────────────────────── -->
-<table style="margin-bottom:6px; width:100%;">
+${`
+<!-- ── RFQ/Canvass Letterhead ─────────────────────────────────────────── -->
+<table style="margin-bottom: 8px; width:100%;">
   <colgroup>
-    <col style="width:20%"/>
-    <col style="width:25%"/>
-    <col style="width:55%"/>
+    <col style="width: 15%"/>
+    <col style="width: 70%"/>
+    <col style="width: 15%"/>
   </colgroup>
   <tbody>
     <tr>
-      <td style="vertical-align:top; padding:0;"></td>
-      <td style="vertical-align:top; padding:0;">
-        <div style="display:flex; align-items:center; justify-content:center; gap:10px; padding-top:2px;">
-          ${getBagongPilipinasLogoHTML(42)}
-          ${getDARLogoHTML(42)}
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getDARSquare2LogoHTML(50)}
+      </td>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 9pt; line-height: 1.3; margin-bottom:2px; font-weight: bold;">
+          REPUBLIC OF THE PHILIPPINES
+        </div>
+        <div style="font-size: 12pt; font-weight: bold; line-height: 1.2; color: #064E3B;">
+          DEPARTMENT OF AGRARIAN REFORM
+        </div>
+        <div style="font-size: 8pt; line-height: 1.3; color: #555; margin-top:2px;">
+          REGIONAL OFFICE NO. V
         </div>
       </td>
-      <td style="vertical-align:top; padding:2px 0 0 0;">
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
-          <div style="font-size:7.5pt; line-height:1.25; font-weight:bold;">
-          REPUBLIC OF THE PHILIPPINES<br/>
-          DEPARTMENT OF AGRARIAN REFORM<br/>
-          <span class="italic" style="font-weight:normal;">Tunay na Pagbabago sa Repormang Agraryo</span>
-          </div>
-          <div style="flex:0 0 auto; padding-top:2px;">
-            ${certifiedBadgeHTML}
-          </div>
-        </div>
-      </td>
-    </tr>
-    <tr>
-      <td style="font-size:8pt; padding-top:6px;">Revised on May 24, 2004</td>
-      <td></td>
-      <td style="text-align:right; font-size:8pt; padding-top:6px;">
-        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px;">
-          Date:&nbsp;&nbsp;${date}
-        </div><br/>
-        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px; margin-top:4px;">
-          Quotation No.&nbsp;&nbsp;${quotationNo}
-        </div>
-        ${
-          assignedTo || assignedDivision
-            ? `<div style="margin-top:6px; font-size:7.5pt; color:#444;">
-              Assigned: ${assignedTo || "—"}${assignedDivision ? ` (${assignedDivision})` : ""}
-            </div>`
-            : ""
-        }
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getBagongPilipinasLogoHTML(50)}
       </td>
     </tr>
   </tbody>
 </table>
 
-<!-- ── Agency / procuring entity ─────────────────────────────── -->
+<table style="margin-bottom: 12px; width:100%;">
+  <colgroup>
+    <col style="width: 85%"/>
+    <col style="width: 15%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 14pt; font-weight: bold; letter-spacing: 0.5px;">
+          REQUEST FOR QUOTATION
+        </div>
+      </td>
+      <td style="vertical-align: middle; text-align: center; padding:4px;">
+        ${getISOCertifiedLogoHTML(35)}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<hr style="border: none; border-top: 1.5px solid #000; margin: 8px 0 12px 0;"/>
+`}
+
+<!-- ── Document Info ───────────────────────────────────────────── -->
+<table style="margin-bottom:12px; width:100%;">
+  <colgroup>
+    <col style="width:50%"/>
+    <col style="width:50%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="padding:4px 0;">
+        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px;">
+          Date:&nbsp;&nbsp;${date}
+        </div>
+      </td>
+      <td style="padding:4px 0; text-align:right;">
+        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px;">
+          Quotation No.&nbsp;&nbsp;${quotationNo}
+        </div>
+      </td>
+    </tr>
+    ${
+      assignedTo || assignedDivision
+        ? `<tr>
+          <td colspan="2" style="padding:4px 0; font-size:8pt; color:#444;">
+            Assigned: ${assignedTo || "—"}${assignedDivision ? ` (${assignedDivision})` : ""}
+          </td>
+        </tr>`
+        : ""
+    }
+  </tbody>
+</table>
+
+<!-- ── Agency/Procuring Entity ───────────────────────────────────── -->
 <div style="text-align:center; font-weight:bold; font-size:10pt; margin-bottom:2px;">
-  DEPARTMENT OF AGRARIAN REFORM
-</div>
-<div style="text-align:center; font-size:8.5pt; margin-bottom:6px;">
   Agency/Procuring Entity
 </div>
 

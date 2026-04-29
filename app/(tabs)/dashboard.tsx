@@ -1242,7 +1242,7 @@ function PRTableRow({
           textAlign: "right",
         }}
       >
-        <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+        <Text>₱</Text>
         <Text style={{ fontFamily: MONO }}>
           {record.totalCost.toLocaleString("en-PH")}
         </Text>
@@ -1336,7 +1336,7 @@ function PRSummaryCard({
             color: "#374151",
           }}
         >
-          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          <Text>₱</Text>
           <Text style={{ fontFamily: MONO }}>
             {pr.totalCost.toLocaleString("en-PH")}
           </Text>

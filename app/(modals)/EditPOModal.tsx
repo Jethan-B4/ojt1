@@ -15,30 +15,30 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import POPreviewPanel, {
-  buildPOHtml,
-  toWords,
-  type POPreviewData,
+    buildPOHtml,
+    toWords,
+    type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import CalendarModal from "../(modals)/CalendarModal";
 import { supabase } from "../../lib/supabase/client";
 import {
-  fetchPOWithItemsById,
-  updatePO,
-  type POItemRow,
+    fetchPOWithItemsById,
+    updatePO,
+    type POItemRow,
 } from "../../lib/supabase/po";
 import { fetchPRIdByNo, fetchPurchaseRequests } from "../../lib/supabase/pr";
 
@@ -398,7 +398,7 @@ function ItemRow({
           className="text-[13px] font-bold text-[#064E3B]"
           style={{ fontFamily: MONO }}
         >
-          <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+          <Text>₱</Text>
           {fmt(amount)}
         </Text>
       </View>

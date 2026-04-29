@@ -10,11 +10,15 @@ import * as FileSystem from "expo-file-system";
 
 // Asset module IDs (from require statements)
 export const DAR_SQUARE_LOGO_MODULE = require("@/assets/images/dar_square.png");
+export const DAR_SQUARE2_LOGO_MODULE = require("@/assets/images/dar_square2.png");
 export const BAGONG_PILIPINAS_LOGO_MODULE = require("@/assets/images/bagong_pilipinas_logo.png");
+export const ISO_CERTIFIED_LOGO_MODULE = require("@/assets/images/iso_certified.png");
 
 // Cache for base64 encoded images
 let darLogoBase64: string | null = null;
+let darSquare2LogoBase64: string | null = null;
 let bagongPilipinasLogoBase64: string | null = null;
+let isoCertifiedLogoBase64: string | null = null;
 
 /**
  * Load an asset and convert to base64 data URI
@@ -41,8 +45,14 @@ export async function preloadLogos(): Promise<void> {
   if (!darLogoBase64) {
     darLogoBase64 = await loadAssetAsBase64(DAR_SQUARE_LOGO_MODULE);
   }
+  if (!darSquare2LogoBase64) {
+    darSquare2LogoBase64 = await loadAssetAsBase64(DAR_SQUARE2_LOGO_MODULE);
+  }
   if (!bagongPilipinasLogoBase64) {
     bagongPilipinasLogoBase64 = await loadAssetAsBase64(BAGONG_PILIPINAS_LOGO_MODULE);
+  }
+  if (!isoCertifiedLogoBase64) {
+    isoCertifiedLogoBase64 = await loadAssetAsBase64(ISO_CERTIFIED_LOGO_MODULE);
   }
 }
 
@@ -54,10 +64,24 @@ export function getDARLogoBase64(): string {
 }
 
 /**
+ * Get cached DAR Square2 logo base64 data URI
+ */
+export function getDARSquare2LogoBase64(): string {
+  return darSquare2LogoBase64 || "";
+}
+
+/**
  * Get cached Bagong Pilipinas logo base64 data URI
  */
 export function getBagongPilipinasLogoBase64(): string {
   return bagongPilipinasLogoBase64 || "";
+}
+
+/**
+ * Get cached ISO Certified logo base64 data URI
+ */
+export function getISOCertifiedLogoBase64(): string {
+  return isoCertifiedLogoBase64 || "";
 }
 
 /**
@@ -92,6 +116,40 @@ export function getBagongPilipinasLogoHTML(size: number = 55): string {
     height="${size}" 
     style="display:block; margin:auto;"
     alt="Bagong Pilipinas" />`;
+}
+
+/**
+ * HTML for DAR Square2 logo (alternative DAR logo)
+ * Uses cached base64 data URI
+ */
+export function getDARSquare2LogoHTML(size: number = 55): string {
+  const src = getDARSquare2LogoBase64();
+  if (!src) {
+    // Fallback placeholder
+    return `<div style="width:${size}px;height:${size}px;border:2px solid #064E3B;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#064E3B;font-weight:bold;">DAR</div>`;
+  }
+  return `<img src="${src}" 
+    width="${size}" 
+    height="${size}" 
+    style="display:block; margin:auto;"
+    alt="DAR Logo" />`;
+}
+
+/**
+ * HTML for ISO Certified logo (certification badge)
+ * Uses cached base64 data URI
+ */
+export function getISOCertifiedLogoHTML(size: number = 40): string {
+  const src = getISOCertifiedLogoBase64();
+  if (!src) {
+    // Fallback placeholder
+    return `<div style="width:${size}px;height:${size}px;border:1px solid #0066cc;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:6pt;color:#0066cc;text-align:center;">ISO</div>`;
+  }
+  return `<img src="${src}" 
+    width="${size}" 
+    height="${size}" 
+    style="display:block; margin:auto;"
+    alt="ISO Certified" />`;
 }
 
 /**
@@ -135,6 +193,66 @@ export function buildDARLetterheadHTML(
 </table>
 
 <hr style="border: none; border-top: 2px solid #000; margin: 6px 0 10px 0;"/>
+`;
+}
+
+/**
+ * RFQ/Canvass letterhead header HTML with logos and certification badge
+ */
+export function buildRFQLetterheadHTML(
+  provincialOffice: string = "DEPARTMENT OF AGRARIAN REFORM"
+): string {
+  return `
+<!-- ── RFQ/Canvass Letterhead ─────────────────────────────────────────── -->
+<table style="margin-bottom: 8px; width:100%;">
+  <colgroup>
+    <col style="width: 15%"/>
+    <col style="width: 70%"/>
+    <col style="width: 15%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getDARSquare2LogoHTML(50)}
+      </td>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 9pt; line-height: 1.3; margin-bottom:2px; font-weight: bold;">
+          REPUBLIC OF THE PHILIPPINES
+        </div>
+        <div style="font-size: 12pt; font-weight: bold; line-height: 1.2; color: #064E3B;">
+          ${provincialOffice}
+        </div>
+        <div style="font-size: 8pt; line-height: 1.3; color: #555; margin-top:2px;">
+          REGIONAL OFFICE NO. V
+        </div>
+      </td>
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getBagongPilipinasLogoHTML(50)}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<table style="margin-bottom: 12px; width:100%;">
+  <colgroup>
+    <col style="width: 85%"/>
+    <col style="width: 15%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 14pt; font-weight: bold; letter-spacing: 0.5px;">
+          REQUEST FOR QUOTATION
+        </div>
+      </td>
+      <td style="vertical-align: middle; text-align: center; padding:4px;">
+        ${getISOCertifiedLogoHTML(35)}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<hr style="border: none; border-top: 1.5px solid #000; margin: 8px 0 12px 0;"/>
 `;
 }
 

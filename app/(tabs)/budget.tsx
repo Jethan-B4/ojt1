@@ -20,28 +20,28 @@
  */
 
 import {
-  fetchBudgets,
-  fetchOrsEntries,
-  insertDivisionBudget,
-  supabase,
-  updateDivisionBudget,
-  type DivisionBudgetRow,
-  type OrsEntryRow,
+    fetchBudgets,
+    fetchOrsEntries,
+    insertDivisionBudget,
+    supabase,
+    updateDivisionBudget,
+    type DivisionBudgetRow,
+    type OrsEntryRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import DivisionBudgetSection, {
-  YearPickerModal,
+    YearPickerModal,
 } from "../(components)/DivisionBudgetModule";
 import { ORSSection } from "../(components)/ORSModule";
 import { useAuth } from "../AuthContext";
@@ -264,7 +264,7 @@ export default function BudgetScreen() {
               className="text-[17px] font-extrabold text-[#064E3B]"
               style={{ fontFamily: MONO }}
             >
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              <Text>₱</Text>
               {fmt(totalAllocated)}
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">
@@ -290,7 +290,7 @@ export default function BudgetScreen() {
               className="text-[17px] font-extrabold text-[#10b981]"
               style={{ fontFamily: MONO }}
             >
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              <Text>₱</Text>
               {fmt(totalUtilized)}
             </Text>
             <View className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
@@ -324,7 +324,7 @@ export default function BudgetScreen() {
               }`}
               style={{ fontFamily: MONO }}
             >
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+              <Text>₱</Text>
               {fmt(Math.abs(totalRemaining))}
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">

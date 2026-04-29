@@ -19,22 +19,22 @@
  */
 
 import {
-  supabase,
-  type DivisionBudgetRow,
+    supabase,
+    type DivisionBudgetRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ function AllocModal({
             {/* Amount */}
             <Text className="text-[12px] font-semibold text-gray-700 mb-1">
               Allocated Budget (
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>){" "}
+              <Text>₱</Text>){" "}
               <Text className="text-red-500">*</Text>
             </Text>
             <TextInput
@@ -390,7 +390,7 @@ function CreateAllocModal({
             {/* Amount */}
             <Text className="text-[12px] font-semibold text-gray-700 mb-1">
               Allocated Budget (
-              <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>){" "}
+              <Text>₱</Text>){" "}
               <Text className="text-red-500">*</Text>
             </Text>
             <TextInput
@@ -523,7 +523,7 @@ export default function DivisionBudgetSection({
                     {canEdit && <MaterialIcons name="edit" size={12} color="#9ca3af" />}
                   </View>
                   <Text className="text-[11.5px] font-semibold text-gray-600">
-                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                    <Text>₱</Text>
                     <Text style={{ fontFamily: MONO }}>{fmt(row.utilized)}</Text>{" "}
                     / <Text style={{ fontFamily: MONO }}>{fmt(row.allocated)}</Text>
                   </Text>
@@ -535,7 +535,7 @@ export default function DivisionBudgetSection({
                   <Text className="text-[10px] text-gray-400">{pct}% utilized</Text>
                   <Text className={`text-[10px] font-semibold ${remaining < 0 ? "text-red-500" : "text-gray-400"}`}>
                     {remaining < 0 ? "Over by " : "Remaining: "}
-                    <Text style={{ fontFamily: undefined }}>{"\u20B1"}</Text>
+                    <Text>₱</Text>
                     {fmt(Math.abs(remaining))}
                   </Text>
                 </View>

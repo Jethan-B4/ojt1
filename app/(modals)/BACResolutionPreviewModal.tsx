@@ -33,6 +33,7 @@ import {
   buildBACResolutionHTML,
   type BACResolutionData,
 } from "../(components)/BACResolutionPreview";
+import { preloadLogos } from "../lib/documentAssets";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -45,13 +46,27 @@ export default function BACResolutionPreviewModal({
   data: BACResolutionData;
   onClose: () => void;
 }) {
-  // Logos are embedded in buildBACResolutionHTML — no async preload needed.
-  const filledHtml = React.useMemo(() => buildBACResolutionHTML(data), [data]);
-  const templateHtml = React.useMemo(
-    () => buildBACResolutionHTML(data, { template: true }),
-    [data],
-  );
+  const [logosReady, setLogosReady] = React.useState(false);
   const [mode, setMode] = React.useState<"filled" | "template">("filled");
+
+  // Preload logos when modal becomes visible
+  React.useEffect(() => {
+    if (visible && !logosReady) {
+      preloadLogos().then(() => setLogosReady(true));
+    }
+  }, [visible, logosReady]);
+
+  // Generate HTML only after logos are ready
+  const filledHtml = React.useMemo(() => {
+    if (!logosReady) return "";
+    return buildBACResolutionHTML(data, false);
+  }, [data, logosReady]);
+
+  const templateHtml = React.useMemo(() => {
+    if (!logosReady) return "";
+    return buildBACResolutionHTML(data, true);
+  }, [data, logosReady]);
+
   const html = mode === "template" ? templateHtml : filledHtml;
 
   const handlePrint = async () => {
@@ -215,33 +230,49 @@ export default function BACResolutionPreviewModal({
         </View>
 
         {/* ── WebView document ── */}
-        <WebView
-          source={{ html }}
-          style={{ flex: 1, backgroundColor: "#ffffff" }}
-          originWhitelist={["*"]}
-          scrollEnabled
-          showsVerticalScrollIndicator
-          startInLoadingState
-          renderLoading={() => (
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#ffffff",
-              }}
-            >
-              <ActivityIndicator size="large" color="#064E3B" />
-              <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>
-                Rendering resolution…
-              </Text>
-            </View>
-          )}
-        />
+        {!logosReady ? (
+          <View
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#ffffff",
+            }}
+          >
+            <ActivityIndicator size="large" color="#064E3B" />
+            <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>
+              Loading document assets…
+            </Text>
+          </View>
+        ) : (
+          <WebView
+            source={{ html }}
+            style={{ flex: 1, backgroundColor: "#ffffff" }}
+            originWhitelist={["*"]}
+            scrollEnabled
+            showsVerticalScrollIndicator
+            startInLoadingState
+            renderLoading={() => (
+              <View
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "#ffffff",
+                }}
+              >
+                <ActivityIndicator size="large" color="#064E3B" />
+                <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 10 }}>
+                  Rendering resolution…
+                </Text>
+              </View>
+            )}
+          />
+        )}
 
         {/* ── Footer ── */}
         <View

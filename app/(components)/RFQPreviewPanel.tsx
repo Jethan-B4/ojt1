@@ -8,6 +8,7 @@ import React from "react";
 import {
   type ViewStyle,
 } from "react-native";
+import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../lib/documentAssets";
 import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -63,10 +64,61 @@ export function buildRFQHtml(
     .join("");
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Times New Roman',Times,serif;font-size:10pt;color:#000;background:#fff;padding:24px}table{width:100%;border-collapse:collapse;color:#000}@media print{body{padding:10mm}@page{margin:8mm}}</style>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Times New Roman',Times,serif;font-size:10pt;color:#000;background:#fff;padding:20px}table{width:100%;border-collapse:collapse;color:#000}@media print{body{padding:8mm}@page{margin:6mm}}</style>
 </head><body>
+${`
+<!-- ── RFQ/Canvass Letterhead ─────────────────────────────────────────── -->
+<table style="margin-bottom: 8px; width:100%;">
+  <colgroup>
+    <col style="width: 15%"/>
+    <col style="width: 70%"/>
+    <col style="width: 15%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getDARSquare2LogoHTML(50)}
+      </td>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 9pt; line-height: 1.3; margin-bottom:2px; font-weight: bold;">
+          REPUBLIC OF THE PHILIPPINES
+        </div>
+        <div style="font-size: 12pt; font-weight: bold; line-height: 1.2; color: #064E3B;">
+          DEPARTMENT OF AGRARIAN REFORM
+        </div>
+        <div style="font-size: 8pt; line-height: 1.3; color: #555; margin-top:2px;">
+          REGIONAL OFFICE NO. V
+        </div>
+      </td>
+      <td style="vertical-align: middle; text-align: center; padding:6px;">
+        ${getBagongPilipinasLogoHTML(50)}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<table style="margin-bottom: 12px; width:100%;">
+  <colgroup>
+    <col style="width: 85%"/>
+    <col style="width: 15%"/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <td style="text-align: center; vertical-align: middle; padding:4px;">
+        <div style="font-size: 14pt; font-weight: bold; letter-spacing: 0.5px;">
+          REQUEST FOR QUOTATION
+        </div>
+      </td>
+      <td style="vertical-align: middle; text-align: center; padding:4px;">
+        ${getISOCertifiedLogoHTML(35)}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<hr style="border: none; border-top: 1.5px solid #000; margin: 8px 0 12px 0;"/>
+`}
 <table><tbody>
-<tr><td colspan="6" style="text-align:center;font-weight:bold;font-size:14pt;padding-bottom:16px">REQUEST FOR QUOTATION</td></tr>
 <tr><td colspan="3" style="padding:4px 0"><b>PR No.:</b> ${template ? "" : data.prNo || ""}</td><td colspan="3" style="padding:4px 0;text-align:right"><b>Date:</b> ${today}</td></tr>
 <tr><td colspan="6" style="padding:4px 0"><b>Supplier:</b> ${template ? "_______________________________" : data.supplier || "_______________________________"}</td></tr>
 <tr><td colspan="6" style="padding:8px 0">We would like to request for the submission of your quotation for the following:</td></tr>
