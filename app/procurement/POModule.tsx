@@ -42,9 +42,7 @@ import {
   View,
 } from "react-native";
 import { ORSInlinePanel } from "../(components)/ORSModule";
-import PORemarkSheet, {
-  type PORemarkSheetRecord,
-} from "../(components)/PORemarkSheet";
+import PORemarkSheet, { type PORemarkSheetRecord } from "../(components)/PORemarkSheet";
 import DeletePOModal from "../(modals)/DeletePOModal";
 import ViewPOModal from "../(modals)/ViewPOModal";
 import {
@@ -56,6 +54,7 @@ import {
 } from "../../lib/supabase/po";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
+import { useFiscalYear } from "../contexts/FiscalYearContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -979,119 +978,13 @@ const Pagination: React.FC<{
   );
 };
 
-// ─── YearPickerModal ──────────────────────────────────────────────────────────
-
-export function YearPickerModal({
-  visible,
-  selected,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  selected: number;
-  onSelect: (y: number) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity
-        className="flex-1 justify-center items-center bg-black/50"
-        activeOpacity={1}
-        onPress={onClose}
-      >
-        <TouchableOpacity activeOpacity={1}>
-          <View
-            className="bg-white rounded-3xl overflow-hidden"
-            style={{
-              width: 220,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.18,
-              shadowRadius: 16,
-              elevation: 12,
-            }}
-          >
-            <View className="bg-[#064E3B] px-4 py-3">
-              <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
-                Fiscal Year
-              </Text>
-              <Text className="text-[16px] font-extrabold text-white">
-                Select Year
-              </Text>
-            </View>
-            {YEAR_RANGE.map((y) => {
-              const isSelected = y === selected;
-              const isFuture = y > CURRENT_YEAR;
-              return (
-                <TouchableOpacity
-                  key={y}
-                  onPress={() => {
-                    onSelect(y);
-                    onClose();
-                  }}
-                  activeOpacity={0.7}
-                  className={`flex-row items-center justify-between px-4 py-3 ${isSelected ? "bg-emerald-50" : ""}`}
-                  style={{ borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }}
-                >
-                  <View className="flex-row items-center gap-2">
-                    {isSelected ? (
-                      <View className="w-1.5 h-5 rounded-full bg-[#10b981]" />
-                    ) : (
-                      <View className="w-1.5 h-5" />
-                    )}
-                    <Text
-                      className={`text-[14px] font-bold ${
-                        isSelected
-                          ? "text-[#064E3B]"
-                          : isFuture
-                            ? "text-gray-400"
-                            : "text-gray-800"
-                      }`}
-                      style={{ fontFamily: MONO }}
-                    >
-                      FY {y}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-1.5">
-                    {isFuture && (
-                      <View className="bg-amber-100 px-1.5 py-0.5 rounded-md">
-                        <Text className="text-[9px] font-bold text-amber-700">
-                          Planning
-                        </Text>
-                      </View>
-                    )}
-                    {y === CURRENT_YEAR && (
-                      <View className="bg-emerald-100 px-1.5 py-0.5 rounded-md">
-                        <Text className="text-[9px] font-bold text-emerald-700">
-                          Current
-                        </Text>
-                      </View>
-                    )}
-                    {isSelected && (
-                      <MaterialIcons name="check" size={14} color="#10b981" />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
 // ─── POModule ─────────────────────────────────────────────────────────────────
 
 export default function POModule() {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
   const { tick } = useRealtime();
+  const { year, setYearPickerOpen, yearPickerOpen } = useFiscalYear();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1100,9 +993,7 @@ export default function POModule() {
   const [sortBy, setSortBy] = useState<SortBy>("date_created");
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [year, setYear] = useState(CURRENT_YEAR);
-  const [yearPickerOpen, setYearPickerOpen] = useState(false);
-  const [records, setRecords] = useState<PORecord[]>([]);
+    const [records, setRecords] = useState<PORecord[]>([]);
 
   // Status rows fetched from public.status — labels come from DB, not hardcoded
   const [statuses, setStatuses] = useState<
@@ -1269,39 +1160,7 @@ export default function POModule() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      {/* Page header with fiscal year picker */}
-      <View className="bg-[#064E3B] px-4 pt-3 pb-3">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-[9.5px] font-semibold tracking-widest uppercase text-white/40">
-              DAR · Procurement
-            </Text>
-            <Text className="text-[18px] font-extrabold text-white">
-              Purchase Orders
-            </Text>
-          </View>
-          {/* Year selector */}
-          <TouchableOpacity
-            onPress={() => setYearPickerOpen(true)}
-            activeOpacity={0.8}
-            className="flex-row items-center gap-1.5 bg-white/10 rounded-xl px-3 py-2"
-            style={{ borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }}
-          >
-            <Text
-              className="text-[13px] font-bold text-white"
-              style={{ fontFamily: MONO }}
-            >
-              FY {year}
-            </Text>
-            <MaterialIcons
-              name="keyboard-arrow-down"
-              size={16}
-              color="rgba(255,255,255,0.7)"
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
+      
       {/* Subtab navigation */}
       <SubTabRow
         active={activeSubTab}
@@ -1521,15 +1380,6 @@ export default function POModule() {
         </View>
       )} */}
 
-      <YearPickerModal
-        visible={yearPickerOpen}
-        selected={year}
-        onSelect={(y) => {
-          setYear(y);
-          setPage(1);
-        }}
-        onClose={() => setYearPickerOpen(false)}
-      />
-    </View>
+          </View>
   );
 }

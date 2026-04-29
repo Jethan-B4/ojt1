@@ -25,6 +25,7 @@ import {
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 import { useEntityChanges } from "../RealtimeContext";
+import { useFiscalYear } from "../contexts/FiscalYearContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -810,6 +811,7 @@ export default function PRModule({
 }: { initialSubTab?: SubTab } = {}) {
   const { currentUser } = useAuth();
   const roleId = currentUser?.role_id ?? 0;
+  const { year } = useFiscalYear();
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(
     initialSubTab ?? "all",
@@ -924,6 +926,10 @@ export default function PRModule({
 
   const filtered = records
     .filter((r) => {
+      // Filter by fiscal year (based on creation date)
+      const createdYear = new Date(r.date).getFullYear();
+      if (createdYear !== year) return false;
+      
       const q = searchQuery.trim().toLowerCase();
       const prNo = (r.prNo ?? "").toLowerCase();
       const itemDesc = (r.itemDescription ?? "").toLowerCase();

@@ -1,11 +1,7 @@
 import {
-  fetchDVByDelivery,
   fetchDeliveries,
   fetchDeliveriesByDivision,
-  fetchDeliveryPOContext,
-  fetchDeliveryStatuses,
-  fetchIARByDelivery,
-  fetchLOAByDelivery
+  fetchDeliveryStatuses
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -20,13 +16,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import PORemarkSheet, {
-  type PORemarkSheetRecord,
-} from "../(components)/PORemarkSheet";
 import DeleteDeliveryModal from "../(modals)/DeleteDeliveryModal";
-import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../AuthContext";
+import { useFiscalYear } from "../contexts/FiscalYearContext";
 import { useRealtime } from "../RealtimeContext";
+import { DeliveryRemarkSheet } from "./DeliveryRemarkSheet";
+import { PODetailsModal } from "./PODetailsModal";
 
 type SubTab = "all" | "deliveries" | "inspection" | "acceptance";
 type SortBy = "date_created" | "date_modified";
@@ -736,6 +731,7 @@ export default function DeliveryModule() {
   const roleId = Number((currentUser as any)?.role_id ?? 0);
   const divisionId = (currentUser as any)?.division_id ?? null;
   const { tick } = useRealtime();
+  const { year } = useFiscalYear();
 
   const [subTab, setSubTab] = useState<SubTab>("all");
   const [records, setRecords] = useState<DeliveryRecord[]>([]);
@@ -758,9 +754,8 @@ export default function DeliveryModule() {
     string | number | null
   >(null);
   const [deleteDeliveryNo, setDeleteDeliveryNo] = useState<string | null>(null);
-  const [viewTab, setViewTab] = useState<"iar" | "loa" | "dv">("iar");
   const [remarkVisible, setRemarkVisible] = useState(false);
-  const [remarkRecord, setRemarkRecord] = useState<PORemarkSheetRecord | null>(
+  const [remarkRecord, setRemarkRecord] = useState<DeliveryRecord | null>(
     null,
   );
 
@@ -796,6 +791,11 @@ export default function DeliveryModule() {
     return records
       .filter((r) => {
         if (subTab !== "all" && !tabStatuses.includes(r.statusId)) return false;
+        
+        // Filter by fiscal year (based on creation date)
+        const createdYear = new Date(r.createdAtIso).getFullYear();
+        if (createdYear !== year) return false;
+        
         const q = searchQuery.toLowerCase();
         const matchSearch =
           !q ||
@@ -824,6 +824,7 @@ export default function DeliveryModule() {
     sectionFilter,
     statusFilter,
     sortBy,
+    year,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -831,34 +832,19 @@ export default function DeliveryModule() {
 
   const openView = async (r: DeliveryRecord) => {
     try {
-      const [i, l, d] = await Promise.all([
-        fetchIARByDelivery(r.id),
-        fetchLOAByDelivery(r.id),
-        fetchDVByDelivery(r.id),
-      ]);
+      setMoreRecord(r);
       setViewOpen(true);
     } catch (e: any) {
       Alert.alert(
         "Load failed",
-        e?.message ?? "Could not load delivery documents.",
+        e?.message ?? "Could not load PO details.",
       );
     }
   };
 
-  const openRemarks = async (r: DeliveryRecord) => {
+  const openRemarks = async (delivery: DeliveryRecord) => {
     try {
-      const ctx = await fetchDeliveryPOContext(Number(r.id));
-      if (!ctx?.poId) {
-        Alert.alert("Not available", "Linked PO context not found.");
-        return;
-      }
-      setRemarkRecord({
-        id: String(ctx.poId),
-        poNo: ctx.poNo || r.poNo,
-        supplier: ctx.supplier || r.supplier,
-        linkedPrId: ctx.prId,
-        prNo: ctx.prNo || "—",
-      });
+      setRemarkRecord(delivery);
       setRemarkVisible(true);
     } catch (e: any) {
       Alert.alert("Load failed", e?.message ?? "Could not load remarks.");
@@ -1103,14 +1089,12 @@ export default function DeliveryModule() {
         }}
       />
 
-      <ViewDeliveryModal
+      <PODetailsModal
         visible={viewOpen}
         onClose={() => setViewOpen(false)}
-        viewTab={viewTab}
-        setViewTab={setViewTab}
-        deliveryId={moreRecord?.id}
+        deliveryId={moreRecord?.id ?? null}
       />
-      <PORemarkSheet
+      <DeliveryRemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
         currentUser={currentUser}

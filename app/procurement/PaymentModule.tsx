@@ -3,35 +3,36 @@
  */
 
 import {
-    fetchDeliveriesForPaymentPhase,
-    fetchDeliveryPOContext,
-    fetchDVByDelivery,
-    fetchIARByDelivery,
-    fetchLOAByDelivery,
-    fetchPaymentPhaseStatuses,
+  fetchDeliveriesForPaymentPhase,
+  fetchDeliveryPOContext,
+  fetchDVByDelivery,
+  fetchIARByDelivery,
+  fetchLOAByDelivery,
+  fetchPaymentPhaseStatuses,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import PORemarkSheet, { type PORemarkSheetRecord } from "../(components)/PORemarkSheet";
 import ProcessPaymentModal, {
-    canRoleProcessPayment,
-    type ProcessPaymentRecord,
+  canRoleProcessPayment,
+  type ProcessPaymentRecord,
 } from "../(modals)/ProcessPaymentModal";
 import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../AuthContext";
 import { useRealtime } from "../RealtimeContext";
+import { useFiscalYear } from "../contexts/FiscalYearContext";
 
 type SubTab = "all" | "active" | "completed";
 
@@ -184,6 +185,7 @@ export default function PaymentModule() {
   const roleId = Number((currentUser as any)?.role_id ?? 0);
   const divisionId = (currentUser as any)?.division_id ?? null;
   const { tick } = useRealtime();
+  const { year } = useFiscalYear();
 
   const [subTab, setSubTab] = useState<SubTab>("all");
   const [records, setRecords] = useState<PaymentRow[]>([]);
@@ -241,6 +243,10 @@ export default function PaymentModule() {
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return records.filter((r) => {
+      // Filter by fiscal year (based on creation date)
+      const createdYear = new Date(r.date).getFullYear();
+      if (createdYear !== year) return false;
+      
       const tabOk =
         subTab === "all"
           ? true
@@ -254,7 +260,7 @@ export default function PaymentModule() {
         r.supplier.toLowerCase().includes(q);
       return tabOk && searchOk;
     });
-  }, [records, subTab, searchQuery]);
+  }, [records, subTab, searchQuery, year]);
 
   const openView = async (r: PaymentRow) => {
     try {

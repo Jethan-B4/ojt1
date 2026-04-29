@@ -12,15 +12,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TouchableOpacity, View } from "react-native";
 import "../global-typography";
 
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
 import { bootstrapNotifications } from "@/lib/supabase/notifications";
 import CalendarModal from "../(modals)/CalendarModal";
 import { useAuth } from "../AuthContext";
+import { BrandHeaderWithFiscalYear } from "../components/BrandHeaderWithFiscalYear";
 import BudgetScreen from "./budget";
 import CanvassingModule from "./CanvassingModule";
 import DashboardScreen from "./dashboard";
-import ProcurementScreen from "./procurement";
 import ProcurementLog from "./ProcurementLog";
+import ProcurementWithFiscalYear from "./ProcurementWithFiscalYear";
 import UserManagementScreen from "./UserManagement";
 
 // ─── Drawer navigator ─────────────────────────────────────────────────────────
@@ -88,7 +89,12 @@ export default function TabLayout() {
         headerShown: true,
         headerStyle: { height: 60 },
         headerTitle: "",
-        header: ({ navigation }) => <BrandHeader navigation={navigation} />,
+        header: ({ navigation }) => {
+          // Check if current route is procurement to show fiscal year filter
+          const currentRoute = navigation.getState()?.routes[navigation.getState()?.index]?.name;
+          const showFiscalYear = currentRoute === "Procurement";
+          return <BrandHeaderWithFiscalYear navigation={navigation} showFiscalYear={showFiscalYear} />;
+        },
       }}
       drawerContent={(props) => (
         <CustomDrawer {...props} onSignOut={handleSignOut} />
@@ -105,7 +111,7 @@ export default function TabLayout() {
       />
       <Drawer.Screen
         name="Procurement"
-        component={ProcurementScreen}
+        component={ProcurementWithFiscalYear}
         options={{
           drawerIcon: ({ color, size }) => (
             <MaterialIcons name="shopping-bag" size={size} color={color} />
