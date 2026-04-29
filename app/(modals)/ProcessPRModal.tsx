@@ -33,7 +33,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

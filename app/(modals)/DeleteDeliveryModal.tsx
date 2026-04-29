@@ -18,7 +18,7 @@ import {
   fetchDeliveryDeletePreview,
   type DeleteDeliveryPreview,
 } from "../../lib/supabase/deleteDelivery";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Props {
   visible: boolean;

@@ -18,7 +18,7 @@ import {
   fetchPRDeletePreview,
   type DeletePRPreview,
 } from "../../lib/supabase/deletePR";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 interface Props {
   visible: boolean;

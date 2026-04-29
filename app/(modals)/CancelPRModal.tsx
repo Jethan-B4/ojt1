@@ -35,7 +35,7 @@ import {
   fetchPRCancelPreview,
   type CancelPRPreview,
 } from "../../lib/supabase/cancelPR";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 

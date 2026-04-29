@@ -63,7 +63,7 @@ import type { BACResolutionData } from "../../(components)/BACResolutionPreview"
 import type { CanvassPreviewData } from "../../(components)/CanvassPreview";
 import BACResolutionPreviewModal from "../../(modals)/BACResolutionPreviewModal";
 import CanvassPreviewModal from "../../(modals)/CanvassPreviewModal";
-import { useAuth } from "../../AuthContext";
+import { useAuth } from "../../contexts/AuthContext";
 import AAAView from "../AAAView/AAAModule";
 import StageRemarkBox from "../StageRemarkBox";
 import PRReceptionStep from "./PRReceptionStep";
@@ -1055,9 +1055,7 @@ export default function BACView({
       "BAC Chairperson";
     const viceChair =
       members.find((m) => m.designation.includes("Vice"))?.name ?? "";
-    const bacMems = members
-      .filter((m) => m.designation === "BAC Member")
-      .map((m) => m.name);
+    const bacMems = members.filter((m) => m.designation === "BAC Member");
     const approver =
       members.find((m) => m.designation.includes("PARPO"))?.name ?? "PARPO II";
     return {
@@ -1104,8 +1102,7 @@ export default function BACView({
       provincialOffice: "DARPO-CAMARINES SUR I",
       bacChairperson: chairperson,
       bacViceChairperson: viceChair,
-      bacMembers:
-        bacMems.length >= 2 ? [bacMems[0], bacMems[1]] : [bacMems[0] ?? "", ""],
+      bacMembers: bacMems.slice(0, 2).map((m) => ({ name: m.name, title: m.designation })),
       approvedBy: approver,
       approvedByDesig: "HOPE",
       procurementModeTitle: mode.toUpperCase(),

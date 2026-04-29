@@ -19,37 +19,37 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    generateOrsNumber,
-    insertOrsEntry,
-    updateOrsEntry
+  generateOrsNumber,
+  insertOrsEntry,
+  updateOrsEntry
 } from "../../lib/supabase/budget";
 import { supabase } from "../../lib/supabase/client";
 import {
-    fetchPOStatuses,
-    fetchPOWithItemsById,
-    updatePO,
-    updatePOStatus,
-    type PORow,
+  fetchPOStatuses,
+  fetchPOWithItemsById,
+  updatePO,
+  updatePOStatus,
+  type PORow,
 } from "../../lib/supabase/po";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 import CalendarPickerModal from "./CalendarModal";
 import {
-    FlagButton,
-    STATUS_FLAGS,
-    StatusFlagPicker,
-    type StatusFlag,
+  FlagButton,
+  STATUS_FLAGS,
+  StatusFlagPicker,
+  type StatusFlag,
 } from "./ProcessPRModal";
 
 // ─── Re-exports (consumed by POModule) ───────────────────────────────────────

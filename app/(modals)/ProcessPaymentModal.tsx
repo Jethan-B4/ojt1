@@ -25,12 +25,12 @@ import {
   updateDelivery,
   type DeliveryRow,
 } from "../../lib/supabase/delivery";
+import { useAuth } from "../contexts/AuthContext";
 import {
   FlagButton,
   StatusFlagPicker,
   type StatusFlag,
 } from "./ProcessPRModal";
-import { useAuth } from "../AuthContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

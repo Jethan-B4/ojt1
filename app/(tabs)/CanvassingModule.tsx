@@ -19,13 +19,13 @@
 import AAAView from "@/app/(canvassing)/AAAView/AAAModule";
 import BACView from "@/app/(canvassing)/BACView";
 import CanvasserView from "@/app/(canvassing)/CanvasserView";
-import BACResolutionModule from "@/app/(components)/BACResolutionModule";
 import EndUserView from "@/app/(canvassing)/EndUserView";
+import BACResolutionModule from "@/app/(components)/BACResolutionModule";
 import { ensureCanvassSession, fetchPRIdByNo } from "@/lib/supabase";
 import type { CanvassPayload, CanvassingPR } from "@/types/canvassing";
 import React from "react";
 import { Text, View } from "react-native";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 

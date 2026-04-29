@@ -1,205 +1,933 @@
-import { MaterialIcons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+/**
+ * DeliveryRemarkSheet.tsx
+ *
+ * Unified remarks bottom-sheet for a Delivery.
+ * Shows a merged, chronological timeline of:
+ *   • Delivery remarks (from public.remarks with [DELIVERY] tag via PO context)
+ *   • Payment remarks (from public.remarks with [PAYMENT] tag via PO context)
+ *   • PO/PR remarks (linked through delivery's PO)
+ *
+ * New remarks submitted here are written to public.remarks with delivery_id
+ * linked through the PO context, and tagged with [DELIVERY] prefix.
+ *
+ * Interface mirrors PORemarkSheet.tsx for consistent UX.
+ */
+
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  ScrollView,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { supabase } from "../../lib/supabase/client";
+import {
+  FlagButton,
+  STATUS_FLAGS,
+  StatusFlagPicker,
+  type StatusFlag,
+} from "../(modals)/ProcessPRModal";
+import {
+  buildRemotePath,
+  guessContentType,
+  supabase,
+  uploadPRFile,
+} from "../../lib/supabase";
 
-interface DeliveryRecord {
-  id: string | number;
+// ─── Public types ─────────────────────────────────────────────────────────────
+
+export interface DeliveryRemarkSheetRecord {
+  /** deliveries.id */
+  id: string;
   deliveryNo: string;
-  remarks?: string;
+  drNo?: string | null;
+  soaNo?: string | null;
+  /** Linked PO number for context */
+  poNo: string;
+  supplier: string;
 }
 
-interface DeliveryRemarkSheetProps {
-  visible: boolean;
-  record: DeliveryRecord | null;
-  currentUser: any;
-  onClose: () => void;
+// ─── Flag helpers ─────────────────────────────────────────────────────────────
+
+const FLAG_TO_ID: Record<StatusFlag, number> = {
+  complete: 2,
+  incomplete_info: 3,
+  wrong_information: 4,
+  needs_revision: 5,
+  on_hold: 6,
+  urgent: 7,
+};
+
+const ID_TO_FLAG: Record<number, StatusFlag> = {
+  2: "complete",
+  3: "incomplete_info",
+  4: "wrong_information",
+  5: "needs_revision",
+  6: "on_hold",
+  7: "urgent",
+};
+
+function getStatusFlagId(flag: StatusFlag | null): number | null {
+  return flag ? FLAG_TO_ID[flag] : null;
 }
 
-export function DeliveryRemarkSheet({
-  visible,
-  record,
-  currentUser,
-  onClose,
-}: DeliveryRemarkSheetProps) {
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [newRemark, setNewRemark] = useState("");
-  const [deliveryRemarks, setDeliveryRemarks] = useState<any[]>([]);
+function getFlagFromId(id: number | null): StatusFlag | null {
+  return id ? (ID_TO_FLAG[id] ?? null) : null;
+}
 
-  // Load delivery remarks when sheet opens
-  useEffect(() => {
-    if (visible && record) {
-      loadDeliveryRemarks();
-    }
-  }, [visible, record]);
+// ─── Unified remark entry ─────────────────────────────────────────────────────
 
-  const loadDeliveryRemarks = async () => {
-    if (!record) return;
-    
-    setLoading(true);
-    try {
-      // Fetch delivery-specific remarks
-      const { data, error } = await supabase
-        .from('delivery_remarks')
-        .select('*')
-        .eq('delivery_id', record.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error("Failed to load delivery remarks:", error);
-      } else {
-        setDeliveryRemarks(data || []);
-      }
-    } catch (error) {
-      console.error("Failed to load delivery remarks:", error);
-      setDeliveryRemarks([]);
-    } finally {
-      setLoading(false);
-    }
+type RemarkPhase = "delivery" | "payment" | "po" | "pr";
+
+interface UnifiedRemark {
+  id: number;
+  remark: string;
+  status_flag_id: number | null;
+  created_at: string;
+  user_id: number | null;
+  username?: string;
+  /** 
+   * "delivery" = has [DELIVERY] tag
+   * "payment" = has [PAYMENT] tag  
+   * "po" = PO-level remark without delivery tag
+   * "pr" = PR-level remark
+   */
+  source: RemarkPhase;
+}
+
+function phaseFromRemark(entry: UnifiedRemark): {
+  phase: RemarkPhase;
+  cleanRemark: string;
+} {
+  const raw = entry.remark ?? "";
+  
+  // Check for delivery/payment tags
+  const m = raw.match(/^\s*\[(DELIVERY|PAYMENT)\]\s*/i);
+  if (!m) {
+    // No tag - determine from source field
+    return { phase: entry.source, cleanRemark: raw };
+  }
+  
+  const tag = String(m[1] ?? "").toUpperCase();
+  const phase: RemarkPhase = tag === "DELIVERY" ? "delivery" : "payment";
+  return { phase, cleanRemark: raw.replace(m[0], "").trimStart() };
+}
+
+function phaseBadge(phase: RemarkPhase) {
+  if (phase === "delivery")
+    return { bg: "#ecfeff", dot: "#06b6d4", text: "#0e7490", label: "Delivery" };
+  if (phase === "payment")
+    return { bg: "#faf5ff", dot: "#a855f7", text: "#6d28d9", label: "Payment" };
+  if (phase === "pr")
+    return { bg: "#eff6ff", dot: "#3b82f6", text: "#1d4ed8", label: "PR" };
+  return { bg: "#f0fdf4", dot: "#10b981", text: "#065f46", label: "PO" };
+}
+
+// ─── Attachment helpers (verbatim from PORemarkSheet) ───────────────────────────
+
+function encodeAttachment(filename: string, url: string): string {
+  return `[${filename}](${url})`;
+}
+
+interface ParsedAttachment {
+  filename: string;
+  url: string;
+}
+
+function parseAttachments(remark: string): {
+  text: string;
+  attachments: ParsedAttachment[];
+} {
+  const attachments: ParsedAttachment[] = [];
+  const TOKEN_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let text = remark.replace(TOKEN_RE, (_, filename, url) => {
+    attachments.push({ filename: filename.trim(), url: url.trim() });
+    return "";
+  });
+  const LEGACY_RE = /^Attachment:\s*(https?:\/\/\S+)/gim;
+  text = text.replace(LEGACY_RE, (_, url: string) => {
+    const cleanUrl = url.trim();
+    const rawSegment = decodeURIComponent(cleanUrl.split("/").pop() ?? "");
+    const filename =
+      rawSegment.replace(/^\d+-/, "") || rawSegment || "attachment";
+    attachments.push({ filename, url: cleanUrl });
+    return "";
+  });
+  text = text.replace(/\n{2,}/g, "\n").trim();
+  return { text, attachments };
+}
+
+function guessMime(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    heic: "image/heic",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    zip: "application/zip",
   };
+  return map[ext] ?? "application/octet-stream";
+}
 
-  const handleAddRemark = async () => {
-    if (!newRemark.trim() || !record || !currentUser) return;
+function guessUTI(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    pdf: "com.adobe.pdf",
+    jpg: "public.jpeg",
+    jpeg: "public.jpeg",
+    png: "public.png",
+    gif: "com.compuserve.gif",
+    webp: "org.webmproject.webp",
+    doc: "com.microsoft.word.doc",
+    docx: "org.openxmlformats.wordprocessingml.document",
+    xls: "com.microsoft.excel.xls",
+    xlsx: "org.openxmlformats.spreadsheetml.sheet",
+    zip: "public.zip-archive",
+  };
+  return map[ext] ?? "public.data";
+}
 
+// ─── AttachmentChip ───────────────────────────────────────────────────────────
+
+const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
+
+const AttachmentChip: React.FC<{ attachment: ParsedAttachment }> = ({
+  attachment,
+}) => {
+  const { filename, url } = attachment;
+  const [saving, setSaving] = useState(false);
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const iconName: React.ComponentProps<typeof MaterialIcons>["name"] = [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "heic",
+  ].includes(ext)
+    ? "image"
+    : ext === "pdf"
+      ? "picture-as-pdf"
+      : ["doc", "docx"].includes(ext)
+        ? "description"
+        : ["xls", "xlsx"].includes(ext)
+          ? "table-chart"
+          : ["zip", "rar", "7z"].includes(ext)
+            ? "folder-zip"
+            : "attach-file";
+
+  const handleView = useCallback(async () => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert("Cannot open", "No app available to open this file.");
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert("Open failed", e?.message ?? "Could not open file.");
+    }
+  }, [url]);
+
+  const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      const remarkData = {
-        delivery_id: record.id,
-        user_id: currentUser.id,
-        user_name: `${currentUser.first_name} ${currentUser.last_name}`,
-        remark: newRemark.trim(),
-        created_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('delivery_remarks')
-        .insert(remarkData);
-      
-      if (error) {
-        console.error("Failed to add remark:", error);
-        Alert.alert("Error", "Failed to add remark. Please try again.");
-      } else {
-        setNewRemark("");
-        await loadDeliveryRemarks(); // Reload remarks
+      const baseDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDir) {
+        Alert.alert("Save failed", "No writable directory available.");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to add remark:", error);
-      Alert.alert("Error", "Failed to add remark. Please try again.");
+      const { uri } = await FileSystem.downloadAsync(url, baseDir + filename);
+      await Sharing.shareAsync(uri, {
+        mimeType: guessMime(filename),
+        dialogTitle: `Save ${filename}`,
+        UTI: guessUTI(filename),
+      });
+    } catch (e: any) {
+      Alert.alert("Save failed", e?.message ?? "Could not save file.");
     } finally {
       setSaving(false);
     }
-  };
-
-  if (!visible) return null;
+  }, [url, filename]);
 
   return (
-    <View className="absolute inset-0 bg-black/50 z-50">
-      <View className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl">
-        {/* Header */}
-        <View className="bg-[#064E3B] px-4 py-4 rounded-t-3xl">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-[10px] font-semibold tracking-widest uppercase text-white/40">
-                Delivery Remarks
-              </Text>
-              <Text className="text-[16px] font-extrabold text-white">
-                {record?.deliveryNo || "Unknown Delivery"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              className="w-8 h-8 bg-white/10 rounded-full items-center justify-center"
-            >
-              <MaterialIcons name="close" size={18} color="white" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Content */}
-        <View className="flex-1" style={{ maxHeight: 400 }}>
-          {loading ? (
-            <View className="flex-1 items-center justify-center py-8">
-              <ActivityIndicator size="small" color="#064E3B" />
-              <Text className="text-gray-500 mt-2 text-sm">Loading remarks...</Text>
-            </View>
+    <View className="flex-row items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 mt-2">
+      <TouchableOpacity
+        onPress={handleView}
+        activeOpacity={0.75}
+        className="flex-1 flex-row items-center gap-2 pr-2"
+      >
+        <MaterialIcons name={iconName} size={16} color="#2563eb" />
+        <Text
+          className="flex-1 text-[12px] font-semibold text-blue-700"
+          numberOfLines={1}
+          ellipsizeMode="middle"
+        >
+          {filename}
+        </Text>
+      </TouchableOpacity>
+      <View className="flex-row items-center gap-1.5">
+        <TouchableOpacity
+          onPress={handleView}
+          activeOpacity={0.8}
+          className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600"
+        >
+          <MaterialIcons name="open-in-new" size={11} color="#fff" />
+          <Text className="text-[10.5px] font-bold text-white">View</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={saving}
+          activeOpacity={0.8}
+          className={`flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg ${saving ? "bg-gray-400" : "bg-emerald-600"}`}
+        >
+          {saving ? (
+            <ActivityIndicator size={10} color="#fff" />
           ) : (
-            <ScrollView className="flex-1 px-4 py-4">
-              {/* Existing remarks */}
-              {deliveryRemarks.length > 0 ? (
-                <View className="space-y-3 mb-4">
-                  {deliveryRemarks.map((remark, index) => (
-                    <View key={index} className="bg-gray-50 rounded-xl p-3">
-                      <View className="flex-row items-start justify-between mb-2">
-                        <View className="flex-1">
-                          <Text className="text-sm font-semibold text-gray-900">
-                            {remark.user_name}
-                          </Text>
-                          <Text className="text-xs text-gray-500">
-                            {new Date(remark.created_at).toLocaleString()}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text className="text-sm text-gray-700 leading-relaxed">
-                        {remark.remark}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <View className="items-center py-6">
-                  <MaterialIcons name="chat-bubble-outline" size={32} color="#d1d5db" />
-                  <Text className="text-gray-500 text-sm mt-2">No remarks yet</Text>
-                </View>
-              )}
-
-              {/* Add new remark */}
-              <View className="border-t border-gray-100 pt-4">
-                <Text className="text-sm font-semibold text-gray-700 mb-2">
-                  Add Remark
-                </Text>
-                <View className="bg-gray-50 rounded-xl p-3">
-                  <TextInput
-                    value={newRemark}
-                    onChangeText={setNewRemark}
-                    placeholder="Enter your remark..."
-                    multiline
-                    numberOfLines={3}
-                    className="text-sm text-gray-900 placeholder-gray-400"
-                    style={{ textAlignVertical: "top" }}
-                  />
-                </View>
-                <TouchableOpacity
-                  onPress={handleAddRemark}
-                  disabled={!newRemark.trim() || saving}
-                  activeOpacity={0.8}
-                  className="bg-[#064E3B] rounded-xl px-4 py-2.5 mt-3 flex-row items-center justify-center"
-                  style={{ opacity: newRemark.trim() && !saving ? 1 : 0.5 }}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="add" size={18} color="white" />
-                      <Text className="text-white font-semibold text-sm ml-1">
-                        Add Remark
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
+            <MaterialIcons name="download" size={11} color="#fff" />
           )}
+          <Text className="text-[10.5px] font-bold text-white">
+            {saving ? "…" : "Save"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// ─── RemarkTimelineItem ───────────────────────────────────────────────────────
+
+const RemarkTimelineItem: React.FC<{
+  entry: UnifiedRemark;
+  isLast: boolean;
+}> = ({ entry, isLast }) => {
+  const { phase, cleanRemark } = phaseFromRemark(entry);
+  const p = phaseBadge(phase);
+  const flagKey = getFlagFromId(entry.status_flag_id);
+  const flag = flagKey ? STATUS_FLAGS[flagKey] : null;
+  const date = new Date(entry.created_at);
+  const timeStr = date.toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const { text, attachments } = parseAttachments(cleanRemark);
+
+  return (
+    <View className="flex-row gap-3">
+      {/* Timeline spine */}
+      <View className="items-center" style={{ width: 28 }}>
+        <View
+          className="w-7 h-7 rounded-full items-center justify-center border-2 border-white"
+          style={{
+            backgroundColor: flag
+              ? flag.dot + "22"
+              : p.bg,
+            borderColor: flag ? flag.dot + "55" : p.dot + "55",
+          }}
+        >
+          {flag ? (
+            <MaterialIcons name={flag.icon} size={13} color={flag.dot} />
+          ) : (
+            <MaterialIcons
+              name={phase === "delivery" ? "local-shipping" : phase === "payment" ? "payment" : "chat-bubble-outline"}
+              size={12}
+              color={p.dot}
+            />
+          )}
+        </View>
+        {!isLast && (
+          <View
+            className="flex-1 w-px bg-gray-200 mt-1"
+            style={{ minHeight: 16 }}
+          />
+        )}
+      </View>
+
+      {/* Content bubble */}
+      <View className="flex-1 pb-4">
+        <View className="flex-row items-center gap-2 mb-1 flex-wrap">
+          <View
+            className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: p.bg }}
+          >
+            <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.dot }} />
+            <Text className="text-[10px] font-bold" style={{ color: p.text }}>
+              {p.label}
+            </Text>
+          </View>
+          {/* Flag badge */}
+          {flag && (
+            <View
+              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full border"
+              style={{ backgroundColor: flag.bg, borderColor: flag.dot + "40" }}
+            >
+              <View
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: flag.dot }}
+              />
+              <Text
+                className="text-[10px] font-bold"
+                style={{ color: flag.text }}
+              >
+                {flag.label}
+              </Text>
+            </View>
+          )}
+          <Text className="text-[10px] text-gray-400">{timeStr}</Text>
+          {entry.username && (
+            <Text className="text-[10px] font-semibold text-gray-500">
+              · {entry.username}
+            </Text>
+          )}
+        </View>
+        <View
+          className="bg-white rounded-xl px-3 py-2.5 border border-gray-100"
+          style={{
+            shadowColor: "#000",
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 1,
+          }}
+        >
+          {text.length > 0 && (
+            <Text className="text-[13px] text-gray-700 leading-[19px]">
+              {text}
+            </Text>
+          )}
+          {attachments.map((att, i) => (
+            <AttachmentChip key={att.url + i} attachment={att} />
+          ))}
         </View>
       </View>
     </View>
   );
+};
+
+// ─── DeliveryRemarkSheet ────────────────────────────────────────────────────────────
+
+interface DeliveryRemarkSheetProps {
+  visible: boolean;
+  record: DeliveryRemarkSheetRecord | null;
+  currentUser: any;
+  onClose: () => void;
 }
+
+const DeliveryRemarkSheet: React.FC<DeliveryRemarkSheetProps> = ({
+  visible,
+  record,
+  currentUser,
+  onClose,
+}) => {
+  const [remarksText, setRemarksText] = useState("");
+  const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [history, setHistory] = useState<UnifiedRemark[]>([]);
+  const [loadingHist, setLoadingHist] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string>("application/octet-stream");
+  
+  // PO context for linking remarks
+  const [poContext, setPoContext] = useState<{
+    poId: number | null;
+    prId: string | null;
+  } | null>(null);
+
+  // ── Load unified history ───────────────────────────────────────────────────
+
+  const loadHistory = useCallback(async () => {
+    if (!record) return;
+    setLoadingHist(true);
+    try {
+      // First fetch the delivery's PO context
+      const { data: delivery, error: deliveryErr } = await supabase
+        .from("deliveries")
+        .select("id, po_id, po_no")
+        .eq("id", record.id)
+        .maybeSingle();
+      
+      if (deliveryErr) throw deliveryErr;
+      
+      const poId = (delivery as any)?.po_id != null ? Number((delivery as any).po_id) : null;
+      let prId: string | null = null;
+      
+      if (poId != null) {
+        const { data: po, error: poErr } = await supabase
+          .from("purchase_orders")
+          .select("id, pr_id")
+          .eq("id", poId)
+          .maybeSingle();
+        if (!poErr && po) {
+          prId = (po as any).pr_id != null ? String((po as any).pr_id) : null;
+        }
+      }
+      
+      setPoContext({ poId, prId });
+      
+      // Fetch unified remarks from the remarks table linked to this delivery's PO
+      if (!poId) {
+        setHistory([]);
+        return;
+      }
+      
+      const query = supabase
+        .from("remarks")
+        .select(
+          "id, remark, status_flag_id, created_at, user_id, po_id, pr_id, users(fullname)",
+        )
+        .eq("po_id", poId)
+        .order("created_at", { ascending: false });
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const unified: UnifiedRemark[] = (data ?? []).map((r: any) => {
+        const rawRemark = r.remark ?? "";
+        // Determine phase based on tag in remark
+        let source: RemarkPhase = "po";
+        if (rawRemark.match(/^\s*\[DELIVERY\]/i)) source = "delivery";
+        else if (rawRemark.match(/^\s*\[PAYMENT\]/i)) source = "payment";
+        else if (!r.po_id && r.pr_id) source = "pr";
+        
+        return {
+          id: r.id,
+          remark: rawRemark,
+          status_flag_id: r.status_flag_id as number | null,
+          created_at: r.created_at,
+          user_id: r.user_id,
+          username: r.users?.fullname ?? undefined,
+          source,
+        };
+      });
+
+      setHistory(unified);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not load remarks.");
+      setHistory([]);
+    } finally {
+      setLoadingHist(false);
+    }
+  }, [record]);
+
+  useEffect(() => {
+    if (visible && record) {
+      loadHistory();
+    } else {
+      setHistory([]);
+    }
+  }, [visible, record, loadHistory]);
+
+  // Reset form on close
+  useEffect(() => {
+    if (!visible) {
+      setRemarksText("");
+      setStatusFlag(null);
+      setFileName(null);
+      setFileUri(null);
+      setFileType("application/octet-stream");
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardOpen(true),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardOpen(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  const clearFile = useCallback(() => {
+    setFileName(null);
+    setFileUri(null);
+    setFileType("application/octet-stream");
+  }, []);
+
+  // ── File picker ────────────────────────────────────────────────────────────
+
+  const handlePickFile = useCallback(async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const f = res.assets[0];
+      setFileName(f.name ?? "attachment");
+      setFileUri(f.uri);
+      setFileType(f.mimeType ?? "application/octet-stream");
+    } catch (e: any) {
+      Alert.alert("File error", e?.message ?? "Could not pick file.");
+    }
+  }, []);
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+
+  const handleSubmit = useCallback(async () => {
+    if (!record || !remarksText.trim() || !poContext?.poId) return;
+    setSaving(true);
+    try {
+      let finalRemark = remarksText.trim();
+
+      // Upload attachment if provided
+      if (fileUri && fileName) {
+        const remote = buildRemotePath(record.deliveryNo ?? "DELIVERY", fileName);
+        const ct = fileType ?? guessContentType(fileName);
+        const uploaded = await uploadPRFile(fileUri, remote, ct);
+        finalRemark += `\n${encodeAttachment(fileName, uploaded.publicUrl)}`;
+      }
+
+      // Prefix with [DELIVERY] tag to identify as delivery remark
+      const taggedRemark = `[DELIVERY] ${finalRemark}`;
+
+      // Insert into remarks table — links to po_id and pr_id for cross-reference
+      const { error: insertErr } = await supabase.from("remarks").insert({
+        po_id: poContext.poId,
+        pr_id: poContext.prId ?? null,
+        user_id: currentUser?.id ?? null,
+        remark: taggedRemark,
+        status_flag_id: getStatusFlagId(statusFlag),
+        created_at: new Date().toISOString(),
+      });
+      if (insertErr) throw insertErr;
+
+      // Optimistically prepend to history
+      const newEntry: UnifiedRemark = {
+        id: Date.now(),
+        remark: taggedRemark,
+        status_flag_id: getStatusFlagId(statusFlag),
+        created_at: new Date().toISOString(),
+        user_id: currentUser?.id ?? null,
+        username: currentUser?.fullname ?? "You",
+        source: "delivery",
+      };
+      setHistory((prev) => [newEntry, ...prev]);
+      setRemarksText("");
+      setStatusFlag(null);
+      clearFile();
+    } catch (e: any) {
+      Alert.alert("Failed", e?.message ?? "Could not save remark.");
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    record,
+    remarksText,
+    fileUri,
+    fileName,
+    fileType,
+    statusFlag,
+    currentUser,
+    clearFile,
+    poContext,
+  ]);
+
+  if (!record) return null;
+  const canSubmit = remarksText.trim().length > 0 && !saving;
+
+  // Calculate phase counts for header
+  const deliveryCount = history.filter(h => h.source === "delivery").length;
+  const paymentCount = history.filter(h => h.source === "payment").length;
+  const poCount = history.filter(h => h.source === "po").length;
+  const prCount = history.filter(h => h.source === "pr").length;
+
+  return (
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+      >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
+            }}
+            onPress={() => {
+              if (keyboardOpen) {
+                Keyboard.dismiss();
+                return;
+              }
+              onClose();
+            }}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+          <View
+            className="bg-gray-50 rounded-t-3xl overflow-hidden"
+            style={{
+              flex: 1,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: -4 },
+              shadowOpacity: 0.12,
+              shadowRadius: 16,
+              elevation: 16,
+            }}
+          >
+            {/* ── Header ── */}
+            <View className="bg-[#064E3B] px-5 pt-4 pb-4">
+              <View className="w-10 h-1 rounded-full bg-white/20 self-center mb-3" />
+              <View className="flex-row items-start justify-between">
+                <View className="flex-1 pr-3">
+                  <Text className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-0.5">
+                    Delivery Remarks & Flags
+                  </Text>
+                  <Text
+                    className="text-[15px] font-extrabold text-white"
+                    style={{ fontFamily: MONO }}
+                  >
+                    {record.deliveryNo}
+                  </Text>
+                  <Text
+                    className="text-[11px] text-white/50 mt-0.5"
+                    numberOfLines={1}
+                  >
+                    {record.supplier}
+                  </Text>
+                  {/* PO link badge */}
+                  <View className="flex-row items-center gap-1.5 mt-1.5 bg-cyan-500/20 self-start rounded-full px-2.5 py-0.5">
+                    <MaterialIcons
+                      name="link"
+                      size={10}
+                      color="rgba(165,243,252,1)"
+                    />
+                    <Text className="text-[10px] font-bold text-cyan-200">
+                      PO {record.poNo} remarks linked
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={onClose}
+                  hitSlop={10}
+                  className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center mt-0.5"
+                >
+                  <Text className="text-white text-[20px] leading-none font-light">
+                    ×
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <FlatList
+              data={history}
+              keyExtractor={(item) => `${item.source}-${item.id}`}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 32 }}
+              ListHeaderComponent={
+                <>
+                  {/* ── Add Remark form ── */}
+                  <View
+                    className="bg-white mx-4 mt-4 rounded-2xl border border-gray-200 overflow-hidden"
+                    style={{
+                      shadowColor: "#000",
+                      shadowOpacity: 0.05,
+                      shadowRadius: 6,
+                      elevation: 2,
+                    }}
+                  >
+                    <View className="px-4 pt-3.5 pb-1 border-b border-gray-100">
+                      <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                        Add Delivery Remark
+                      </Text>
+                    </View>
+                    <View className="px-4 pt-3 pb-4 gap-3">
+                      <View>
+                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                          Status Flag
+                        </Text>
+                        <FlagButton
+                          selected={statusFlag}
+                          onPress={() => setFlagOpen(true)}
+                        />
+                      </View>
+                      <View pointerEvents="auto">
+                        <Text className="text-[11.5px] font-semibold text-gray-600 mb-1.5">
+                          Remark <Text className="text-red-400">*</Text>
+                        </Text>
+                        <TextInput
+                          value={remarksText}
+                          onChangeText={setRemarksText}
+                          placeholder="Add a note about this delivery..."
+                          placeholderTextColor="#9ca3af"
+                          multiline
+                          editable={!saving}
+                          className="bg-gray-50 rounded-xl px-3.5 py-2.5 text-[13.5px] text-gray-800 border border-gray-200"
+                          style={{ minHeight: 72, textAlignVertical: "top" }}
+                        />
+                      </View>
+                      <TouchableOpacity
+                        onPress={handlePickFile}
+                        activeOpacity={0.8}
+                        className={`flex-row items-center gap-2.5 rounded-xl border px-3.5 py-3 ${fileName ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}
+                      >
+                        <MaterialIcons
+                          name={fileName ? "attach-file" : "upload-file"}
+                          size={15}
+                          color={fileName ? "#10b981" : "#9ca3af"}
+                        />
+                        <Text
+                          className={`flex-1 text-[13px] font-semibold ${fileName ? "text-emerald-700" : "text-gray-400"}`}
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
+                        >
+                          {fileName ?? "Attach a file (optional)"}
+                        </Text>
+                        {fileName && (
+                          <TouchableOpacity onPress={clearFile} hitSlop={8}>
+                            <Text className="text-[11px] text-red-500 font-semibold">
+                              Remove
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={handleSubmit}
+                        disabled={!canSubmit}
+                        activeOpacity={0.8}
+                        className={`flex-row items-center justify-center gap-2 py-2.5 rounded-xl ${canSubmit ? "bg-[#064E3B]" : "bg-gray-200"}`}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <MaterialIcons
+                            name="send"
+                            size={14}
+                            color={canSubmit ? "#fff" : "#9ca3af"}
+                          />
+                        )}
+                        <Text
+                          className={`text-[13px] font-bold ${canSubmit ? "text-white" : "text-gray-400"}`}
+                        >
+                          {saving ? "Saving…" : "Save Remark"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ── History header ── */}
+                  <View className="mx-4 mt-5 mb-3 flex-row items-center justify-between">
+                    <Text className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                      History
+                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      {deliveryCount > 0 && (
+                        <View className="flex-row items-center gap-1 bg-cyan-50 px-2 py-0.5 rounded-full">
+                          <View className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                          <Text className="text-[9.5px] font-bold text-cyan-600">
+                            Delivery {deliveryCount}
+                          </Text>
+                        </View>
+                      )}
+                      {paymentCount > 0 && (
+                        <View className="flex-row items-center gap-1 bg-purple-50 px-2 py-0.5 rounded-full">
+                          <View className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                          <Text className="text-[9.5px] font-bold text-purple-600">
+                            Payment {paymentCount}
+                          </Text>
+                        </View>
+                      )}
+                      {poCount > 0 && (
+                        <View className="flex-row items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
+                          <View className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <Text className="text-[9.5px] font-bold text-emerald-600">
+                            PO {poCount}
+                          </Text>
+                        </View>
+                      )}
+                      {prCount > 0 && (
+                        <View className="flex-row items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full">
+                          <View className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                          <Text className="text-[9.5px] font-bold text-blue-500">
+                            PR {prCount}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </>
+              }
+              renderItem={({ item, index }) => (
+                <View className="mx-4">
+                  <RemarkTimelineItem
+                    entry={item}
+                    isLast={index === history.length - 1}
+                  />
+                </View>
+              )}
+              ListEmptyComponent={
+                loadingHist ? (
+                  <View className="items-center py-8">
+                    <ActivityIndicator size="small" color="#064E3B" />
+                    <Text className="text-[12px] text-gray-400 mt-2">
+                      Loading history…
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="items-center py-8 bg-white mx-4 rounded-2xl border border-gray-100">
+                    <Text className="text-2xl mb-2">💬</Text>
+                    <Text className="text-[13px] font-semibold text-gray-500">
+                      No remarks yet
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                      Be the first to add a note.
+                    </Text>
+                  </View>
+                )
+              }
+            />
+          </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <StatusFlagPicker
+        visible={flagOpen}
+        selected={statusFlag}
+        onSelect={setStatusFlag}
+        onClose={() => setFlagOpen(false)}
+      />
+    </>
+  );
+};
+
+export default DeliveryRemarkSheet;
+

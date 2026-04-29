@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { JSX } from 'react/jsx-runtime';
-import { useAuth } from './AuthContext';
+import { useAuth } from './contexts/AuthContext';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
