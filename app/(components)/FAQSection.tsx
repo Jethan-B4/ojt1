@@ -43,8 +43,7 @@ const FAQS: FAQItem[] = [
     id: "canvassing",
     question: "How does the canvassing / RFQ flow work?",
     answer:
-      "PRs move through PR → Canvassing/RFQ → PO → Delivery → Payment.\nUsers in canvassing roles can open the Canvassing screen for eligible PRs and generate the RFQ/Canvass documents.",
-    actions: [{ label: "Open Canvassing", route: "Canvassing" }],
+      "PRs move through PR → RFQ → PO → Delivery → Payment.\nIn this monitoring app, you primarily view progress and generated documents per PR.",
   },
 ];
  
@@ -237,4 +236,3 @@ export default function FAQSection({ navigation }: { navigation: any }) {
     </View>
   );
 }
-

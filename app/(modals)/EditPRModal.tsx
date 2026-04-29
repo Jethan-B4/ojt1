@@ -896,9 +896,9 @@ export default function EditPRModal({
                   </Text>
                   <Text
                     className="text-[20px] font-black text-white"
-                    style={{ fontFamily: MONO }}
                   >
-                    ₱{fmt(totalCost)}
+                    <Text>{"\u20B1"}</Text>
+                    <Text style={{ fontFamily: MONO }}>{fmt(totalCost)}</Text>
                   </Text>
                 </View>
               </ScrollView>

@@ -20,28 +20,28 @@
  */
 
 import {
-    fetchBudgets,
-    fetchOrsEntries,
-    insertDivisionBudget,
-    supabase,
-    updateDivisionBudget,
-    type DivisionBudgetRow,
-    type OrsEntryRow,
+  fetchBudgets,
+  fetchOrsEntries,
+  insertDivisionBudget,
+  supabase,
+  updateDivisionBudget,
+  type DivisionBudgetRow,
+  type OrsEntryRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import DivisionBudgetSection, {
-    YearPickerModal,
+  YearPickerModal,
 } from "../(components)/DivisionBudgetModule";
 import { ORSSection } from "../(components)/ORSModule";
 import { useAuth } from "../AuthContext";
@@ -100,7 +100,9 @@ export default function BudgetScreen() {
         );
         setOrsEntries(o);
         const prNos = [
-          ...new Set((o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean)),
+          ...new Set(
+            (o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean),
+          ),
         ];
         if (prNos.length === 0) {
           setPrStatusByNo({});
@@ -135,10 +137,10 @@ export default function BudgetScreen() {
   // ── Derived totals ────────────────────────────────────────────────────────
 
   const totalAllocated = budgets.reduce((s, r) => s + r.allocated, 0);
-  
+
   // Calculate utilized amount from ORS entries instead of budget utilized field
   const totalUtilized = orsEntries.reduce((s, entry) => s + entry.amount, 0);
-  
+
   const totalRemaining = totalAllocated - totalUtilized;
   const utilizationPct =
     totalAllocated > 0 ? Math.round((totalUtilized / totalAllocated) * 100) : 0;
@@ -263,12 +265,9 @@ export default function BudgetScreen() {
             <Text className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
               Total Allocated
             </Text>
-            <Text
-              className="text-[17px] font-extrabold text-[#064E3B]"
-              style={{ fontFamily: MONO }}
-            >
-              <Text>₱</Text>
-              {fmt(totalAllocated)}
+            <Text className="text-[17px] font-extrabold text-[#064E3B]">
+              <Text>{"\u20B1"}</Text>
+              <Text style={{ fontFamily: MONO }}>{fmt(totalAllocated)}</Text>
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">
               Annual Procurement Plan {year}
@@ -289,12 +288,9 @@ export default function BudgetScreen() {
             <Text className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
               Total Utilized
             </Text>
-            <Text
-              className="text-[17px] font-extrabold text-[#10b981]"
-              style={{ fontFamily: MONO }}
-            >
-              <Text>₱</Text>
-              {fmt(totalUtilized)}
+            <Text className="text-[17px] font-extrabold text-[#10b981]">
+              <Text>{"\u20B1"}</Text>
+              <Text style={{ fontFamily: MONO }}>{fmt(totalUtilized)}</Text>
             </Text>
             <View className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
               <View
@@ -325,10 +321,11 @@ export default function BudgetScreen() {
               className={`text-[17px] font-extrabold ${
                 totalRemaining < 0 ? "text-red-500" : "text-amber-500"
               }`}
-              style={{ fontFamily: MONO }}
             >
-              <Text>₱</Text>
-              {fmt(Math.abs(totalRemaining))}
+              <Text>{"\u20B1"}</Text>
+              <Text style={{ fontFamily: MONO }}>
+                {fmt(Math.abs(totalRemaining))}
+              </Text>
             </Text>
             <Text className="text-[10px] text-gray-400 mt-1">
               Available for procurement

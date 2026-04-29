@@ -4,24 +4,24 @@ import { toPRDisplay } from "@/types/model";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import RemarkSheet from "../(components)/RemarkSheet";
 import DeletePRModal from "../(modals)/DeletePRModal";
 import ViewPRModal from "../(modals)/ViewPRModal";
 import {
-    fetchLatestRemarkByPR,
-    fetchPRStatuses,
-    fetchPurchaseRequests,
-    fetchPurchaseRequestsByDivision,
+  fetchLatestRemarkByPR,
+  fetchPRStatuses,
+  fetchPurchaseRequests,
+  fetchPurchaseRequestsByDivision,
 } from "../../lib/supabase/pr";
 import { useAuth } from "../AuthContext";
 import { useEntityChanges } from "../RealtimeContext";
@@ -577,12 +577,9 @@ const RecordCard: React.FC<{
           {record.date}
         </Text>
         <View className="flex-1" />
-        <Text
-          className="text-[12.5px] font-bold text-gray-700"
-          style={{ fontFamily: MONO }}
-        >
-          <Text>₱</Text>
-          {fmt(record.totalCost)}
+        <Text className="text-[12.5px] font-bold text-gray-700">
+          <Text>{"\u20B1"}</Text>
+          <Text style={{ fontFamily: MONO }}>{fmt(record.totalCost)}</Text>
         </Text>
       </View>
       {/* ── Latest status flag from remarks ── */}

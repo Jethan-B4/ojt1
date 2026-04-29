@@ -426,10 +426,9 @@ function DetailsView({
         <InfoRow label="Total Cost" mono>
           <Text
             className="text-[12.5px] font-semibold text-gray-800 text-right max-w-[60%]"
-            style={{ fontFamily: MONO }}
           >
-            <Text>₱</Text>
-            {fmt(record.totalCost)}
+            <Text>{"\u20B1"}</Text>
+            <Text style={{ fontFamily: MONO }}>{fmt(record.totalCost)}</Text>
           </Text>
         </InfoRow>
       </View>
@@ -507,10 +506,9 @@ function DetailsView({
         </Text>
         <Text
           className="text-[20px] font-black text-white"
-          style={{ fontFamily: MONO }}
         >
-          <Text>₱</Text>
-          {fmt(record.totalCost)}
+          <Text>{"\u20B1"}</Text>
+          <Text style={{ fontFamily: MONO }}>{fmt(record.totalCost)}</Text>
         </Text>
       </View>
       {(record.reqName ||

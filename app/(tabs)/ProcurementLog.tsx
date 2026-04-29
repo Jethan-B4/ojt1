@@ -27,6 +27,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
+    Modal,
     Platform,
     RefreshControl,
     ScrollView,
@@ -41,6 +42,8 @@ import { useAuth } from "../AuthContext";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_RANGE = Array.from({ length: 7 }, (_, i) => CURRENT_YEAR - 5 + i);
 
 // Default status styles — fallback for statuses not explicitly configured
 const DEFAULT_STATUS_COLORS = [
@@ -180,12 +183,7 @@ const SearchBar: React.FC<{
   onChange: (t: string) => void;
   filterActive: boolean;
   onFilterToggle: () => void;
-}> = ({
-  value,
-  onChange,
-  filterActive,
-  onFilterToggle,
-}) => (
+}> = ({ value, onChange, filterActive, onFilterToggle }) => (
   <View className="flex-row items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100">
     <View className="flex-1 flex-row items-center bg-gray-100 rounded-xl px-3 py-2 gap-2 border border-gray-200">
       <MaterialIcons name="search" size={16} color="#9ca3af" />
@@ -273,7 +271,9 @@ function fmtTime(iso?: string) {
   });
 }
 
-function phaseForStatusId(statusId: number): "pr" | "po" | "delivery" | "payment" | "completed" {
+function phaseForStatusId(
+  statusId: number,
+): "pr" | "po" | "delivery" | "payment" | "completed" {
   if (statusId >= 33 && statusId <= 36) return "completed";
   if (statusId >= 25 && statusId <= 32) return "payment";
   if (statusId >= 18 && statusId <= 24) return "delivery";
@@ -505,7 +505,13 @@ function PRLogCard({
       >
         {compact ? (
           <>
-            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 10,
+              }}
+            >
               <View
                 style={{
                   width: 36,
@@ -520,7 +526,14 @@ function PRLogCard({
               </View>
 
               <View style={{ flex: 1, gap: 2 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <Text
                     style={{
                       fontSize: 12.5,
@@ -552,7 +565,10 @@ function PRLogCard({
                     </View>
                   )}
                 </View>
-                <Text style={{ fontSize: 11.5, color: "#6b7280" }} numberOfLines={2}>
+                <Text
+                  style={{ fontSize: 11.5, color: "#6b7280" }}
+                  numberOfLines={2}
+                >
                   {pr.purpose}
                 </Text>
                 <View
@@ -564,7 +580,10 @@ function PRLogCard({
                     flexWrap: "wrap",
                   }}
                 >
-                  <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
+                  <StatusPill
+                    statusId={pr.status_id}
+                    statusConfig={statusConfig}
+                  />
                   {latestFlag && <FlagPill flag={latestFlag} />}
                   <LifecycleMini statusId={pr.status_id} />
                 </View>
@@ -588,13 +607,25 @@ function PRLogCard({
                   Created: {fmtDate(pr.created_at)}
                 </Text>
                 {pr.updated_at && pr.updated_at !== pr.created_at && (
-                  <Text style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: "#6b7280",
+                      fontStyle: "italic",
+                    }}
+                  >
                     Updated: {fmtDate(pr.updated_at)}
                   </Text>
                 )}
               </View>
               <View style={{ alignItems: "flex-end", gap: 4 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: "800", color: "#374151" }}>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: "800",
+                    color: "#374151",
+                  }}
+                >
                   <Text>₱</Text>
                   <Text style={{ fontFamily: MONO }}>
                     {Number(pr.total_cost).toLocaleString("en-PH")}
@@ -609,7 +640,9 @@ function PRLogCard({
             </View>
           </>
         ) : (
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          <View
+            style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}
+          >
             <View
               style={{
                 width: 36,
@@ -624,7 +657,9 @@ function PRLogCard({
             </View>
 
             <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+              >
                 <Text
                   style={{
                     fontSize: 12.5,
@@ -656,7 +691,10 @@ function PRLogCard({
                   </View>
                 )}
               </View>
-              <Text style={{ fontSize: 11.5, color: "#6b7280" }} numberOfLines={1}>
+              <Text
+                style={{ fontSize: 11.5, color: "#6b7280" }}
+                numberOfLines={1}
+              >
                 {pr.purpose}
               </Text>
               <View
@@ -668,14 +706,19 @@ function PRLogCard({
                   flexWrap: "wrap",
                 }}
               >
-                <StatusPill statusId={pr.status_id} statusConfig={statusConfig} />
+                <StatusPill
+                  statusId={pr.status_id}
+                  statusConfig={statusConfig}
+                />
                 {latestFlag && <FlagPill flag={latestFlag} />}
                 <LifecycleMini statusId={pr.status_id} />
               </View>
             </View>
 
             <View style={{ alignItems: "flex-end", gap: 4 }}>
-              <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}>
+              <Text
+                style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}
+              >
                 <Text>₱</Text>
                 <Text style={{ fontFamily: MONO }}>
                   {Number(pr.total_cost).toLocaleString("en-PH")}
@@ -685,7 +728,13 @@ function PRLogCard({
                 Created: {fmtDate(pr.created_at)}
               </Text>
               {pr.updated_at && pr.updated_at !== pr.created_at && (
-                <Text style={{ fontSize: 10, color: "#6b7280", fontStyle: "italic" }}>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    color: "#6b7280",
+                    fontStyle: "italic",
+                  }}
+                >
                   Updated: {fmtDate(pr.updated_at)}
                 </Text>
               )}
@@ -876,6 +925,8 @@ export default function ProcurementLog({ navigation }: any) {
   const [sortBy, setSortBy] = useState<
     "date_created" | "last_updated" | "has_flag"
   >("last_updated");
+  const [year, setYear] = useState(CURRENT_YEAR);
+  const [yearPickerOpen, setYearPickerOpen] = useState(false);
 
   // ── Pagination ────────────────────────────────────────────────────────────────
   const [page, setPage] = useState(1);
@@ -919,9 +970,7 @@ export default function ProcurementLog({ navigation }: any) {
 
         // Update latest remarks for badges
         setLatestRemarks(
-          Object.fromEntries(
-            entriesWithRemarks.map((e) => [e.key, e.latest]),
-          ),
+          Object.fromEntries(entriesWithRemarks.map((e) => [e.key, e.latest])),
         );
 
         // Set entries with pre-loaded remarks
@@ -972,6 +1021,11 @@ export default function ProcurementLog({ navigation }: any) {
   // ── Filtered & sorted list ──────────────────────────────────────────────────
   const filteredPRs = allPRs
     .filter((pr) => {
+      // Fiscal year filter
+      if (!pr.created_at) return false;
+      const createdYear = new Date(pr.created_at).getFullYear();
+      if (createdYear !== year) return false;
+
       const sid = Number(pr.status_id) || 0;
       if (phaseFilter !== "all") {
         if (phaseFilter === "completed") {
@@ -1063,6 +1117,73 @@ export default function ProcurementLog({ navigation }: any) {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#f9fafb" }}>
+      {/* ── Page header with fiscal year picker ── */}
+      <View
+        style={{
+          backgroundColor: "#064E3B",
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <View>
+            <Text
+              style={{
+                fontSize: 9.5,
+                fontWeight: "600",
+                color: "rgba(255,255,255,0.4)",
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              DAR · Procurement
+            </Text>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: "#ffffff" }}>
+              Procurement Log
+            </Text>
+          </View>
+          {/* Year selector */}
+          <TouchableOpacity
+            onPress={() => setYearPickerOpen(true)}
+            activeOpacity={0.8}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "rgba(255,255,255,0.1)",
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.15)",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: "700",
+                color: "#ffffff",
+                fontFamily: MONO,
+              }}
+            >
+              FY {year}
+            </Text>
+            <MaterialIcons
+              name="keyboard-arrow-down"
+              size={16}
+              color="rgba(255,255,255,0.7)"
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── SubTabRow: Phase filters ── */}
       <SubTabRow
         active={phaseFilter}
@@ -1079,7 +1200,9 @@ export default function ProcurementLog({ navigation }: any) {
           setSearch(t);
           setPage(1);
         }}
-        filterActive={filterOpen || statusFilter !== null || flagFilter !== null}
+        filterActive={
+          filterOpen || statusFilter !== null || flagFilter !== null
+        }
         onFilterToggle={() => setFilterOpen((o) => !o)}
       />
 
@@ -1235,7 +1358,9 @@ export default function ProcurementLog({ navigation }: any) {
       {/* ── Results count + sort indicator ── */}
       <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
         <Text className="text-[11px] text-gray-400">
-          <Text className="font-semibold text-gray-500">{filteredPRs.length}</Text>
+          <Text className="font-semibold text-gray-500">
+            {filteredPRs.length}
+          </Text>
           {" of "}
           {allPRs.length} records
           {statusFilter !== null || flagFilter !== null || search
@@ -1249,7 +1374,11 @@ export default function ProcurementLog({ navigation }: any) {
             color="#9ca3af"
           />
           <Text className="text-[10.5px] text-gray-400">
-            {sortBy === "date_created" ? "Date Created" : sortBy === "has_flag" ? "Flagged First" : "Last Updated"}
+            {sortBy === "date_created"
+              ? "Date Created"
+              : sortBy === "has_flag"
+                ? "Flagged First"
+                : "Last Updated"}
           </Text>
         </View>
       </View>
@@ -1309,6 +1438,177 @@ export default function ProcurementLog({ navigation }: any) {
         total={filteredPRs.length}
         onPage={setPage}
       />
+
+      {/* ── Year Picker Modal ── */}
+      <Modal
+        visible={yearPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setYearPickerOpen(false)}
+      >
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "rgba(0,0,0,0.5)",
+          }}
+          activeOpacity={1}
+          onPress={() => setYearPickerOpen(false)}
+        >
+          <TouchableOpacity activeOpacity={1}>
+            <View
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: 24,
+                overflow: "hidden",
+                width: 220,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.18,
+                shadowRadius: 16,
+                elevation: 12,
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: "#064E3B",
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "700",
+                    color: "rgba(255,255,255,0.5)",
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                  }}
+                >
+                  Fiscal Year
+                </Text>
+                <Text
+                  style={{ fontSize: 16, fontWeight: "800", color: "#ffffff" }}
+                >
+                  Select Year
+                </Text>
+              </View>
+              {YEAR_RANGE.map((y) => {
+                const isSelected = y === year;
+                const isFuture = y > CURRENT_YEAR;
+                return (
+                  <TouchableOpacity
+                    key={y}
+                    onPress={() => {
+                      setYear(y);
+                      setPage(1);
+                      setYearPickerOpen(false);
+                    }}
+                    activeOpacity={0.7}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      backgroundColor: isSelected ? "#ecfdf5" : undefined,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#f3f4f6",
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      {isSelected ? (
+                        <View
+                          style={{
+                            width: 6,
+                            height: 20,
+                            borderRadius: 3,
+                            backgroundColor: "#10b981",
+                          }}
+                        />
+                      ) : (
+                        <View style={{ width: 6, height: 20 }} />
+                      )}
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: "700",
+                          color: isSelected
+                            ? "#064E3B"
+                            : isFuture
+                              ? "#9ca3af"
+                              : "#1f2937",
+                          fontFamily: MONO,
+                        }}
+                      >
+                        FY {y}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      {isFuture && (
+                        <View
+                          style={{
+                            backgroundColor: "#fef3c7",
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 9,
+                              fontWeight: "700",
+                              color: "#92400e",
+                            }}
+                          >
+                            Planning
+                          </Text>
+                        </View>
+                      )}
+                      {y === CURRENT_YEAR && (
+                        <View
+                          style={{
+                            backgroundColor: "#d1fae5",
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 9,
+                              fontWeight: "700",
+                              color: "#065f46",
+                            }}
+                          >
+                            Current
+                          </Text>
+                        </View>
+                      )}
+                      {isSelected && (
+                        <MaterialIcons name="check" size={14} color="#10b981" />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1334,14 +1634,15 @@ function Pagination({
       <View className="flex-row items-center gap-1.5">
         {[
           { label: "prev", page: Math.max(1, page - 1), disabled: page === 1 },
-          ...Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(
-            (p) => ({
-              label: String(p),
-              page: p,
-              disabled: false,
-              active: p === page,
-            })
-          ),
+          ...Array.from(
+            { length: Math.min(5, totalPages) },
+            (_, i) => i + 1,
+          ).map((p) => ({
+            label: String(p),
+            page: p,
+            disabled: false,
+            active: p === page,
+          })),
           {
             label: "next",
             page: Math.min(totalPages, page + 1),
@@ -1357,8 +1658,8 @@ function Pagination({
               (btn as any).active
                 ? "bg-[#064E3B] border-[#064E3B]"
                 : btn.disabled
-                ? "bg-gray-50 border-gray-100"
-                : "bg-white border-gray-200"
+                  ? "bg-gray-50 border-gray-100"
+                  : "bg-white border-gray-200"
             }`}
           >
             {btn.label === "prev" ? (
@@ -1369,8 +1670,8 @@ function Pagination({
                   (btn as any).active
                     ? "#ffffff"
                     : btn.disabled
-                    ? "#d1d5db"
-                    : "#6b7280"
+                      ? "#d1d5db"
+                      : "#6b7280"
                 }
               />
             ) : btn.label === "next" ? (
@@ -1381,8 +1682,8 @@ function Pagination({
                   (btn as any).active
                     ? "#ffffff"
                     : btn.disabled
-                    ? "#d1d5db"
-                    : "#6b7280"
+                      ? "#d1d5db"
+                      : "#6b7280"
                 }
               />
             ) : (
@@ -1391,8 +1692,8 @@ function Pagination({
                   (btn as any).active
                     ? "text-white"
                     : btn.disabled
-                    ? "text-gray-300"
-                    : "text-gray-500"
+                      ? "text-gray-300"
+                      : "text-gray-500"
                 }`}
               >
                 {btn.label}

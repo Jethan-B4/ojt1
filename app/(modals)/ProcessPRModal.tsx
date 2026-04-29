@@ -460,7 +460,7 @@ function PRSummaryCard({
     { label: "PR No.", value: header.pr_no, mono: true },
     { label: "Section", value: header.office_section, mono: false },
     { label: "Purpose", value: header.purpose, mono: false },
-    { label: "Amount", value: `₱${fmt(header.total_cost)}`, mono: true },
+    { label: "Amount", value: `\u20B1${fmt(header.total_cost)}`, mono: false },
     { label: "Status", value: statusLabel, mono: false },
     ...(header.proposal_no
       ? [{ label: "Proposal", value: header.proposal_no, mono: true }]

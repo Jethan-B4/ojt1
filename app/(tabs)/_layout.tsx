@@ -183,7 +183,7 @@ function BrandHeader({ navigation }: { navigation: any }) {
     const fetchPRCreationDates = async () => {
       try {
         const { data, error } = await supabase
-          .from('pr')
+          .from("purchase_requests")
           .select('created_at')
           .not('created_at', 'is', null);
         

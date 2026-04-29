@@ -1,7 +1,15 @@
 import DVPreviewPanel from "@/app/(components)/DVPreviewPanel";
-import IARPreviewPanel, { buildIARHtml } from "@/app/(components)/IARPreviewPanel";
+import IARPreviewPanel, {
+    buildIARHtml,
+} from "@/app/(components)/IARPreviewPanel";
 import LOAPreviewPanel from "@/app/(components)/LOAPreviewPanel";
-import { fetchDVByDelivery, fetchDeliveryById, fetchIARByDelivery, fetchLOAByDelivery } from "@/lib/supabase/delivery";
+import { preloadLogos } from "@/app/lib/documentAssets";
+import {
+    fetchDVByDelivery,
+    fetchDeliveryById,
+    fetchIARByDelivery,
+    fetchLOAByDelivery,
+} from "@/lib/supabase/delivery";
 import React, { useEffect, useState } from "react";
 import { Modal, Text, TouchableOpacity, View } from "react-native";
 
@@ -25,6 +33,10 @@ export default function ViewDeliveryModal({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    preloadLogos();
+  }, []);
+
+  useEffect(() => {
     if (visible && deliveryId) {
       setLoading(true);
       const id = Number(deliveryId);
@@ -33,15 +45,17 @@ export default function ViewDeliveryModal({
         fetchIARByDelivery(id),
         fetchLOAByDelivery(id),
         fetchDVByDelivery(id),
-      ]).then(([deliveryData, iarData, loaData, dvData]) => {
-        setActive(deliveryData);
-        setIar(iarData);
-        setLoa(loaData);
-        setDv(dvData);
-        setLoading(false);
-      }).catch(() => {
-        setLoading(false);
-      });
+      ])
+        .then(([deliveryData, iarData, loaData, dvData]) => {
+          setActive(deliveryData);
+          setIar(iarData);
+          setLoa(loaData);
+          setDv(dvData);
+          setLoading(false);
+        })
+        .catch(() => {
+          setLoading(false);
+        });
     }
   }, [visible, deliveryId]);
   return (
@@ -110,4 +124,3 @@ export default function ViewDeliveryModal({
     </Modal>
   );
 }
-

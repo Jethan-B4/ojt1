@@ -2,154 +2,93 @@
  * documentAssets.ts
  *
  * Logo assets for use in document HTML previews.
- * Images are embedded as base64 data URIs for WebView compatibility.
+ * Images are referenced directly via their asset URIs (no base64).
  */
 
 import { Asset } from "expo-asset";
-import * as FileSystem from "expo-file-system";
 
 // Asset module IDs (from require statements)
-export const DAR_SQUARE_LOGO_MODULE = require("@/assets/images/dar_square.png");
 export const DAR_SQUARE2_LOGO_MODULE = require("@/assets/images/dar_square2.png");
-export const BAGONG_PILIPINAS_LOGO_MODULE = require("@/assets/images/bagong_pilipinas_logo.png");
+export const BAGONG_PILIPINAS_LOGO_MODULE = require("@/assets/images/bagong_pilipinas.png");
 export const ISO_CERTIFIED_LOGO_MODULE = require("@/assets/images/iso_certified.png");
 
-// Cache for base64 encoded images
-let darLogoBase64: string | null = null;
-let darSquare2LogoBase64: string | null = null;
-let bagongPilipinasLogoBase64: string | null = null;
-let isoCertifiedLogoBase64: string | null = null;
+// Cache for resolved URIs
+let darSquare2LogoUri: string | null = null;
+let bagongPilipinasLogoUri: string | null = null;
+let isoCertifiedLogoUri: string | null = null;
 
 /**
- * Load an asset and convert to base64 data URI
+ * Load an asset and resolve a usable URI (prefer localUri if available).
  */
-async function loadAssetAsBase64(module: any): Promise<string> {
+async function loadAssetUri(module: any): Promise<string> {
   try {
     const asset = Asset.fromModule(module);
     await asset.downloadAsync();
-    const base64 = await FileSystem.readAsStringAsync(asset.localUri || asset.uri, {
-      encoding: "base64",
-    });
-    return `data:image/png;base64,${base64}`;
+    return asset.localUri || asset.uri || "";
   } catch (e) {
-    console.error("Failed to load asset as base64:", e);
+    console.error("Failed to load asset uri:", e);
     return "";
   }
 }
 
 /**
- * Preload logo images as base64 data URIs.
+ * Preload logo images as URIs.
  * Call this before generating HTML that includes logos.
  */
 export async function preloadLogos(): Promise<void> {
-  if (!darLogoBase64) {
-    darLogoBase64 = await loadAssetAsBase64(DAR_SQUARE_LOGO_MODULE);
+  if (!darSquare2LogoUri) {
+    darSquare2LogoUri = await loadAssetUri(DAR_SQUARE2_LOGO_MODULE);
   }
-  if (!darSquare2LogoBase64) {
-    darSquare2LogoBase64 = await loadAssetAsBase64(DAR_SQUARE2_LOGO_MODULE);
+  if (!bagongPilipinasLogoUri) {
+    bagongPilipinasLogoUri = await loadAssetUri(BAGONG_PILIPINAS_LOGO_MODULE);
   }
-  if (!bagongPilipinasLogoBase64) {
-    bagongPilipinasLogoBase64 = await loadAssetAsBase64(BAGONG_PILIPINAS_LOGO_MODULE);
-  }
-  if (!isoCertifiedLogoBase64) {
-    isoCertifiedLogoBase64 = await loadAssetAsBase64(ISO_CERTIFIED_LOGO_MODULE);
+  if (!isoCertifiedLogoUri) {
+    isoCertifiedLogoUri = await loadAssetUri(ISO_CERTIFIED_LOGO_MODULE);
   }
 }
 
-/**
- * Get cached DAR logo base64 data URI
- */
-export function getDARLogoBase64(): string {
-  return darLogoBase64 || "";
-}
-
-/**
- * Get cached DAR Square2 logo base64 data URI
- */
-export function getDARSquare2LogoBase64(): string {
-  return darSquare2LogoBase64 || "";
-}
-
-/**
- * Get cached Bagong Pilipinas logo base64 data URI
- */
-export function getBagongPilipinasLogoBase64(): string {
-  return bagongPilipinasLogoBase64 || "";
-}
-
-/**
- * Get cached ISO Certified logo base64 data URI
- */
-export function getISOCertifiedLogoBase64(): string {
-  return isoCertifiedLogoBase64 || "";
-}
-
-/**
- * HTML for DAR square logo (left side of letterhead)
- * Uses cached base64 data URI
- */
-export function getDARLogoHTML(size: number = 55): string {
-  const src = getDARLogoBase64();
-  if (!src) {
-    // Fallback placeholder
-    return `<div style="width:${size}px;height:${size}px;border:2px solid #064E3B;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#064E3B;font-weight:bold;">DAR</div>`;
-  }
-  return `<img src="${src}" 
-    width="${size}" 
-    height="${size}" 
+function imgHtml(src: string, size: number, alt: string): string {
+  if (!src) return "";
+  return `<img src="${src}"
+    width="${size}"
+    height="${size}"
     style="display:block; margin:auto;"
-    alt="DAR Logo" />`;
+    alt="${alt}" />`;
+}
+
+/**
+ * HTML for DAR Square2 logo (DAR logo)
+ * Uses cached URI
+ */
+export function getDARSquare2LogoHTML(size: number = 55): string {
+  const src = darSquare2LogoUri || "";
+  if (!src)
+    return `<div style="width:${size}px;height:${size}px;border:2px solid #064E3B;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#064E3B;font-weight:bold;">DAR</div>`;
+  return imgHtml(src, size, "DAR Logo");
 }
 
 /**
  * HTML for Bagong Pilipinas logo (right side of letterhead)
- * Uses cached base64 data URI
+ * Uses cached URI
  */
 export function getBagongPilipinasLogoHTML(size: number = 55): string {
-  const src = getBagongPilipinasLogoBase64();
-  if (!src) {
-    // Fallback placeholder
+  const src = bagongPilipinasLogoUri || "";
+  if (!src)
     return `<div style="width:${size}px;height:${size}px;border:2px solid #999;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#555;text-align:center;padding:2px;">BAGONG PILIPINAS</div>`;
-  }
-  return `<img src="${src}" 
-    width="${size}" 
-    height="${size}" 
-    style="display:block; margin:auto;"
-    alt="Bagong Pilipinas" />`;
-}
-
-/**
- * HTML for DAR Square2 logo (alternative DAR logo)
- * Uses cached base64 data URI
- */
-export function getDARSquare2LogoHTML(size: number = 55): string {
-  const src = getDARSquare2LogoBase64();
-  if (!src) {
-    // Fallback placeholder
-    return `<div style="width:${size}px;height:${size}px;border:2px solid #064E3B;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#064E3B;font-weight:bold;">DAR</div>`;
-  }
-  return `<img src="${src}" 
-    width="${size}" 
-    height="${size}" 
-    style="display:block; margin:auto;"
-    alt="DAR Logo" />`;
+  return imgHtml(src, size, "Bagong Pilipinas");
 }
 
 /**
  * HTML for ISO Certified logo (certification badge)
- * Uses cached base64 data URI
+ * Uses cached URI
  */
 export function getISOCertifiedLogoHTML(size: number = 40): string {
-  const src = getISOCertifiedLogoBase64();
+  const src = isoCertifiedLogoUri || "";
   if (!src) {
     // Fallback placeholder
     return `<div style="width:${size}px;height:${size}px;border:1px solid #0066cc;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:6pt;color:#0066cc;text-align:center;">ISO</div>`;
   }
-  return `<img src="${src}" 
-    width="${size}" 
-    height="${size}" 
-    style="display:block; margin:auto;"
-    alt="ISO Certified" />`;
+  return imgHtml(src, size, "ISO Certified");
 }
 
 /**
@@ -169,7 +108,7 @@ export function buildDARLetterheadHTML(
   <tbody>
     <tr>
       <td style="vertical-align: middle; text-align: center; padding:4px;">
-        ${getDARLogoHTML(60)}
+        ${getDARSquare2LogoHTML(60)}
       </td>
       <td style="text-align: center; vertical-align: middle; padding:4px;">
         <div style="font-size: 8.5pt; line-height: 1.4; margin-bottom:2px;">
