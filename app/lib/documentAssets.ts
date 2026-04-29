@@ -1,42 +1,76 @@
 /**
  * documentAssets.ts
  *
- * Logo asset paths for use in document HTML previews.
- * In WebView, these are referenced as file:// URLs.
+ * Logo assets for use in document HTML previews.
+ * Images are embedded as base64 data URIs for WebView compatibility.
  */
 
-import { Platform } from "react-native";
+import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system";
 
 // Asset module IDs (from require statements)
-const DAR_SQUARE_LOGO = require("@/assets/images/dar_square.png");
-const BAGONG_PILIPINAS_LOGO = require("@/assets/images/bagong_pilipinas_logo.png");
+export const DAR_SQUARE_LOGO_MODULE = require("@/assets/images/dar_square.png");
+export const BAGONG_PILIPINAS_LOGO_MODULE = require("@/assets/images/bagong_pilipinas_logo.png");
+
+// Cache for base64 encoded images
+let darLogoBase64: string | null = null;
+let bagongPilipinasLogoBase64: string | null = null;
 
 /**
- * Get the file:// URL for an asset that can be used in WebView HTML.
- * Note: On iOS/Android, bundled assets need to be accessed via the
- * proper file protocol. This is a simplified approach.
+ * Load an asset and convert to base64 data URI
  */
-export function getAssetUrl(assetModule: any): string {
-  if (Platform.OS === "web") {
-    // For web, use the resolved path
-    return assetModule;
+async function loadAssetAsBase64(module: any): Promise<string> {
+  try {
+    const asset = Asset.fromModule(module);
+    await asset.downloadAsync();
+    const base64 = await FileSystem.readAsStringAsync(asset.localUri || asset.uri, {
+      encoding: "base64",
+    });
+    return `data:image/png;base64,${base64}`;
+  } catch (e) {
+    console.error("Failed to load asset as base64:", e);
+    return "";
   }
+}
 
-  // For native, try to construct a file URL
-  // In production builds, assets are in the app bundle
-  if (typeof assetModule === "number") {
-    // Metro bundler returns numeric module IDs
-    return `file:///android_asset/www/${assetModule}.png`;
+/**
+ * Preload logo images as base64 data URIs.
+ * Call this before generating HTML that includes logos.
+ */
+export async function preloadLogos(): Promise<void> {
+  if (!darLogoBase64) {
+    darLogoBase64 = await loadAssetAsBase64(DAR_SQUARE_LOGO_MODULE);
   }
+  if (!bagongPilipinasLogoBase64) {
+    bagongPilipinasLogoBase64 = await loadAssetAsBase64(BAGONG_PILIPINAS_LOGO_MODULE);
+  }
+}
 
-  return assetModule;
+/**
+ * Get cached DAR logo base64 data URI
+ */
+export function getDARLogoBase64(): string {
+  return darLogoBase64 || "";
+}
+
+/**
+ * Get cached Bagong Pilipinas logo base64 data URI
+ */
+export function getBagongPilipinasLogoBase64(): string {
+  return bagongPilipinasLogoBase64 || "";
 }
 
 /**
  * HTML for DAR square logo (left side of letterhead)
+ * Uses cached base64 data URI
  */
 export function getDARLogoHTML(size: number = 55): string {
-  return `<img src="${DAR_SQUARE_LOGO}" 
+  const src = getDARLogoBase64();
+  if (!src) {
+    // Fallback placeholder
+    return `<div style="width:${size}px;height:${size}px;border:2px solid #064E3B;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8pt;color:#064E3B;font-weight:bold;">DAR</div>`;
+  }
+  return `<img src="${src}" 
     width="${size}" 
     height="${size}" 
     style="display:block; margin:auto;"
@@ -45,12 +79,18 @@ export function getDARLogoHTML(size: number = 55): string {
 
 /**
  * HTML for Bagong Pilipinas logo (right side of letterhead)
+ * Uses cached base64 data URI
  */
 export function getBagongPilipinasLogoHTML(size: number = 55): string {
-  return `<img src="${BAGONG_PILIPINAS_LOGO}" 
+  const src = getBagongPilipinasLogoBase64();
+  if (!src) {
+    // Fallback placeholder
+    return `<div style="width:${size}px;height:${size}px;border:2px solid #999;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#555;text-align:center;padding:2px;">BAGONG PILIPINAS</div>`;
+  }
+  return `<img src="${src}" 
     width="${size}" 
     height="${size}" 
-    style="display:block; margin:auto; border-radius:50%;"
+    style="display:block; margin:auto;"
     alt="Bagong Pilipinas" />`;
 }
 

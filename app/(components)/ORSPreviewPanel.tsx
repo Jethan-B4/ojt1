@@ -15,18 +15,9 @@
  *     — Drop-in WebView panel with Print + Download PDF action buttons.
  */
 
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import React, { useRef } from "react";
-import {
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-  type ViewStyle,
-} from "react-native";
-import WebView from "react-native-webview";
+import React from "react";
+import { type ViewStyle } from "react-native";
+import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,7 +82,13 @@ const fmtHtml = (n: number) =>
 // ─── buildORSHtml ─────────────────────────────────────────────────────────────
 
 /** Returns the full Appendix 11 ORS HTML string. */
-export function buildORSHtml(data: ORSPreviewData): string {
+export function buildORSHtml(
+  data: ORSPreviewData,
+  opts?: { template?: boolean },
+): string {
+  const template = !!opts?.template;
+  const src = template ? ({} as ORSPreviewData) : data;
+  const defaultYear = template ? ("" as any) : new Date().getFullYear();
   const {
     orsNo = "",
     prNo = "",
@@ -100,7 +97,7 @@ export function buildORSHtml(data: ORSPreviewData): string {
     fundCluster = "",
     responsibilityCenter = "",
     uacsCode = "",
-    fiscalYear = new Date().getFullYear(),
+    fiscalYear = defaultYear,
     amount = 0,
     status = "Pending",
     particulars = "",
@@ -112,12 +109,28 @@ export function buildORSHtml(data: ORSPreviewData): string {
     dateCreated = "",
     notes = "",
     obligationRows = [],
-  } = data;
+  } = src;
 
-  const obligationBody = obligationRows.length
-    ? obligationRows
+  const obligationBody = template
+    ? Array.from({ length: 6 })
         .map(
-          (r) => `
+          () => `
+        <tr>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td class="num">&nbsp;</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>`,
+        )
+        .join("")
+    : obligationRows.length
+      ? obligationRows
+          .map(
+            (r) => `
         <tr>
           <td>${r.date}</td>
           <td>${r.particulars}</td>
@@ -128,9 +141,9 @@ export function buildORSHtml(data: ORSPreviewData): string {
           <td></td>
           <td></td>
         </tr>`,
-        )
-        .join("")
-    : `<tr>
+          )
+          .join("")
+      : `<tr>
         <td colspan="8" style="text-align:center;color:#999;padding:8px">
           No obligation entries recorded.
         </td>
@@ -200,6 +213,12 @@ export function buildORSHtml(data: ORSPreviewData): string {
       <td class="bold">Responsibility Center</td>
       <td>${responsibilityCenter}</td>
     </tr>
+    <tr>
+      <td class="bold">PR No.</td>
+      <td>${prNo}</td>
+      <td class="bold">Fiscal Year</td>
+      <td>${fiscalYear}</td>
+    </tr>
   </table>
 
   <table style="margin-bottom:8px">
@@ -218,7 +237,7 @@ export function buildORSHtml(data: ORSPreviewData): string {
         <td>${particulars || "—"}</td>
         <td>${mfoPap}</td>
         <td class="mono">${uacsCode}</td>
-        <td class="num" style="font-weight:bold">₱${fmtHtml(amount)}</td>
+        <td class="num" style="font-weight:bold">₱${!template && amount ? fmtHtml(amount) : ""}</td>
         <td>${divisionName}</td>
         <td></td>
       </tr>
@@ -226,7 +245,7 @@ export function buildORSHtml(data: ORSPreviewData): string {
     <tfoot>
       <tr>
         <td colspan="3" style="text-align:right;font-weight:bold;background:#f0fdf4">TOTAL</td>
-        <td class="num" style="font-weight:bold;background:#f0fdf4">₱${fmtHtml(amount)}</td>
+        <td class="num" style="font-weight:bold;background:#f0fdf4">₱${!template && amount ? fmtHtml(amount) : ""}</td>
         <td colspan="2" style="background:#f0fdf4"></td>
       </tr>
     </tfoot>
@@ -293,7 +312,7 @@ export function buildORSHtml(data: ORSPreviewData): string {
       ${obligationBody}
       <tr style="font-weight:bold;background:#f0fdf4">
         <td colspan="3" style="text-align:right">TOTAL</td>
-        <td class="num">₱${fmtHtml(amount)}</td>
+        <td class="num">₱${!template && amount ? fmtHtml(amount) : ""}</td>
         <td></td><td></td><td></td><td></td>
       </tr>
     </tbody>
@@ -303,93 +322,30 @@ export function buildORSHtml(data: ORSPreviewData): string {
 </html>`;
 }
 
-// ─── useORSPreviewActions ─────────────────────────────────────────────────────
-
-/** Returns print and download handlers bound to the provided ORS HTML. */
-export function useORSPreviewActions(html: string) {
-  const handlePrint = async () => {
-    try {
-      await Print.printAsync({ html });
-    } catch (e: any) {
-      Alert.alert("Print failed", e?.message ?? "Could not open print dialog.");
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      } else {
-        Alert.alert("Saved", `PDF saved to:\n${uri}`);
-      }
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message ?? "Could not generate PDF.");
-    }
-  };
-
-  return { handlePrint, handleDownload };
-}
-
 // ─── ORSPreviewPanel (default export) ────────────────────────────────────────
-
-const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
 interface ORSPreviewPanelProps {
   html: string;
-  onPrint?: () => void;
-  onDownload?: () => void;
+  templateHtml?: string;
+  initialMode?: "filled" | "template";
   showActions: boolean;
   style?: ViewStyle;
 }
 
 export default function ORSPreviewPanel({
   html,
-  onPrint,
-  onDownload,
+  templateHtml,
+  initialMode,
   showActions,
   style,
 }: ORSPreviewPanelProps) {
-  const webRef = useRef<WebView>(null);
-  const { handlePrint, handleDownload } = useORSPreviewActions(html);
-
   return (
-    <View style={[{ flex: 1 }, style]}>
-      {showActions && (
-        <View
-          className="flex-row gap-2 px-4 py-2.5 bg-white border-b border-gray-100"
-          style={{ elevation: 2 }}
-        >
-          <TouchableOpacity
-            onPress={onPrint ?? handlePrint}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-gray-700">
-              🖨 Print
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onDownload ?? handleDownload}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-[#064E3B] rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-white">
-              ⬇ Download PDF
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <WebView
-        ref={webRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+    <DocumentPreviewPanel
+      html={html}
+      templateHtml={templateHtml}
+      initialMode={initialMode}
+      showActions={showActions}
+      style={style}
+    />
   );
 }

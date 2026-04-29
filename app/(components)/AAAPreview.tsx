@@ -62,23 +62,35 @@ function cur(n: number) {
 
 // ─── HTML generator ───────────────────────────────────────────────────────────
 
-export function buildAAAPreviewHTML(d: AAAPreviewData): string {
-  const supplierCount = d.suppliers.length || 1;
+export function buildAAAPreviewHTML(
+  d: AAAPreviewData,
+  opts?: { template?: boolean },
+): string {
+  const template = !!opts?.template;
+  const suppliers =
+    d.suppliers.length > 0
+      ? template
+        ? d.suppliers.map(() => "")
+        : d.suppliers
+      : template
+        ? ["", "", ""]
+        : ["—"];
+  const supplierCount = suppliers.length || 1;
   // Each supplier column gets roughly equal width; fixed layout manages the rest
   const supplierColPct = Math.floor(50 / supplierCount);
 
   // ── Top-right reference block ────────────────────────────────────────────
   const refBlock = `
     <table class="ref-table">
-      <tr><td class="ref-label">RFQ No.</td><td class="ref-td">${d.rfqNo}</td></tr>
-      <tr><td class="ref-label">PR No.</td><td class="ref-td">${d.prNo}</td></tr>
-      <tr><td class="ref-label">Resolution No.</td><td class="ref-td">${d.resolutionNo}</td></tr>
-      <tr><td class="ref-label">Date</td><td class="ref-td">${d.date}</td></tr>
+      <tr><td class="ref-label">RFQ No.</td><td class="ref-td">${template ? "" : d.rfqNo}</td></tr>
+      <tr><td class="ref-label">PR No.</td><td class="ref-td">${template ? "" : d.prNo}</td></tr>
+      <tr><td class="ref-label">Resolution No.</td><td class="ref-td">${template ? "" : d.resolutionNo}</td></tr>
+      <tr><td class="ref-label">Date</td><td class="ref-td">${template ? "" : d.date}</td></tr>
     </table>`;
 
   // ── Supplier column headers ──────────────────────────────────────────────
-  const supplierHeaders = d.suppliers
-    .map((s) => `<th style="width:${supplierColPct}%;">${s}</th>`)
+  const supplierHeaders = suppliers
+    .map((s) => `<th style="width:${supplierColPct}%;">${s || "&nbsp;"}</th>`)
     .join("");
 
   // ── Job-order description row ────────────────────────────────────────────
@@ -86,29 +98,42 @@ export function buildAAAPreviewHTML(d: AAAPreviewData): string {
     <tr>
       <td colspan="4" class="job-order-cell">
         <strong>JOB ORDER</strong><br/>
-        ${(d.particulars || "").replace(/\n/g, "<br/>")}
+        ${template ? "" : (d.particulars || "").replace(/\n/g, "<br/>")}
       </td>
-      ${d.suppliers.map(() => "<td></td>").join("")}
+      ${suppliers.map(() => "<td></td>").join("")}
     </tr>`;
 
   // ── Item rows ────────────────────────────────────────────────────────────
-  const itemRows = d.rows
+  const rowsSrc = template
+    ? Array.from({ length: 12 }).map((_, i) => ({
+        itemNo: i + 1,
+        qty: 0,
+        unit: "",
+        desc: "",
+        prices: {},
+        winner: null,
+      }))
+    : d.rows;
+
+  const itemRows = rowsSrc
     .map((r) => {
-      const priceCells = d.suppliers
-        .map((s) => {
-          const p     = r.prices[s] ?? 0;
-          const isWin = r.winner === s && p > 0;
-          return `<td class="price-td${isWin ? " winner" : ""}">
+      const priceCells = template
+        ? suppliers.map(() => `<td class="price-td"></td>`).join("")
+        : suppliers
+            .map((s) => {
+              const p = r.prices[s] ?? 0;
+              const isWin = r.winner === s && p > 0;
+              return `<td class="price-td${isWin ? " winner" : ""}">
             ${cur(p)}${isWin ? '<span class="check">✓</span>' : ""}
           </td>`;
-        })
-        .join("");
+            })
+            .join("");
       return `
         <tr>
           <td class="center-td">${r.itemNo}</td>
-          <td class="center-td">${r.qty}</td>
-          <td class="center-td">${r.unit}</td>
-          <td class="desc-td">${r.desc}</td>
+          <td class="center-td">${template ? "" : r.qty || ""}</td>
+          <td class="center-td">${template ? "" : r.unit}</td>
+          <td class="desc-td">${template ? "" : r.desc}</td>
           ${priceCells}
         </tr>`;
     })
@@ -116,25 +141,25 @@ export function buildAAAPreviewHTML(d: AAAPreviewData): string {
 
   // ── Summary rows ─────────────────────────────────────────────────────────
   // Grand totals per supplier (all item prices × qty)
-  const supplierGrandTotals = d.suppliers.map((s) =>
-    d.rows.reduce((sum, r) => sum + (r.prices[s] ?? 0) * r.qty, 0),
-  );
+  const supplierGrandTotals = template
+    ? suppliers.map(() => 0)
+    : suppliers.map((s) =>
+        d.rows.reduce((sum, r) => sum + (r.prices[s] ?? 0) * r.qty, 0),
+      );
 
-  const matCells = d.suppliers
-    .map((_, i) =>
-      d.totalMaterial !== undefined
-        ? `<td class="price-td">${i === 0 ? cur(d.totalMaterial) : ""}</td>`
-        : `<td></td>`,
-    )
-    .join("");
+  const matCells = template
+    ? suppliers.map(() => `<td class="price-td"></td>`).join("")
+    : suppliers
+        .map((_, i) =>
+          d.totalMaterial !== undefined
+            ? `<td class="price-td">${i === 0 ? cur(d.totalMaterial) : ""}</td>`
+            : `<td></td>`,
+        )
+        .join("");
 
-  const labCells = d.suppliers
-    .map(() => `<td></td>`)
-    .join("");
+  const labCells = suppliers.map(() => `<td></td>`).join("");
 
-  const xCells = d.suppliers
-    .map(() => `<td class="x-row"></td>`)
-    .join("");
+  const xCells = suppliers.map(() => `<td class="x-row"></td>`).join("");
 
   const totalCells = supplierGrandTotals
     .map((t) => `<td class="price-td total-td">${cur(t)}</td>`)

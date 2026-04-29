@@ -26,6 +26,7 @@ import { WebView } from "react-native-webview";
 interface AAAPreviewModalProps {
   visible:   boolean;
   html:      string;
+  templateHtml?: string;
   aaaNo:     string;
   prNo:      string;
   date:      string;
@@ -36,16 +37,20 @@ interface AAAPreviewModalProps {
 export default function AAAPreviewModal({
   visible,
   html,
+  templateHtml,
   aaaNo,
   prNo,
   date,
   office,
   onClose,
 }: AAAPreviewModalProps) {
+  const [mode, setMode] = React.useState<"filled" | "template">("filled");
+  const currentHtml =
+    mode === "template" && templateHtml ? templateHtml : html;
 
   const handlePrint = async () => {
     try {
-      await Print.printAsync({ html });
+      await Print.printAsync({ html: currentHtml });
     } catch {
       Alert.alert("Print Error", "Unable to print the document.");
     }
@@ -53,7 +58,7 @@ export default function AAAPreviewModal({
 
   const handleDownload = async () => {
     try {
-      const { uri } = await Print.printToFileAsync({ html });
+      const { uri } = await Print.printToFileAsync({ html: currentHtml });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType:    "application/pdf",
@@ -165,7 +170,7 @@ export default function AAAPreviewModal({
 
         {/* ── WebView ── */}
         <WebView
-          source={{ html }}
+          source={{ html: currentHtml }}
           style={{ flex: 1, backgroundColor: "#ffffff" }}
           originWhitelist={["*"]}
           scrollEnabled
@@ -198,6 +203,37 @@ export default function AAAPreviewModal({
           gap: 10,
         }}>
           <View style={{ flexDirection: "row", gap: 10 }}>
+            {!!templateHtml && (
+              <TouchableOpacity
+                onPress={() =>
+                  setMode((prev) =>
+                    prev === "filled" ? "template" : "filled",
+                  )
+                }
+                activeOpacity={0.8}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: mode === "template" ? "#064E3B" : "#e5e7eb",
+                  backgroundColor: mode === "template" ? "#064E3B" : "#ffffff",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "800",
+                    color: mode === "template" ? "#ffffff" : "#6b7280",
+                  }}
+                >
+                  {mode === "template" ? "Template" : "Filled"}
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={handlePrint}
               activeOpacity={0.8}

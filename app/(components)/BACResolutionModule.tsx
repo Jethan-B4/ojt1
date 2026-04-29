@@ -4,6 +4,7 @@ import {
 } from "@/app/(components)/BACResolutionPreview";
 import BACResolutionPreviewModal from "@/app/(modals)/BACResolutionPreviewModal";
 import CalendarModalSheet from "@/app/(modals)/CalendarModal";
+import { preloadLogos } from "../lib/documentAssets";
 import {
   fetchBACResolutionsByDivision,
   insertStandaloneBACResolution,
@@ -58,6 +59,7 @@ export default function BACResolutionModule({
   const [pool, setPool] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<BACResolutionData | null>(null);
+  const [logosLoaded, setLogosLoaded] = useState(false);
 
   const [resNo, setResNo] = useState("");
   const [mode, setMode] = useState(PROC_MODES[0]);
@@ -84,6 +86,9 @@ export default function BACResolutionModule({
     [],
   );
   const [tab, setTab] = useState<"form" | "pdf">("form");
+  const [previewMode, setPreviewMode] = useState<"filled" | "template">(
+    "filled",
+  );
 
   const load = useCallback(async () => {
     if (!divisionId) return;
@@ -103,6 +108,12 @@ export default function BACResolutionModule({
   useEffect(() => {
     load().catch(() => {});
   }, [load]);
+
+  useEffect(() => {
+    preloadLogos()
+      .catch(() => {})
+      .finally(() => setLogosLoaded(true));
+  }, []);
 
   const newRow = useMemo<PRRow>(
     () => ({
@@ -273,17 +284,41 @@ export default function BACResolutionModule({
     [resNo, resolvedAt, prs, whereas1, whereas2, whereas3, nowTherefore, mode],
   );
 
-  const draftHtml = useMemo(() => buildBACResolutionHTML(draftPreview), [draftPreview]);
+  const draftHtml = useMemo(() => {
+    if (!logosLoaded) return "";
+    return buildBACResolutionHTML(draftPreview, {
+      template: previewMode === "template",
+    });
+  }, [draftPreview, logosLoaded, previewMode]);
+
+  const ensureLogos = useCallback(async () => {
+    if (logosLoaded) return;
+    try {
+      await preloadLogos();
+    } finally {
+      setLogosLoaded(true);
+    }
+  }, [logosLoaded]);
 
   const handlePrint = useCallback(async () => {
     try {
-      await Print.printAsync({ html: draftHtml });
+      await ensureLogos();
+      await Print.printAsync({
+        html: buildBACResolutionHTML(draftPreview, {
+          template: previewMode === "template",
+        }),
+      });
     } catch {}
-  }, [draftHtml]);
+  }, [ensureLogos, draftPreview, previewMode]);
 
   const handleDownload = useCallback(async () => {
     try {
-      const { uri } = await Print.printToFileAsync({ html: draftHtml });
+      await ensureLogos();
+      const { uri } = await Print.printToFileAsync({
+        html: buildBACResolutionHTML(draftPreview, {
+          template: previewMode === "template",
+        }),
+      });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(uri, {
@@ -296,7 +331,7 @@ export default function BACResolutionModule({
     } catch (e: any) {
       Alert.alert("Export failed", e?.message ?? "Could not export BAC Resolution.");
     }
-  }, [draftHtml]);
+  }, [ensureLogos, draftPreview, previewMode]);
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -369,6 +404,20 @@ export default function BACResolutionModule({
             </View>
             {tab === "pdf" && (
               <View className="flex-row justify-end gap-2 pt-2">
+                <TouchableOpacity
+                  onPress={() =>
+                    setPreviewMode((prev) =>
+                      prev === "filled" ? "template" : "filled",
+                    )
+                  }
+                  className={`px-3 py-1.5 rounded-lg border ${previewMode === "template" ? "bg-white border-white" : "bg-white/10 border-white/20"}`}
+                >
+                  <Text
+                    className={`text-[11.5px] font-bold ${previewMode === "template" ? "text-[#064E3B]" : "text-white"}`}
+                  >
+                    {previewMode === "template" ? "Template" : "Filled"}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={handlePrint} className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/20">
                   <Text className="text-white text-[11.5px] font-bold">Print</Text>
                 </TouchableOpacity>
@@ -380,7 +429,20 @@ export default function BACResolutionModule({
           </View>
 
           {tab === "pdf" ? (
-            <WebView source={{ html: draftHtml }} style={{ flex: 1 }} originWhitelist={["*"]} />
+            logosLoaded ? (
+              <WebView
+                source={{ html: draftHtml }}
+                style={{ flex: 1 }}
+                originWhitelist={["*"]}
+              />
+            ) : (
+              <View className="flex-1 items-center justify-center gap-2">
+                <ActivityIndicator size="large" color="#064E3B" />
+                <Text className="text-[12px] text-gray-400">
+                  Loading document assets…
+                </Text>
+              </View>
+            )
           ) : (
             <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
               <View className="bg-white border border-gray-200 rounded-2xl p-3 mb-3">

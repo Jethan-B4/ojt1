@@ -8,26 +8,14 @@
  *   toWords(amount: number): string
  *     — Converts a peso amount to Philippine-style words.
  *
- *   usePOPreviewActions(html: string)
- *     — Returns { handlePrint, handleDownload } bound to expo-print.
- *
  *   POPreviewPanel (default export)
  *     — Drop-in WebView panel with Print + Download PDF action buttons.
  */
 
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import React, { useRef } from "react";
-import {
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
-  type ViewStyle,
-} from "react-native";
-import WebView from "react-native-webview";
+import React from "react";
+import { type ViewStyle } from "react-native";
 import type { POItemRow } from "../../lib/supabase/po";
+import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,10 +52,6 @@ export interface POPreviewData {
     "stock_no" | "unit" | "description" | "quantity" | "unit_price" | "subtotal"
   >[];
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
 // ─── toWords ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +137,12 @@ const fmtHtml = (n: number) =>
   });
 
 /** Returns the full Appendix 61 HTML string for the PO form. */
-export function buildPOHtml(data: POPreviewData): string {
+export function buildPOHtml(
+  data: POPreviewData,
+  opts?: { template?: boolean },
+): string {
+  const template = !!opts?.template;
+  const src = template ? ({} as POPreviewData) : data;
   const {
     poNo = "",
     prNo = "",
@@ -178,9 +167,22 @@ export function buildPOHtml(data: POPreviewData): string {
     accountantName = "",
     accountantDesig = "",
     items = [],
-  } = data;
+  } = src;
 
-  const itemRows = items
+  const MIN_ITEM_ROWS = 10;
+  const paddedItems = template ? [] : [...items];
+  while (paddedItems.length < MIN_ITEM_ROWS) {
+    paddedItems.push({
+      stock_no: "",
+      unit: "",
+      description: "",
+      quantity: "" as any,
+      unit_price: 0 as any,
+      subtotal: 0 as any,
+    });
+  }
+
+  const itemRows = paddedItems
     .map(
       (it) => `
       <tr>
@@ -188,8 +190,8 @@ export function buildPOHtml(data: POPreviewData): string {
         <td>${it.unit}</td>
         <td>${it.description}</td>
         <td class="num">${it.quantity}</td>
-        <td class="num">${fmtHtml(it.unit_price)}</td>
-        <td class="num">${fmtHtml(it.subtotal)}</td>
+        <td class="num">${it.unit_price ? fmtHtml(it.unit_price) : ""}</td>
+        <td class="num">${it.subtotal ? fmtHtml(it.subtotal) : ""}</td>
       </tr>`,
     )
     .join("");
@@ -235,6 +237,12 @@ export function buildPOHtml(data: POPreviewData): string {
       <td>${date}</td>
     </tr>
     <tr>
+      <td class="bold">PR No. :</td>
+      <td>${prNo}</td>
+      <td class="bold">Office/Section :</td>
+      <td>${officeSection}</td>
+    </tr>
+    <tr>
       <td class="bold">TIN :</td>
       <td>${tin}</td>
       <td class="bold">Mode of Procurement :</td>
@@ -264,10 +272,10 @@ export function buildPOHtml(data: POPreviewData): string {
       <td class="center small bold" style="width:12%">Unit Cost</td>
       <td class="center small bold" style="width:12%">Amount</td>
     </tr>
-    ${itemRows || '<tr><td colspan="6" class="center small">No items</td></tr>'}
+    ${itemRows}
     <tr>
       <td colspan="5" class="right bold">Total</td>
-      <td class="num bold">${fmtHtml(totalAmount)}</td>
+      <td class="num bold">${!template && totalAmount ? fmtHtml(totalAmount) : ""}</td>
     </tr>
   </table>
 
@@ -318,7 +326,7 @@ export function buildPOHtml(data: POPreviewData): string {
     </tr>
     <tr>
       <td class="small">Date: ___________________</td>
-      <td class="small">(${toWords(totalAmount)})</td>
+      <td class="small">(${!template && totalAmount ? toWords(totalAmount) : ""})</td>
     </tr>
   </table>
 
@@ -327,88 +335,30 @@ export function buildPOHtml(data: POPreviewData): string {
 </html>`;
 }
 
-// ─── usePOPreviewActions ──────────────────────────────────────────────────────
-
-/** Returns print and download handlers bound to the provided HTML. */
-export function usePOPreviewActions(html: string) {
-  const handlePrint = async () => {
-    try {
-      await Print.printAsync({ html });
-    } catch (e: any) {
-      Alert.alert("Print failed", e?.message ?? "Could not open print dialog.");
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      } else {
-        Alert.alert("Saved", `PDF saved to:\n${uri}`);
-      }
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message ?? "Could not generate PDF.");
-    }
-  };
-
-  return { handlePrint, handleDownload };
-}
-
 // ─── POPreviewPanel (default export) ─────────────────────────────────────────
 
 interface POPreviewPanelProps {
   html: string;
-  onPrint?: () => void;
-  onDownload?: () => void;
+  templateHtml?: string;
+  initialMode?: "filled" | "template";
   showActions: boolean;
   style?: ViewStyle;
 }
 
 export default function POPreviewPanel({
   html,
-  onPrint,
-  onDownload,
+  templateHtml,
+  initialMode,
   showActions,
   style,
 }: POPreviewPanelProps) {
-  const webRef = useRef<WebView>(null);
-  const { handlePrint, handleDownload } = usePOPreviewActions(html);
-
   return (
-    <View style={[{ flex: 1 }, style]}>
-      {showActions && (
-        <View className="flex-row gap-2 px-4 py-2.5 bg-white border-b border-gray-100">
-          <TouchableOpacity
-            onPress={onPrint ?? handlePrint}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-gray-700">
-              🖨 Print
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onDownload ?? handleDownload}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-[#064E3B] rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-white">
-              ⬇ Download PDF
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <WebView
-        ref={webRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+    <DocumentPreviewPanel
+      html={html}
+      templateHtml={templateHtml}
+      initialMode={initialMode}
+      showActions={showActions}
+      style={style}
+    />
   );
 }

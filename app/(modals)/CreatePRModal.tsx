@@ -178,13 +178,15 @@ function buildPRHtml(
     appDesig: string;
   },
   items: LineItem[],
+  opts?: { template?: boolean },
 ): string {
+  const template = !!opts?.template;
   const f = (n: number) =>
     n.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  const padded = [...items];
+  const padded = [...(template ? [] : items)];
   while (padded.length < 30)
     padded.push({ id: 0, desc: "", stock: "", unit: "", qty: "", price: "" });
 
@@ -214,17 +216,17 @@ function buildPRHtml(
     <tr style="height:27px"><td colspan="6" style="text-align:right;font-size:10pt;padding-right:4px;font-family:'Times New Roman',serif">Appendix 60</td></tr>
     <tr style="height:34px"><td colspan="6" style="text-align:center;font-weight:bold;font-size:12pt;font-family:'Times New Roman',serif">PURCHASE REQUEST</td></tr>
     <tr style="height:21px">
-      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">${fields.entityName}</span></td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Entity Name: <span style="font-weight:normal">${template ? "" : fields.entityName}</span></td>
       <td style="border-bottom:1px solid black"></td>
-      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal">${fields.fundCluster}</span></td>
+      <td colspan="3" style="border-bottom:1px solid black;font-size:8pt;padding:2px 4px;font-family:'Times New Roman',serif;font-weight:bold">Fund Cluster: <span style="font-weight:normal">${template ? "" : fields.fundCluster}</span></td>
     </tr>
     <tr style="height:14px">
-      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Office/Section :<br/>${fields.officeSection}</td>
-      <td colspan="2" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">PR No.: <span style="font-weight:normal">${fields.prNo}</span></td>
-      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;font-weight:bold;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Date:<br/><span style="font-weight:normal">${fields.date}</span></td>
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Office/Section :<br/>${template ? "" : fields.officeSection}</td>
+      <td colspan="2" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">PR No.: <span style="font-weight:normal">${template ? "" : fields.prNo}</span></td>
+      <td rowspan="2" colspan="2" style="border:1px solid black;font-size:8pt;font-weight:bold;vertical-align:top;padding:2px 4px;font-family:'Times New Roman',serif">Date:<br/><span style="font-weight:normal">${template ? "" : fields.date}</span></td>
     </tr>
     <tr style="height:15px">
-      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">Responsibility Center Code: <span style="font-weight:normal">${fields.respCode}</span></td>
+      <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8pt;font-weight:bold;padding:2px 4px;font-family:'Times New Roman',serif">Responsibility Center Code: <span style="font-weight:normal">${template ? "" : fields.respCode}</span></td>
     </tr>
     <tr style="height:22.5px">
       <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Stock/<br/>Property No.</th>
@@ -235,7 +237,7 @@ function buildPRHtml(
       <th style="border:1px solid black;font-size:8pt;padding:1px 3px;font-family:'Times New Roman',serif;text-align:center;font-weight:bold">Total Cost</th>
     </tr>
     ${rows}
-    <tr style="height:17px"><td colspan="6" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><b>Purpose:</b> ${fields.purpose}</td></tr>
+    <tr style="height:17px"><td colspan="6" style="border-top:1px solid black;border-left:1px solid black;border-right:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif"><b>Purpose:</b> ${template ? "" : fields.purpose}</td></tr>
     <tr style="height:30px"><td colspan="6" style="border-bottom:1px solid black;border-left:1px solid black;border-right:1px solid black"></td></tr>
     <tr style="height:12px">
       <td style="border-top:1px solid black;border-left:1px solid black"></td>
@@ -249,14 +251,14 @@ function buildPRHtml(
     </tr>
     <tr style="height:12px">
       <td colspan="2" style="border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Printed Name :</td>
-      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.reqName}</td>
-      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.appName}</td>
+      <td style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${template ? "" : fields.reqName}</td>
+      <td colspan="2" style="font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${template ? "" : fields.appName}</td>
       <td style="border-right:1px solid black"></td>
     </tr>
     <tr style="height:14.75px">
       <td colspan="2" style="border-bottom:1px solid black;border-left:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">Designation :</td>
-      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.reqDesig}</td>
-      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${fields.appDesig}</td>
+      <td style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${template ? "" : fields.reqDesig}</td>
+      <td colspan="2" style="border-bottom:1px solid black;font-size:8.5pt;padding:2px 4px;font-family:'Times New Roman',serif">${template ? "" : fields.appDesig}</td>
       <td style="border-bottom:1px solid black;border-right:1px solid black"></td>
     </tr>
   </tbody>
@@ -691,6 +693,8 @@ function ModalHeader({
   onClose,
   tab,
   onTabChange,
+  previewMode,
+  onTogglePreviewMode,
   onPrint,
   onDownload,
 }: {
@@ -699,6 +703,8 @@ function ModalHeader({
   onClose: () => void;
   tab: "form" | "pdf";
   onTabChange: (t: "form" | "pdf") => void;
+  previewMode: "filled" | "template";
+  onTogglePreviewMode: () => void;
   onPrint: () => void;
   onDownload: () => void;
 }) {
@@ -777,6 +783,17 @@ function ModalHeader({
       {tab === "pdf" && (
         <View className="flex-row justify-end gap-2.5 pt-2 pb-1">
           <TouchableOpacity
+            onPress={onTogglePreviewMode}
+            activeOpacity={0.8}
+            className={`flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl border ${previewMode === "template" ? "bg-white border-white" : "bg-white/10 border-white/20"}`}
+          >
+            <Text
+              className={`text-[12px] font-bold ${previewMode === "template" ? "text-[#064E3B]" : "text-white"}`}
+            >
+              {previewMode === "template" ? "Template" : "Filled"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={onPrint}
             activeOpacity={0.8}
             className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 border border-white/20"
@@ -810,6 +827,9 @@ export function CreatePRModal({
   const [nextId, setNextId] = useState(2);
   const [justUnlocked, setJustUnlocked] = useState(false);
   const [tab, setTab] = useState<"form" | "pdf">("form");
+  const [previewMode, setPreviewMode] = useState<"filled" | "template">(
+    "filled",
+  );
   const prevHighValue = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const webRef = useRef<WebView>(null);
@@ -888,6 +908,7 @@ export function CreatePRModal({
       setJustUnlocked(false);
       prevHighValue.current = false;
       setTab("form");
+      setPreviewMode("filled");
     }
   }, [visible]);
 
@@ -904,7 +925,7 @@ export function CreatePRModal({
   }, [visible, currentUser?.division_name, form.officeSection]);
 
   // Build PDF HTML from live form state so preview always reflects current input
-  const html = useMemo(
+  const filledHtml = useMemo(
     () =>
       buildPRHtml(
         {
@@ -935,6 +956,40 @@ export function CreatePRModal({
       form.items,
     ],
   );
+  const templateHtml = useMemo(
+    () =>
+      buildPRHtml(
+        {
+          prNo: "",
+          entityName: form.entityName,
+          fundCluster: form.fundCluster,
+          officeSection: form.officeSection,
+          purpose: form.purpose,
+          respCode: form.responsibilityCode,
+          date: TODAY_DISPLAY,
+          reqName: form.reqName,
+          reqDesig: form.reqDesig,
+          appName: form.appName,
+          appDesig: form.appDesig,
+        },
+        form.items,
+        { template: true },
+      ),
+    [
+      form.entityName,
+      form.fundCluster,
+      form.officeSection,
+      form.purpose,
+      form.responsibilityCode,
+      form.reqName,
+      form.reqDesig,
+      form.appName,
+      form.appDesig,
+      form.items,
+    ],
+  );
+
+  const html = previewMode === "template" ? templateHtml : filledHtml;
 
   const handlePrint = async () => {
     try {
@@ -1026,6 +1081,12 @@ export function CreatePRModal({
           onClose={onClose}
           tab={tab}
           onTabChange={setTab}
+          previewMode={previewMode}
+          onTogglePreviewMode={() =>
+            setPreviewMode((prev) =>
+              prev === "filled" ? "template" : "filled",
+            )
+          }
           onPrint={handlePrint}
           onDownload={handleDownload}
         />

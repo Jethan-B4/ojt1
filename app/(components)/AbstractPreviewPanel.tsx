@@ -4,18 +4,11 @@
  * Renders the Abstract of Bids / Abstract of Quotations form.
  */
 
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import React, { useRef } from "react";
+import React from "react";
 import {
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
   type ViewStyle,
 } from "react-native";
-import WebView from "react-native-webview";
+import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,33 +30,38 @@ export interface Bidder {
   items?: { price: number; remarks?: string }[];
 }
 
-const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
-
 // ─── buildAbstractHtml ─────────────────────────────────────────────────────────
 
-export function buildAbstractHtml(data: AbstractPreviewData): string {
+export function buildAbstractHtml(
+  data: AbstractPreviewData,
+  opts?: { template?: boolean },
+): string {
+  const template = !!opts?.template;
   const fmtNum = (n: number) =>
     n.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
   const today =
-    data.date ||
+    (template ? "" : data.date) ||
     new Date().toLocaleDateString("en-PH", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
 
-  const bidders = data.bidders || [];
+  const bidders = template ? [{}, {}, {}] : data.bidders || [];
   const bidderHeaders = bidders
     .map(
       (b) => `<th style="border:1px solid black;font-size:8pt;padding:4px;text-align:center;font-weight:bold" colspan="2">${b.name || "Bidder"}</th>`
     )
     .join("");
 
-  const items = data.items || [];
-  const rows = items
+  const items = template ? [] : data.items || [];
+  const padded = [...items];
+  while (padded.length < 12)
+    padded.push({ description: "", quantity: undefined, unit: "" });
+  const rows = padded
     .map((it, idx) => {
       const bidderCells = bidders
         .map((bidder) => {
@@ -87,7 +85,7 @@ export function buildAbstractHtml(data: AbstractPreviewData): string {
 </head><body>
 <table><tbody>
 <tr><td colspan="${4 + bidders.length * 2}" style="text-align:center;font-weight:bold;font-size:14pt;padding-bottom:16px">ABSTRACT OF BIDS / QUOTATIONS</td></tr>
-<tr><td colspan="${4 + bidders.length * 2}" style="padding:4px 0"><b>PR No.:</b> ${data.prNo || ""} &nbsp;&nbsp;&nbsp;&nbsp; <b>Date:</b> ${today}</td></tr>
+<tr><td colspan="${4 + bidders.length * 2}" style="padding:4px 0"><b>PR No.:</b> ${template ? "" : data.prNo || ""} &nbsp;&nbsp;&nbsp;&nbsp; <b>Date:</b> ${today}</td></tr>
 </tbody></table>
 
 <table style="margin-top:12px">
@@ -114,87 +112,30 @@ ${rows}
 </body></html>`;
 }
 
-// ─── useAbstractPreviewActions ─────────────────────────────────────────────────
-
-export function useAbstractPreviewActions(html: string) {
-  const handlePrint = async () => {
-    try {
-      await Print.printAsync({ html });
-    } catch (e: any) {
-      Alert.alert("Print failed", e?.message ?? "Could not open print dialog.");
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      } else {
-        Alert.alert("Saved", `PDF saved to:\n${uri}`);
-      }
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message ?? "Could not generate PDF.");
-    }
-  };
-
-  return { handlePrint, handleDownload };
-}
-
 // ─── AbstractPreviewPanel (default export) ─────────────────────────────────────
 
 interface AbstractPreviewPanelProps {
   html: string;
-  onPrint?: () => void;
-  onDownload?: () => void;
+  templateHtml?: string;
+  initialMode?: "filled" | "template";
   showActions: boolean;
   style?: ViewStyle;
 }
 
 export default function AbstractPreviewPanel({
   html,
-  onPrint,
-  onDownload,
+  templateHtml,
+  initialMode,
   showActions,
   style,
 }: AbstractPreviewPanelProps) {
-  const webRef = useRef<WebView>(null);
-  const { handlePrint, handleDownload } = useAbstractPreviewActions(html);
-
   return (
-    <View style={[{ flex: 1 }, style]}>
-      {showActions && (
-        <View className="flex-row gap-2 px-4 py-2.5 bg-white border-b border-gray-100">
-          <TouchableOpacity
-            onPress={onPrint ?? handlePrint}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-gray-700">
-              Print
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onDownload ?? handleDownload}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-[#064E3B] rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-white">
-              Download PDF
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <WebView
-        ref={webRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+    <DocumentPreviewPanel
+      html={html}
+      templateHtml={templateHtml}
+      initialMode={initialMode}
+      showActions={showActions}
+      style={style}
+    />
   );
 }

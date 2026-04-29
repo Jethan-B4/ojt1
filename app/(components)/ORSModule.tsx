@@ -335,6 +335,7 @@ export function OrsModal({
   };
 
   const html = buildORSHtml(previewData);
+  const templateHtml = buildORSHtml(previewData, { template: true });
 
   // ── Validation + save ─────────────────────────────────────────────────────
 
@@ -438,7 +439,12 @@ export function OrsModal({
 
         {/* ── Preview tab ── */}
         {tab === "preview" ? (
-          <ORSPreviewPanel html={html} showActions style={{ flex: 1 }} />
+          <ORSPreviewPanel
+            html={html}
+            templateHtml={templateHtml}
+            showActions
+            style={{ flex: 1 }}
+          />
         ) : (
           /* ── Form tab ── */
           <KeyboardAvoidingView
@@ -1210,6 +1216,7 @@ export function ORSSection({
             </View>
             <ORSPreviewPanel
               html={previewHtml}
+              templateHtml={buildORSHtml({} as ORSPreviewData, { template: true })}
               showActions
               style={{ flex: 1 }}
             />
@@ -1559,6 +1566,7 @@ export function ORSInlinePanel({
             </View>
             <ORSPreviewPanel
               html={previewHtml}
+              templateHtml={buildORSHtml({} as ORSPreviewData, { template: true })}
               showActions
               style={{ flex: 1 }}
             />

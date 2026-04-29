@@ -24,7 +24,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import POPreviewPanel, {
   buildPOHtml,
   toWords,
-  usePOPreviewActions,
   type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import CalendarPickerModal from "../(modals)/CalendarModal";
@@ -496,7 +495,10 @@ export default function CreatePOModal({
   );
 
   const html = useMemo(() => buildPOHtml(previewData), [previewData]);
-  const { handlePrint, handleDownload } = usePOPreviewActions(html);
+  const templateHtml = useMemo(
+    () => buildPOHtml(previewData, { template: true }),
+    [previewData],
+  );
 
   const submit = useCallback(async () => {
     setSaving(true);
@@ -659,8 +661,7 @@ export default function CreatePOModal({
           {tab === "preview" ? (
             <POPreviewPanel
               html={html}
-              onPrint={handlePrint}
-              onDownload={handleDownload}
+              templateHtml={templateHtml}
               showActions
             />
           ) : (

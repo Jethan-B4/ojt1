@@ -45,7 +45,14 @@ export default function BACResolutionPreviewModal({
   data: BACResolutionData;
   onClose: () => void;
 }) {
-  const html = React.useMemo(() => buildBACResolutionHTML(data), [data]);
+  // Logos are embedded in buildBACResolutionHTML — no async preload needed.
+  const filledHtml = React.useMemo(() => buildBACResolutionHTML(data), [data]);
+  const templateHtml = React.useMemo(
+    () => buildBACResolutionHTML(data, { template: true }),
+    [data],
+  );
+  const [mode, setMode] = React.useState<"filled" | "template">("filled");
+  const html = mode === "template" ? templateHtml : filledHtml;
 
   const handlePrint = async () => {
     try {
@@ -251,6 +258,33 @@ export default function BACResolutionPreviewModal({
           }}
         >
           <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={() =>
+                setMode((prev) => (prev === "filled" ? "template" : "filled"))
+              }
+              activeOpacity={0.8}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: mode === "template" ? "#064E3B" : "#e5e7eb",
+                backgroundColor: mode === "template" ? "#064E3B" : "#ffffff",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "800",
+                  color: mode === "template" ? "#ffffff" : "#6b7280",
+                }}
+              >
+                {mode === "template" ? "Template" : "Filled"}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={handlePrint}
               activeOpacity={0.8}

@@ -17,6 +17,7 @@ import {
 import DocumentPreviewPanel from "@/app/(components)/DocumentPreviewPanel";
 import PRPreviewPanel, { buildPRHtml } from "@/app/(components)/PRPreviewPanel";
 import React, { useEffect, useState } from "react";
+import { preloadLogos } from "../lib/documentAssets";
 import {
     ActivityIndicator,
     Alert,
@@ -92,6 +93,7 @@ export default function ViewPRModal({
   const [items, setItems] = useState<LineItem[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [logosLoaded, setLogosLoaded] = useState(false);
 
   useEffect(() => {
     fetchPRStatuses()
@@ -126,11 +128,19 @@ export default function ViewPRModal({
       .finally(() => setLoading(false));
   }, [visible, record, initialTab]);
 
+  useEffect(() => {
+    if (!visible) return;
+    preloadLogos()
+      .catch(() => {})
+      .finally(() => setLogosLoaded(true));
+  }, [visible]);
+
   if (!record) return null;
   const header = hdr ?? record;
 
   // Build HTML for different document types
   const prHtml = buildPRHtml(header, items);
+  const prTemplateHtml = buildPRHtml({}, [], { template: true });
 
   // RFQ (Canvass) HTML
   const canvassData: CanvassPreviewData = {
@@ -149,7 +159,24 @@ export default function ViewPRModal({
     })),
     canvasserNames: [],
   };
-  const rfqHtml = buildCanvassHTML(canvassData);
+  const rfqHtml = logosLoaded ? buildCanvassHTML(canvassData) : "";
+  const rfqTemplateHtml = logosLoaded
+    ? buildCanvassHTML({
+        prNo: "",
+        quotationNo: "",
+        date: "",
+        deadline: "",
+        bacChairperson: "",
+        officeSection: "",
+        purpose: "",
+        items: [],
+        canvasserNames: [],
+        supplierName: "",
+        supplierAddress: "",
+        assignedTo: "",
+        assignedDivision: "",
+      })
+    : "";
 
   // Resolution HTML
   const resolutionData: BACResolutionData = {
@@ -178,7 +205,27 @@ export default function ViewPRModal({
     approvedBy: "",
     approvedByDesig: "",
   };
-  const resolutionHtml = buildBACResolutionHTML(resolutionData);
+  const resolutionHtml = logosLoaded ? buildBACResolutionHTML(resolutionData) : "";
+  const resolutionTemplateHtml = logosLoaded
+    ? buildBACResolutionHTML({
+        resolutionNo: "",
+        resolvedDate: "",
+        location: "",
+        prEntries: [
+          { prNo: "", date: "", estimatedCost: "", endUser: "", procMode: "" },
+        ],
+        whereas1: "",
+        whereas2: "",
+        whereas3: "",
+        nowThereforeText: "",
+        provincialOffice: "",
+        bacChairperson: "",
+        bacViceChairperson: "",
+        bacMembers: ["", ""],
+        approvedBy: "",
+        approvedByDesig: "",
+      })
+    : "";
 
   // Abstract (AAA) HTML
   const aaaData: AAAPreviewData = {
@@ -199,6 +246,16 @@ export default function ViewPRModal({
     })),
   };
   const abstractHtml = buildAAAPreviewHTML(aaaData);
+  const abstractTemplateHtml = buildAAAPreviewHTML({
+    rfqNo: "",
+    prNo: "",
+    resolutionNo: "",
+    date: "",
+    office: "",
+    particulars: "",
+    suppliers: ["Supplier 1", "Supplier 2", "Supplier 3"],
+    rows: [],
+  });
 
   const statusCfg = STATUS_CONFIG[header.statusId] ?? STATUS_FALLBACK;
   const statusLabel =
@@ -283,13 +340,47 @@ export default function ViewPRModal({
         ) : tab === "details" ? (
           <DetailsView record={header} items={items} statuses={statuses} />
         ) : tab === "pr" ? (
-          <PRPreviewPanel html={prHtml} showActions />
+          <PRPreviewPanel
+            html={prHtml}
+            templateHtml={prTemplateHtml}
+            showActions
+          />
         ) : tab === "rfqs" ? (
-          <DocumentPreviewPanel html={rfqHtml} showActions />
+          logosLoaded ? (
+            <DocumentPreviewPanel
+              html={rfqHtml}
+              templateHtml={rfqTemplateHtml}
+              showActions
+            />
+          ) : (
+            <View className="flex-1 items-center justify-center gap-3">
+              <ActivityIndicator size="large" color="#064E3B" />
+              <Text className="text-[13px] text-gray-400">
+                Loading document assets…
+              </Text>
+            </View>
+          )
         ) : tab === "resolution" ? (
-          <DocumentPreviewPanel html={resolutionHtml} showActions />
+          logosLoaded ? (
+            <DocumentPreviewPanel
+              html={resolutionHtml}
+              templateHtml={resolutionTemplateHtml}
+              showActions
+            />
+          ) : (
+            <View className="flex-1 items-center justify-center gap-3">
+              <ActivityIndicator size="large" color="#064E3B" />
+              <Text className="text-[13px] text-gray-400">
+                Loading document assets…
+              </Text>
+            </View>
+          )
         ) : tab === "abstract" ? (
-          <DocumentPreviewPanel html={abstractHtml} showActions />
+          <DocumentPreviewPanel
+            html={abstractHtml}
+            templateHtml={abstractTemplateHtml}
+            showActions
+          />
         ) : null}
       </View>
     </Modal>

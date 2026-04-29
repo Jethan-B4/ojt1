@@ -38,6 +38,7 @@ import {
   buildCanvassHTML,
   type CanvassPreviewData,
 } from "../(components)/CanvassPreview";
+import { preloadLogos } from "../lib/documentAssets";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -50,11 +51,53 @@ export default function CanvassPreviewModal({
   data: CanvassPreviewData;
   onClose: () => void;
 }) {
-  const html = React.useMemo(() => buildCanvassHTML(data), [data]);
+  const [logosLoaded, setLogosLoaded] = React.useState(false);
+  const [mode, setMode] = React.useState<"filled" | "template">("filled");
+
+  React.useEffect(() => {
+    if (!visible) return;
+    preloadLogos()
+      .catch(() => {})
+      .finally(() => setLogosLoaded(true));
+  }, [visible]);
+
+  const templateData = React.useMemo<CanvassPreviewData>(
+    () => ({
+      prNo: "",
+      quotationNo: "",
+      date: "",
+      deadline: "",
+      bacChairperson: "",
+      officeSection: "",
+      purpose: "",
+      items: [],
+      canvasserNames: [],
+      supplierName: "",
+      supplierAddress: "",
+      assignedTo: "",
+      assignedDivision: "",
+    }),
+    [],
+  );
+
+  const currentHtml = React.useMemo(() => {
+    if (!logosLoaded) return "";
+    return buildCanvassHTML(mode === "template" ? templateData : data);
+  }, [data, logosLoaded, mode, templateData]);
+
+  const ensureLogos = React.useCallback(async () => {
+    if (logosLoaded) return;
+    try {
+      await preloadLogos();
+    } finally {
+      setLogosLoaded(true);
+    }
+  }, [logosLoaded]);
 
   const handlePrint = async () => {
     try {
-      await Print.printAsync({ html });
+      await ensureLogos();
+      await Print.printAsync({ html: currentHtml });
     } catch {
       Alert.alert("Print Error", "Unable to print the document.");
     }
@@ -62,11 +105,12 @@ export default function CanvassPreviewModal({
 
   const handleDownload = async () => {
     try {
-      const { uri } = await Print.printToFileAsync({ html });
+      await ensureLogos();
+      const { uri } = await Print.printToFileAsync({ html: currentHtml });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: "application/pdf",
-          dialogTitle: `Download ${data.quotationNo}`,
+          dialogTitle: `Download ${mode === "template" ? "RFQ Template" : data.quotationNo}`,
         });
       } else {
         Alert.alert("Download", "Sharing is not available on this device.");
@@ -217,7 +261,7 @@ export default function CanvassPreviewModal({
 
         {/* WebView document */}
         <WebView
-          source={{ html }}
+          source={{ html: currentHtml }}
           style={{ flex: 1, backgroundColor: "#ffffff" }}
           originWhitelist={["*"]}
           scrollEnabled
@@ -259,6 +303,38 @@ export default function CanvassPreviewModal({
           }}
         >
           <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={() =>
+                setMode((prev) => (prev === "filled" ? "template" : "filled"))
+              }
+              activeOpacity={0.8}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor: mode === "template" ? "#064E3B" : "#e5e7eb",
+                backgroundColor: mode === "template" ? "#064E3B" : "#ffffff",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <MaterialIcons
+                name={mode === "template" ? "description" : "description"}
+                size={16}
+                color={mode === "template" ? "#ffffff" : "#6b7280"}
+              />
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "700",
+                  color: mode === "template" ? "#ffffff" : "#6b7280",
+                }}
+              >
+                {mode === "template" ? "Template" : "Filled"}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={handlePrint}
               activeOpacity={0.8}

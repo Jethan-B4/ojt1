@@ -18,6 +18,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Keyboard,
     KeyboardAvoidingView,
     Linking,
     Modal,
@@ -439,6 +440,7 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
   const [remarksText, setRemarksText] = useState("");
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [history, setHistory] = useState<RemarkEntry[]>([]);
   const [loadingHist, setLoadingHist] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -491,6 +493,19 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
       setFileType("application/octet-stream");
     }
   }, [visible]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardOpen(true),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardOpen(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const clearFile = useCallback(() => {
     setFileName(null);
@@ -574,22 +589,28 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
         animationType="slide"
         onRequestClose={onClose}
       >
-        {/* Scrim — tapping it closes the sheet */}
-        <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}
-          onPress={onClose}
-        />
-
-        {/*
-          The sheet sits in a KeyboardAvoidingView that fills the remaining space
-          after the scrim. Using flex:1 here instead of maxHeight lets the history
-          list grow freely to fill the screen while still being pushed up by the
-          keyboard.
-        */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
+            }}
+            onPress={() => {
+              if (keyboardOpen) {
+                Keyboard.dismiss();
+                return;
+              }
+              onClose();
+            }}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
           <View
             className="bg-gray-50 rounded-t-3xl overflow-hidden"
             style={{
@@ -789,7 +810,8 @@ const RemarkSheet: React.FC<RemarkSheetProps> = ({
               }
             />
           </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* StatusFlagPicker as Modal sibling to avoid Android nested-Modal bug */}

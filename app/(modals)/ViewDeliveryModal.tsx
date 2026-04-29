@@ -1,6 +1,6 @@
-import DVPreviewPanel, { buildDVHtml } from "@/app/(components)/DVPreviewPanel";
+import DVPreviewPanel from "@/app/(components)/DVPreviewPanel";
 import IARPreviewPanel, { buildIARHtml } from "@/app/(components)/IARPreviewPanel";
-import LOAPreviewPanel, { buildLOAHtml } from "@/app/(components)/LOAPreviewPanel";
+import LOAPreviewPanel from "@/app/(components)/LOAPreviewPanel";
 import { fetchDVByDelivery, fetchDeliveryById, fetchIARByDelivery, fetchLOAByDelivery } from "@/lib/supabase/delivery";
 import React, { useEffect, useState } from "react";
 import { Modal, Text, TouchableOpacity, View } from "react-native";
@@ -82,26 +82,28 @@ export default function ViewDeliveryModal({
         )}
         {viewTab === "loa" && (
           <LOAPreviewPanel
-            html={buildLOAHtml({
+            data={{
               supplier: active?.supplier,
               invoiceNo: loa?.invoice_no,
               poNo: active?.po_no,
               acceptanceDate: loa?.accepted_at,
               signatoryName: loa?.accepted_by_name,
               signatoryTitle: loa?.accepted_by_title,
-            })}
+              provincialOffice: "DARPO-CAMARINES SUR I",
+            }}
           />
         )}
         {viewTab === "dv" && (
           <DVPreviewPanel
-            html={buildDVHtml({
+            data={{
               entityName: "DEPARTMENT OF AGRARIAN REFORM-CAM SUR 1",
               dvNo: dv?.dv_no,
               payee: active?.supplier,
               particulars: dv?.particulars,
               amountDue: dv?.amount_due,
               modeOfPayment: dv?.mode_of_payment,
-            })}
+              provincialOffice: "DARPO-CAMARINES SUR I",
+            }}
           />
         )}
       </View>

@@ -4,18 +4,11 @@
  * Renders the Request for Quotation form.
  */
 
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
-import React, { useRef } from "react";
+import React from "react";
 import {
-  Alert,
-  Platform,
-  Text,
-  TouchableOpacity,
-  View,
   type ViewStyle,
 } from "react-native";
-import WebView from "react-native-webview";
+import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,25 +26,27 @@ export interface RFQLineItem {
   unitPrice?: number;
 }
 
-const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
-
 // ─── buildRFQHtml ────────────────────────────────────────────────────────────
 
-export function buildRFQHtml(data: RFQPreviewData): string {
+export function buildRFQHtml(
+  data: RFQPreviewData,
+  opts?: { template?: boolean },
+): string {
+  const template = !!opts?.template;
   const fmtNum = (n: number) =>
     n.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
   const today =
-    data.date ||
+    (template ? "" : data.date) ||
     new Date().toLocaleDateString("en-PH", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
 
-  const items = data.items || [];
+  const items = template ? [] : data.items || [];
   const rows = items
     .map(
       (it, idx) => `
@@ -72,8 +67,8 @@ export function buildRFQHtml(data: RFQPreviewData): string {
 </head><body>
 <table><tbody>
 <tr><td colspan="6" style="text-align:center;font-weight:bold;font-size:14pt;padding-bottom:16px">REQUEST FOR QUOTATION</td></tr>
-<tr><td colspan="3" style="padding:4px 0"><b>PR No.:</b> ${data.prNo || ""}</td><td colspan="3" style="padding:4px 0;text-align:right"><b>Date:</b> ${today}</td></tr>
-<tr><td colspan="6" style="padding:4px 0"><b>Supplier:</b> ${data.supplier || "_______________________________"}</td></tr>
+<tr><td colspan="3" style="padding:4px 0"><b>PR No.:</b> ${template ? "" : data.prNo || ""}</td><td colspan="3" style="padding:4px 0;text-align:right"><b>Date:</b> ${today}</td></tr>
+<tr><td colspan="6" style="padding:4px 0"><b>Supplier:</b> ${template ? "_______________________________" : data.supplier || "_______________________________"}</td></tr>
 <tr><td colspan="6" style="padding:8px 0">We would like to request for the submission of your quotation for the following:</td></tr>
 </tbody></table>
 
@@ -99,87 +94,30 @@ ${rows}
 </body></html>`;
 }
 
-// ─── useRFQPreviewActions ─────────────────────────────────────────────────────
-
-export function useRFQPreviewActions(html: string) {
-  const handlePrint = async () => {
-    try {
-      await Print.printAsync({ html });
-    } catch (e: any) {
-      Alert.alert("Print failed", e?.message ?? "Could not open print dialog.");
-    }
-  };
-
-  const handleDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      } else {
-        Alert.alert("Saved", `PDF saved to:\n${uri}`);
-      }
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message ?? "Could not generate PDF.");
-    }
-  };
-
-  return { handlePrint, handleDownload };
-}
-
 // ─── RFQPreviewPanel (default export) ────────────────────────────────────────
 
 interface RFQPreviewPanelProps {
   html: string;
-  onPrint?: () => void;
-  onDownload?: () => void;
+  templateHtml?: string;
+  initialMode?: "filled" | "template";
   showActions: boolean;
   style?: ViewStyle;
 }
 
 export default function RFQPreviewPanel({
   html,
-  onPrint,
-  onDownload,
+  templateHtml,
+  initialMode,
   showActions,
   style,
 }: RFQPreviewPanelProps) {
-  const webRef = useRef<WebView>(null);
-  const { handlePrint, handleDownload } = useRFQPreviewActions(html);
-
   return (
-    <View style={[{ flex: 1 }, style]}>
-      {showActions && (
-        <View className="flex-row gap-2 px-4 py-2.5 bg-white border-b border-gray-100">
-          <TouchableOpacity
-            onPress={onPrint ?? handlePrint}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-gray-100 rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-gray-700">
-              Print
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onDownload ?? handleDownload}
-            activeOpacity={0.8}
-            className="flex-1 flex-row items-center justify-center gap-1.5 bg-[#064E3B] rounded-xl py-2.5"
-          >
-            <Text className="text-[13px] font-bold text-white">
-              Download PDF
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <WebView
-        ref={webRef}
-        source={{ html }}
-        originWhitelist={["*"]}
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+    <DocumentPreviewPanel
+      html={html}
+      templateHtml={templateHtml}
+      initialMode={initialMode}
+      showActions={showActions}
+      style={style}
+    />
   );
 }

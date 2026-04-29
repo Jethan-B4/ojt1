@@ -22,12 +22,10 @@ import {
 } from "react-native";
 import ORSPreviewPanel, {
     buildORSHtml,
-    useORSPreviewActions,
     type ORSPreviewData,
 } from "../(components)/ORSPreviewPanel";
 import POPreviewPanel, {
     buildPOHtml,
-    usePOPreviewActions,
     type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import {
@@ -172,7 +170,7 @@ export default function ViewPOModal({
     : null;
 
   const html = previewData ? buildPOHtml(previewData) : "";
-  const { handlePrint, handleDownload } = usePOPreviewActions(html);
+  const templateHtml = previewData ? buildPOHtml(previewData, { template: true }) : "";
 
   // Build ORS preview data from PO header
   const orsPreviewData: ORSPreviewData | null = header
@@ -193,7 +191,9 @@ export default function ViewPOModal({
       }
     : null;
   const orsHtml = orsPreviewData ? buildORSHtml(orsPreviewData) : "";
-  const { handlePrint: handleORSPrint, handleDownload: handleORSDownload } = useORSPreviewActions(orsHtml);
+  const orsTemplateHtml = orsPreviewData
+    ? buildORSHtml(orsPreviewData, { template: true })
+    : "";
 
   if (!visible) return null;
   if (!record) return null;
@@ -281,9 +281,8 @@ export default function ViewPOModal({
         {!loading && tab === "po" && (
           <POPreviewPanel
             html={html}
+            templateHtml={templateHtml}
             showActions
-            onPrint={handlePrint}
-            onDownload={handleDownload}
           />
         )}
 
@@ -291,9 +290,8 @@ export default function ViewPOModal({
         {!loading && tab === "ors" && (
           <ORSPreviewPanel
             html={orsHtml}
+            templateHtml={orsTemplateHtml}
             showActions
-            onPrint={handleORSPrint}
-            onDownload={handleORSDownload}
           />
         )}
 

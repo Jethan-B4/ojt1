@@ -1610,15 +1610,21 @@ export default function AAAView({
       </ScrollView>
 
       {/* ── Preview modal ── */}
-      <AAAPreviewModal
-        visible={previewOpen}
-        html={buildAAAPreviewHTML(buildPreviewData())}
-        aaaNo={aaaNo || "—"}
-        prNo={pr.prNo}
-        date={date}
-        office={office}
-        onClose={() => setPreviewOpen(false)}
-      />
+      {(() => {
+        const d = buildPreviewData();
+        return (
+          <AAAPreviewModal
+            visible={previewOpen}
+            html={buildAAAPreviewHTML(d)}
+            templateHtml={buildAAAPreviewHTML(d, { template: true })}
+            aaaNo={aaaNo || "—"}
+            prNo={pr.prNo}
+            date={date}
+            office={office}
+            onClose={() => setPreviewOpen(false)}
+          />
+        );
+      })()}
 
       {/* ── RFQ Review modal (wired from Prior Steps Summary) ── */}
       <RFQReviewModal

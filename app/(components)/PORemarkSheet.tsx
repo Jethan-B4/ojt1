@@ -23,6 +23,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Keyboard,
     KeyboardAvoidingView,
     Linking,
     Modal,
@@ -434,6 +435,7 @@ const PORemarkSheet: React.FC<PORemarkSheetProps> = ({
   const [remarksText, setRemarksText] = useState("");
   const [statusFlag, setStatusFlag] = useState<StatusFlag | null>(null);
   const [flagOpen, setFlagOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [history, setHistory] = useState<UnifiedRemark[]>([]);
   const [loadingHist, setLoadingHist] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -504,6 +506,19 @@ const PORemarkSheet: React.FC<PORemarkSheetProps> = ({
       setFileType("application/octet-stream");
     }
   }, [visible]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardOpen(true),
+    );
+    const hide = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardOpen(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const clearFile = useCallback(() => {
     setFileName(null);
@@ -599,14 +614,28 @@ const PORemarkSheet: React.FC<PORemarkSheetProps> = ({
         animationType="slide"
         onRequestClose={onClose}
       >
-        <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}
-          onPress={onClose}
-        />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
+            }}
+            onPress={() => {
+              if (keyboardOpen) {
+                Keyboard.dismiss();
+                return;
+              }
+              onClose();
+            }}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
           <View
             className="bg-gray-50 rounded-t-3xl overflow-hidden"
             style={{
@@ -834,7 +863,8 @@ const PORemarkSheet: React.FC<PORemarkSheetProps> = ({
               }
             />
           </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <StatusFlagPicker

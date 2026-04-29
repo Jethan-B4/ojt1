@@ -1,8 +1,6 @@
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
 import React from "react";
-import { Alert, Text, TouchableOpacity, View } from "react-native";
-import WebView from "react-native-webview";
+import { View, type ViewStyle } from "react-native";
+import DocumentPreviewPanel from "./DocumentPreviewPanel";
 
 export function buildIARHtml(d: {
   entityName?: string;
@@ -105,25 +103,27 @@ export function buildIARHtml(d: {
 </html>`;
 }
 
-export default function IARPreviewPanel({ html }: { html: string }) {
-  const onPrint = async () => {
-    try { await Print.printAsync({ html }); } catch {}
-  };
-  const onDownload = async () => {
-    try {
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
-      else Alert.alert("Saved", uri);
-    } catch {}
-  };
+export default function IARPreviewPanel({
+  html,
+  templateHtml,
+  initialMode,
+  showActions = true,
+  style,
+}: {
+  html: string;
+  templateHtml?: string;
+  initialMode?: "filled" | "template";
+  showActions?: boolean;
+  style?: ViewStyle;
+}) {
   return (
-    <View style={{ flex: 1 }}>
-      <View className="flex-row gap-2 px-3 py-2 bg-white border-b border-gray-100">
-        <TouchableOpacity onPress={onPrint} className="flex-1 bg-gray-100 rounded-xl py-2 items-center"><Text>Print</Text></TouchableOpacity>
-        <TouchableOpacity onPress={onDownload} className="flex-1 bg-[#064E3B] rounded-xl py-2 items-center"><Text className="text-white">Download PDF</Text></TouchableOpacity>
-      </View>
-      <WebView source={{ html }} style={{ flex: 1 }} originWhitelist={["*"]} />
+    <View style={[{ flex: 1 }, style]}>
+      <DocumentPreviewPanel
+        html={html}
+        templateHtml={templateHtml}
+        initialMode={initialMode}
+        showActions={showActions}
+      />
     </View>
   );
 }
-

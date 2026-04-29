@@ -31,7 +31,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import POPreviewPanel, {
   buildPOHtml,
   toWords,
-  usePOPreviewActions,
   type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import CalendarModal from "../(modals)/CalendarModal";
@@ -817,7 +816,10 @@ export default function EditPOModal({
   );
 
   const previewHtml = useMemo(() => buildPOHtml(previewData), [previewData]);
-  const { handlePrint, handleDownload } = usePOPreviewActions(previewHtml);
+  const templateHtml = useMemo(
+    () => buildPOHtml(previewData, { template: true }),
+    [previewData],
+  );
 
   // ── Save ────────────────────────────────────────────────────────────────
 
@@ -1000,9 +1002,8 @@ export default function EditPOModal({
           {!loading && tab === "preview" ? (
             <POPreviewPanel
               html={previewHtml}
+              templateHtml={templateHtml}
               showActions
-              onPrint={handlePrint}
-              onDownload={handleDownload}
             />
           ) : !loading ? (
             <KeyboardAvoidingView

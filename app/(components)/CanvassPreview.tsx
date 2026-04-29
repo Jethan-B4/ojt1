@@ -14,6 +14,8 @@
  *   supplierName / supplierAddress – pre-filled if a single supplier is known
  */
 
+import { getBagongPilipinasLogoHTML, getDARLogoHTML } from "../lib/documentAssets";
+
 export interface CanvassPreviewData {
   prNo:            string;
   quotationNo:     string;
@@ -41,7 +43,7 @@ export interface CanvassPreviewData {
 const BASE_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Times New Roman', Times, serif;
+    font-family: Arial, Helvetica, sans-serif;
     font-size: 9pt;
     color: #000;
     background: #fff;
@@ -49,7 +51,7 @@ const BASE_CSS = `
   }
   table { border-collapse: collapse; width: 100%; }
   td, th {
-    font-family: 'Times New Roman', Times, serif;
+    font-family: Arial, Helvetica, sans-serif;
     color: #000;
     font-size: 8pt;
     padding: 2px 4px;
@@ -81,23 +83,59 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
     assignedDivision = "",
   } = data;
 
-  // Pad item rows to at least 8 lines (form always has blank rows)
-  const MIN_ROWS = 8;
-  const itemRows = [...items];
-  while (itemRows.length < MIN_ROWS) {
-    itemRows.push({ itemNo: 0, description: "", qty: 0, unit: "", unitPrice: "" });
-  }
+  const certifiedBadgeHTML = `
+    <div style="display:inline-flex; align-items:center; justify-content:center; border:2px solid #111; border-radius:10px; padding:6px 10px; text-align:center;">
+      <div>
+        <div style="font-size:7pt; font-weight:bold; letter-spacing:0.4px;">ISO</div>
+        <div style="font-size:9pt; font-weight:900; margin-top:1px;">CERTIFIED</div>
+      </div>
+    </div>
+  `;
 
   const canvasserBlock = canvasserNames.join(" / ") || "—";
 
-  const itemRowsHTML = itemRows.map((item) => `
-    <tr style="height:18px;">
-      <td class="border-all center">${item.itemNo > 0 ? item.itemNo : ""}</td>
-      <td class="border-all" style="padding:2px 6px;">${item.description ?? ""}</td>
-      <td class="border-all center">${item.qty > 0 ? item.qty : ""}</td>
-      <td class="border-all center">${item.unit ?? ""}</td>
-      <td class="border-all right">${item.unitPrice ?? ""}</td>
-    </tr>`).join("");
+  const lines: Array<{
+    itemNo?: number;
+    description: string;
+    qty?: number;
+    unit?: string;
+    unitPrice?: string;
+  }> = [];
+
+  for (const it of items) {
+    const descLines = String(it.description ?? "")
+      .split(/\r?\n/)
+      .map((s) => s.trimEnd())
+      .filter((s, idx, arr) => !(idx === arr.length - 1 && s.trim() === ""));
+    const normalized = descLines.length ? descLines : [""];
+    normalized.forEach((desc, i) => {
+      lines.push({
+        itemNo: i === 0 ? it.itemNo : undefined,
+        description: desc,
+        qty: i === 0 ? it.qty : undefined,
+        unit: i === 0 ? it.unit : undefined,
+        unitPrice: i === 0 ? it.unitPrice : undefined,
+      });
+    });
+  }
+
+  const MIN_ROWS = 14;
+  while (lines.length < MIN_ROWS) {
+    lines.push({ description: "" });
+  }
+
+  const itemRowsHTML = lines
+    .map(
+      (row) => `
+    <tr style="height:16px;">
+      <td class="border-all center">${row.itemNo ? row.itemNo : ""}</td>
+      <td class="border-all" style="padding:2px 6px;">${row.description ?? ""}</td>
+      <td class="border-all center">${row.qty ? row.qty : ""}</td>
+      <td class="border-all center">${row.unit ?? ""}</td>
+      <td class="border-all right">${row.unitPrice ?? ""}</td>
+    </tr>`,
+    )
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -109,49 +147,52 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
 </head>
 <body>
 
-<!-- ── Top header ─────────────────────────────────────────────── -->
-<table style="margin-bottom:4px;">
+<!-- ── Top header (mirrors sample) ─────────────────────────────── -->
+<table style="margin-bottom:6px; width:100%;">
   <colgroup>
+    <col style="width:20%"/>
+    <col style="width:25%"/>
     <col style="width:55%"/>
-    <col style="width:45%"/>
   </colgroup>
   <tbody>
     <tr>
-      <!-- Left: Republic + agency name -->
-      <td style="vertical-align:top; padding-left:0;">
-        <div style="font-size:7.5pt; text-align:center; line-height:1.4;">
-          REPUBLIC OF THE PHILIPPINES<br/>
-          <span class="bold" style="font-size:9pt;">DEPARTMENT OF AGRARIAN REFORM</span><br/>
-          <span class="italic" style="font-size:7.5pt;">
-            Tunay na Pagbabago sa Repormang Agraryo
-          </span>
+      <td style="vertical-align:top; padding:0;"></td>
+      <td style="vertical-align:top; padding:0;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:10px; padding-top:2px;">
+          ${getBagongPilipinasLogoHTML(42)}
+          ${getDARLogoHTML(42)}
         </div>
       </td>
-      <!-- Right: Date + Quotation No. -->
-      <td style="vertical-align:bottom; text-align:right; font-size:8pt; padding-right:0;">
-        <table style="width:100%; border-collapse:collapse; float:right; font-size:8pt;">
-          <tr>
-            <td style="text-align:right; padding:1px 4px;">
-              Revised on May 24, 2004
-            </td>
-            <td style="text-align:right; border-bottom:1px solid #000; padding:1px 4px; min-width:100px;">
-              Date: ${date}
-            </td>
-          </tr>
-          <tr>
-            <td></td>
-            <td style="text-align:right; border-bottom:1px solid #000; padding:1px 4px;">
-              Quotation No. ${quotationNo}
-            </td>
-          </tr>
-          ${
-            assignedTo || assignedDivision
-              ? `<tr><td></td><td style="text-align:right; padding:2px 4px; font-size:7.5pt; color:#444;">
+      <td style="vertical-align:top; padding:2px 0 0 0;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+          <div style="font-size:7.5pt; line-height:1.25; font-weight:bold;">
+          REPUBLIC OF THE PHILIPPINES<br/>
+          DEPARTMENT OF AGRARIAN REFORM<br/>
+          <span class="italic" style="font-weight:normal;">Tunay na Pagbabago sa Repormang Agraryo</span>
+          </div>
+          <div style="flex:0 0 auto; padding-top:2px;">
+            ${certifiedBadgeHTML}
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="font-size:8pt; padding-top:6px;">Revised on May 24, 2004</td>
+      <td></td>
+      <td style="text-align:right; font-size:8pt; padding-top:6px;">
+        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px;">
+          Date:&nbsp;&nbsp;${date}
+        </div><br/>
+        <div style="display:inline-block; border-bottom:1px solid #000; min-width:190px; padding-bottom:1px; margin-top:4px;">
+          Quotation No.&nbsp;&nbsp;${quotationNo}
+        </div>
+        ${
+          assignedTo || assignedDivision
+            ? `<div style="margin-top:6px; font-size:7.5pt; color:#444;">
               Assigned: ${assignedTo || "—"}${assignedDivision ? ` (${assignedDivision})` : ""}
-            </td></tr>`
-              : ""
-          }
-        </table>
+            </div>`
+            : ""
+        }
       </td>
     </tr>
   </tbody>
@@ -166,40 +207,27 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
 </div>
 
 <!-- ── Supplier lines ─────────────────────────────────────────── -->
-<table style="margin-bottom:4px;">
-  <tr>
-    <td style="border-bottom:1px solid #000; font-size:8pt; min-width:260px; padding:1px 2px;">
-      ${supplierName}
-    </td>
-    <td style="width:50%;"></td>
-  </tr>
-  <tr>
-    <td style="font-size:7.5pt; color:#555; padding:0 2px;">(Company Name)</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td style="border-bottom:1px solid #000; font-size:8pt; padding:1px 2px;">
-      ${supplierAddress}
-    </td>
-    <td></td>
-  </tr>
-  <tr>
-    <td style="font-size:7.5pt; color:#555; padding:0 2px;">(Address)</td>
-    <td></td>
-  </tr>
-</table>
+<div style="width:48%; margin: 0 auto 6px; text-align:center;">
+  <div style="border-bottom:1px solid #000; font-size:8pt; padding:2px 2px; min-height:14px;">
+    ${supplierName}
+  </div>
+  <div style="font-size:7.5pt; margin-top:2px;">(Company Name)</div>
+  <div style="border-bottom:1px solid #000; font-size:8pt; padding:2px 2px; min-height:14px; margin-top:6px;">
+    ${supplierAddress}
+  </div>
+  <div style="font-size:7.5pt; margin-top:2px;">(Address)</div>
+ </div>
 
 <!-- ── Instruction paragraph ──────────────────────────────────── -->
-<div style="font-size:8pt; margin-bottom:4px; line-height:1.4;">
-  &nbsp;&nbsp;&nbsp;Please quote your lowest price on the item/s listed below, subject to the General
-  Conditions indicated below, stating the shortest time of delivery and submit your quotation
-  duly signed by you or your duly authorized representative not later than
-  <span class="underline bold">${deadline}</span>
+<div style="font-size:8pt; margin-bottom:6px; line-height:1.35;">
+  Please quote your lowest price on the item/s listed below, subject to the General Conditions indicated below,
+  stating the shortest time of delivery and submit your quotation duly signed by you or your duly authorized representative
+  not later than <span class="underline">${deadline}</span>
 </div>
 
 <!-- ── BAC Chairperson ────────────────────────────────────────── -->
 <div style="text-align:right; margin-bottom:6px;">
-  <div class="bold underline" style="font-size:9pt;">${bacChairperson}</div>
+  <div class="bold" style="font-size:9pt; text-decoration: underline;">${bacChairperson}</div>
   <div style="font-size:7.5pt;">BAC Chairperson</div>
 </div>
 
@@ -258,13 +286,14 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
     </tr>
   </thead>
   <tbody>
+    <tr style="height:16px;">
+      <td class="border-all"></td>
+      <td class="border-all center bold" colspan="4">JOB ORDER</td>
+    </tr>
     ${itemRowsHTML}
-    <!-- TOTAL row -->
-    <tr style="height:18px;">
-      <td class="border-all" colspan="4" style="text-align:right; font-weight:bold; padding-right:6px;">
-        TOTAL
-      </td>
-      <td class="border-all right"></td>
+    <tr style="height:16px;">
+      <td class="border-all"></td>
+      <td class="border-all center bold" colspan="4">X-X-X-X-X-X-X-X-X-X-X-X-X-X-X</td>
     </tr>
   </tbody>
 </table>
@@ -283,13 +312,19 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
   <tbody>
     <tr style="height:14px;">
       <td>Served by:</td>
-      <td style="border-bottom:1px solid #000;">PRINTED NAME/SIGNATURE</td>
+      <td style="border-bottom:1px solid #000;">&nbsp;</td>
     </tr>
-    <tr style="height:20px;">
+    <tr style="height:12px;">
       <td></td>
-      <td style="border-bottom:1px solid #000; font-size:7.5pt; color:#555;">
-        Tel No./Cellphone No./Email Address
-      </td>
+      <td class="center small">PRINTED NAME/SIGNATURE</td>
+    </tr>
+    <tr style="height:14px;">
+      <td></td>
+      <td style="border-bottom:1px solid #000;">&nbsp;</td>
+    </tr>
+    <tr style="height:12px;">
+      <td></td>
+      <td class="center small">Tel No./Cellphone No./Email Address</td>
     </tr>
     <tr style="height:8px;"><td colspan="2"></td></tr>
     <!-- Canvassers listed at left -->
@@ -297,16 +332,20 @@ export function buildCanvassHTML(data: CanvassPreviewData): string {
       <td style="vertical-align:top; font-size:8pt; line-height:1.5;">
         <span class="bold">${canvasserBlock}</span>
       </td>
-      <td style="border-bottom:1px solid #000; font-size:7.5pt; color:#555;">
-        PhilGeps Registration Number
-      </td>
+      <td style="border-bottom:1px solid #000;">&nbsp;</td>
+    </tr>
+    <tr style="height:12px;">
+      <td></td>
+      <td class="center small">PhilGeps Registration Number</td>
     </tr>
     <tr style="height:8px;"><td colspan="2"></td></tr>
     <tr>
       <td style="font-size:7.5pt;">CANVASSER</td>
-      <td style="border-bottom:1px solid #000; font-size:7.5pt; color:#555;">
-        BIR-TIN
-      </td>
+      <td style="border-bottom:1px solid #000;">&nbsp;</td>
+    </tr>
+    <tr style="height:12px;">
+      <td></td>
+      <td class="center small">BIR-TIN</td>
     </tr>
     <tr style="height:8px;"><td colspan="2"></td></tr>
     <tr>
