@@ -438,7 +438,7 @@ const MoreSheet: React.FC<{
     {
       icon: "description",
       label: "View Documents",
-      sublabel: "PO / IAR / LOA / DV forms",
+      sublabel: "PR / PO forms",
       color: "#7c3aed",
       bg: "#f5f3ff",
       onPress: () => {

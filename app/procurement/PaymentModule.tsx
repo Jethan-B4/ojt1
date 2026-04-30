@@ -1,13 +1,11 @@
 /**
- * PaymentModule — Phase 4 disbursement & closure (deliveries.status_id 35 → 25–32 → 36)
+ * PaymentModule — Monitoring view for payment phase (deliveries.status_id 35 → 25–32 → 36)
+ * This is a read-only monitoring extension; processing is handled in the main system.
  */
 
 import {
   fetchDeliveriesForPaymentPhase,
   fetchDeliveryPOContext,
-  fetchDVByDelivery,
-  fetchIARByDelivery,
-  fetchLOAByDelivery,
   fetchPaymentPhaseStatuses,
 } from "@/lib/supabase/delivery";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -16,7 +14,6 @@ import {
   Alert,
   Modal,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -24,15 +21,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import PORemarkSheet, { type PORemarkSheetRecord } from "../(components)/PORemarkSheet";
-import ProcessPaymentModal, {
-  canRoleProcessPayment,
-  type ProcessPaymentRecord,
-} from "../(modals)/ProcessPaymentModal";
 import ViewDeliveryModal from "../(modals)/ViewDeliveryModal";
 import { useAuth } from "../contexts/AuthContext";
 import { useFiscalYear } from "../contexts/FiscalYearContext";
 import { useRealtime } from "../contexts/RealtimeContext";
+import { PaymentRemarkSheet, PaymentRemarkSheetRecord } from "./PaymentRemarkSheet";
 
 type SubTab = "all" | "active" | "completed";
 
@@ -195,22 +188,14 @@ export default function PaymentModule() {
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const [processOpen, setProcessOpen] = useState(false);
-  const [processRecord, setProcessRecord] = useState<ProcessPaymentRecord | null>(
-    null,
-  );
-
   const [viewOpen, setViewOpen] = useState(false);
   const [viewActive, setViewActive] = useState<any>(null);
-  const [viewTab, setViewTab] = useState<"iar" | "loa" | "dv">("iar");
-  const [iar, setIar] = useState<any>(null);
-  const [loa, setLoa] = useState<any>(null);
-  const [dv, setDv] = useState<any>(null);
+  const [viewTab, setViewTab] = useState<"pr" | "po">("po");
 
   const [moreRecord, setMoreRecord] = useState<PaymentRow | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [remarkVisible, setRemarkVisible] = useState(false);
-  const [remarkRecord, setRemarkRecord] = useState<PORemarkSheetRecord | null>(
+  const [remarkRecord, setRemarkRecord] = useState<PaymentRemarkSheetRecord | null>(
     null,
   );
 
@@ -265,30 +250,11 @@ export default function PaymentModule() {
   const openView = async (r: PaymentRow) => {
     try {
       setViewActive(r.raw);
-      const [i, l, d] = await Promise.all([
-        fetchIARByDelivery(r.id),
-        fetchLOAByDelivery(r.id),
-        fetchDVByDelivery(r.id),
-      ]);
-      setIar(i);
-      setLoa(l);
-      setDv(d);
-      setViewTab("dv");
+      setViewTab("po");
       setViewOpen(true);
     } catch (e: any) {
       Alert.alert("Load failed", e?.message ?? "Could not load documents.");
     }
-  };
-
-  const openProcess = (r: PaymentRow) => {
-    setProcessRecord({
-      id: r.id,
-      deliveryNo: r.deliveryNo,
-      poNo: r.poNo,
-      statusId: r.statusId,
-      supplier: r.supplier,
-    });
-    setProcessOpen(true);
   };
 
   const openRemarks = async (r: PaymentRow) => {
@@ -299,16 +265,150 @@ export default function PaymentModule() {
         return;
       }
       setRemarkRecord({
-        id: String(ctx.poId),
+        id: r.id,
+        deliveryNo: r.deliveryNo,
         poNo: ctx.poNo || r.poNo,
         supplier: ctx.supplier || r.supplier,
-        linkedPrId: ctx.prId,
+        poId: ctx.poId,
+        prId: ctx.prId,
         prNo: ctx.prNo || "—",
       });
       setRemarkVisible(true);
     } catch (e: any) {
       Alert.alert("Load failed", e?.message ?? "Could not load remarks.");
     }
+  };
+
+  // ─── More Sheet ─────────────────────────────────────────────────────────────
+  const MoreSheet: React.FC<{
+    visible: boolean;
+    record: PaymentRow | null;
+    roleId: number;
+    onClose: () => void;
+    onRemarks: (r: PaymentRow) => void;
+    onView: (r: PaymentRow) => void;
+  }> = ({ visible, record, onClose, onRemarks, onView }) => {
+    if (!record) return null;
+
+    type Action = {
+      icon: keyof typeof MaterialIcons.glyphMap;
+      label: string;
+      sublabel: string;
+      color: string;
+      bg: string;
+      onPress: () => void;
+    };
+
+    const actions: Action[] = [
+      {
+        icon: "chat-bubble-outline",
+        label: "Remarks",
+        sublabel: "View or add payment notes",
+        color: "#7c3aed",
+        bg: "#faf5ff",
+        onPress: () => {
+          onClose();
+          onRemarks(record);
+        },
+      },
+      {
+        icon: "visibility",
+        label: "View Documents",
+        sublabel: "Open PR / PO document preview",
+        color: "#1d4ed8",
+        bg: "#eff6ff",
+        onPress: () => {
+          onClose();
+          onView(record);
+        },
+      },
+    ];
+
+    const c = cfg(record.statusId);
+
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+      >
+        <TouchableOpacity
+          className="flex-1 bg-black/40 justify-end"
+          activeOpacity={1}
+          onPress={onClose}
+        >
+          <TouchableOpacity activeOpacity={1}>
+            <View className="bg-white rounded-t-3xl overflow-hidden" style={{ paddingBottom: 32 }}>
+              {/* Drag handle */}
+              <View className="items-center pt-3 pb-1">
+                <View className="w-10 h-1 rounded-full bg-gray-200" />
+              </View>
+
+              {/* Identity header */}
+              <View className="px-5 pt-2 pb-4 border-b border-gray-100">
+                <Text
+                  className="text-[15px] font-extrabold text-gray-900"
+                  style={{ fontFamily: MONO }}
+                >
+                  {record.deliveryNo}
+                </Text>
+                <Text className="text-[12px] text-gray-500 mt-0.5" numberOfLines={1}>
+                  PO {record.poNo} · {record.supplier}
+                </Text>
+                <View
+                  className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
+                  style={{ backgroundColor: c.bg }}
+                >
+                  <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c.dot }} />
+                  <Text className="text-[10.5px] font-bold" style={{ color: c.text }}>
+                    {c.label}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action rows */}
+              <View className="px-4 pt-3 gap-2">
+                {actions.map((a) => (
+                  <TouchableOpacity
+                    key={a.label}
+                    onPress={a.onPress}
+                    activeOpacity={0.75}
+                    className="flex-row items-center gap-3 rounded-xl px-3 py-3"
+                    style={{ backgroundColor: a.bg }}
+                  >
+                    <View
+                      className="w-9 h-9 rounded-lg items-center justify-center"
+                      style={{ backgroundColor: a.color + "15" }}
+                    >
+                      <MaterialIcons name={a.icon} size={18} color={a.color} />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-[13px] font-bold" style={{ color: a.color }}>
+                        {a.label}
+                      </Text>
+                      <Text className="text-[11px] text-gray-500">{a.sublabel}</Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={18} color="#9ca3af" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Dismiss */}
+              <View className="px-4 pt-4">
+                <TouchableOpacity
+                  onPress={onClose}
+                  activeOpacity={0.8}
+                  className="py-3 rounded-xl bg-gray-100 items-center"
+                >
+                  <Text className="text-[13px] font-bold text-gray-500">Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    );
   };
 
   return (
@@ -369,7 +469,6 @@ export default function PaymentModule() {
             const statusLabel =
               statuses.find((s) => s.id === r.statusId)?.status_name ??
               cfg(r.statusId).label;
-            const canProcess = canRoleProcessPayment(roleId, r.statusId);
             const c = cfg(r.statusId);
             return (
               <View
@@ -408,8 +507,14 @@ export default function PaymentModule() {
                 </View>
                 <View className="h-px bg-gray-100 mx-4" />
                 <View className="flex-row items-center px-3 py-2.5 gap-2">
+                  <View className="flex-1">
+                    <Text className="text-[10.5px] text-gray-400">
+                      {r.date}
+                    </Text>
+                  </View>
                   <TouchableOpacity
                     onPress={() => void openView(r)}
+                    activeOpacity={0.85}
                     className="flex-row items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 border border-gray-200"
                   >
                     <MaterialIcons name="visibility" size={14} color="#6b7280" />
@@ -417,22 +522,12 @@ export default function PaymentModule() {
                       View
                     </Text>
                   </TouchableOpacity>
-                  {canProcess && r.statusId !== 36 && (
-                    <TouchableOpacity
-                      onPress={() => openProcess(r)}
-                      className="flex-row items-center gap-1 px-3 py-1.5 rounded-xl bg-[#064E3B]"
-                    >
-                      <MaterialIcons name="arrow-forward" size={14} color="#fff" />
-                      <Text className="text-[12px] font-semibold text-white">
-                        Process
-                      </Text>
-                    </TouchableOpacity>
-                  )}
                   <TouchableOpacity
                     onPress={() => {
                       setMoreRecord(r);
                       setMoreVisible(true);
                     }}
+                    activeOpacity={0.85}
                     className="w-10 h-10 bg-emerald-700 rounded-xl items-center justify-center"
                   >
                     <Text className="text-white text-[16px] font-extrabold">•••</Text>
@@ -444,118 +539,16 @@ export default function PaymentModule() {
         )}
       </ScrollView>
 
-      <Modal
+      <MoreSheet
         visible={moreVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
+        record={moreRecord}
+        roleId={roleId}
+        onClose={() => {
           setMoreVisible(false);
           setMoreRecord(null);
         }}
-      >
-        <Pressable
-          className="flex-1 bg-black/40 justify-end"
-          onPress={() => {
-            setMoreVisible(false);
-            setMoreRecord(null);
-          }}
-        >
-          <Pressable onPress={(e) => e.stopPropagation()}>
-            <View className="bg-white rounded-t-3xl px-4 pt-3 pb-8">
-              <View className="items-center pt-1 pb-3">
-                <View className="w-10 h-1 rounded-full bg-gray-200" />
-              </View>
-              {moreRecord && (
-                <Text
-                  className="text-[14px] font-extrabold text-gray-900 mb-3"
-                  style={{ fontFamily: MONO }}
-                >
-                  {moreRecord.deliveryNo}
-                </Text>
-              )}
-              <TouchableOpacity
-                onPress={() => {
-                  if (!moreRecord) return;
-                  setMoreVisible(false);
-                  void openRemarks(moreRecord);
-                }}
-                className="py-3 border-b border-gray-100"
-              >
-                <Text className="text-[13px] font-bold text-gray-800">
-                  Remarks
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  if (!moreRecord) return;
-                  setMoreVisible(false);
-                  void openView(moreRecord);
-                }}
-                className="py-3 border-b border-gray-100"
-              >
-                <Text className="text-[13px] font-bold text-gray-800">
-                  View documents
-                </Text>
-              </TouchableOpacity>
-              {moreRecord &&
-                canRoleProcessPayment(roleId, moreRecord.statusId) &&
-                moreRecord.statusId !== 36 && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!moreRecord) return;
-                      const rec = moreRecord;
-                      setMoreVisible(false);
-                      setMoreRecord(null);
-                      openProcess(rec);
-                    }}
-                    className="py-3 border-b border-gray-100"
-                  >
-                    <Text className="text-[13px] font-bold text-[#064E3B]">
-                      Process payment
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              {roleId === 1 && moreRecord && (
-                <TouchableOpacity
-                  onPress={() => {
-                    if (!moreRecord) return;
-                    const rec = moreRecord;
-                    setMoreVisible(false);
-                    setMoreRecord(null);
-                    openProcess(rec);
-                  }}
-                  className="py-3 border-b border-gray-100"
-                >
-                  <Text className="text-[13px] font-bold text-blue-700">
-                    Override status (admin)
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={() => {
-                  setMoreVisible(false);
-                  setMoreRecord(null);
-                }}
-                className="mt-3 py-3 rounded-2xl bg-gray-100 items-center"
-              >
-                <Text className="text-[13px] font-bold text-gray-500">Dismiss</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <ProcessPaymentModal
-        visible={processOpen}
-        record={processRecord}
-        roleId={roleId}
-        onClose={() => {
-          setProcessOpen(false);
-          setProcessRecord(null);
-        }}
-        onProcessed={() => {
-          void load();
-        }}
+        onRemarks={(r) => void openRemarks(r)}
+        onView={(r) => void openView(r)}
       />
 
       <ViewDeliveryModal
@@ -565,7 +558,7 @@ export default function PaymentModule() {
         initialTab={viewTab}
       />
 
-      <PORemarkSheet
+      <PaymentRemarkSheet
         visible={remarkVisible}
         record={remarkRecord}
         currentUser={currentUser}

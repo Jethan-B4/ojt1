@@ -410,6 +410,7 @@ function useAdminData(year: number) {
     pr: 0,
     po: 0,
     delivery: 0,
+    payment: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -428,10 +429,16 @@ function useAdminData(year: number) {
       ]);
       setRows(allRows);
       setStatuses(allStatuses);
+      // Count POs in payment phase (status_id 25-32: payment stages, 36: completed payment)
+      const paymentCount = poCount.filter(
+        (po: any) =>
+          (po.status_id >= 25 && po.status_id <= 32) || po.status_id === 36,
+      ).length;
       setPhaseCounts({
         pr: allRows.length,
         po: poCount.length,
         delivery: deliveryCount.length,
+        payment: paymentCount,
       });
       setLastRefresh(new Date());
     } catch (e: any) {
@@ -2031,7 +2038,7 @@ function AdminDashboard({ navigation }: any) {
           key="Payment"
           card={{
             label: "Payment",
-            value: 0,
+            value: phaseCounts.payment,
             icon: "payment",
             accent: "#7c3aed",
           }}

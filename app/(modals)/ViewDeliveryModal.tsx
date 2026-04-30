@@ -1,19 +1,13 @@
 /**
- * ViewDeliveryDocumentsModal.tsx — Shows PO, IAR, LOA, DV documents for a delivery
+ * ViewDeliveryDocumentsModal.tsx — Shows PR and PO documents for a delivery
  */
 
-import DVPreviewPanel, { buildDVHtml } from "@/app/(components)/DVPreviewPanel";
-import IARPreviewPanel, { buildIARHtml } from "@/app/(components)/IARPreviewPanel";
-import LOAPreviewPanel, { buildLOAHtml } from "@/app/(components)/LOAPreviewPanel";
 import POPreviewPanel, { buildPOHtml, type POPreviewData } from "@/app/(components)/POPreviewPanel";
+import PRPreviewPanel, { buildPRHtml, type PRLineItem, type PRPreviewData } from "@/app/(components)/PRPreviewPanel";
 import { preloadLogos } from "@/app/lib/documentAssets";
-import {
-  fetchDVByDelivery,
-  fetchDeliveryById,
-  fetchIARByDelivery,
-  fetchLOAByDelivery,
-} from "@/lib/supabase/delivery";
+import { fetchDeliveryById } from "@/lib/supabase/delivery";
 import { fetchPOWithItemsById, type POItemRow, type PORow } from "@/lib/supabase/po";
+import { fetchPRWithItemsById } from "@/lib/supabase/pr";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Platform, Text, TouchableOpacity, View } from "react-native";
@@ -31,15 +25,14 @@ export default function ViewDeliveryDocumentsModal({
   visible: boolean;
   onClose: () => void;
   deliveryId?: string | number | null;
-  initialTab?: "po" | "iar" | "loa" | "dv";
+  initialTab?: "pr" | "po";
 }) {
-  const [tab, setTab] = useState<"po" | "iar" | "loa" | "dv">(initialTab ?? "po");
+  const [tab, setTab] = useState<"pr" | "po">(initialTab ?? "pr");
   const [delivery, setDelivery] = useState<any>(null);
-  const [iar, setIar] = useState<any>(null);
-  const [loa, setLoa] = useState<any>(null);
-  const [dv, setDv] = useState<any>(null);
   const [poHeader, setPoHeader] = useState<PORow | null>(null);
   const [poItems, setPoItems] = useState<POItemRow[]>([]);
+  const [prHeader, setPrHeader] = useState<any>(null);
+  const [prItems, setPrItems] = useState<PRLineItem[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     preloadLogos();
@@ -49,17 +42,9 @@ export default function ViewDeliveryDocumentsModal({
     if (visible && deliveryId) {
       setLoading(true);
       const id = Number(deliveryId);
-      Promise.all([
-        fetchDeliveryById(id),
-        fetchIARByDelivery(id),
-        fetchLOAByDelivery(id),
-        fetchDVByDelivery(id),
-      ])
-        .then(async ([deliveryData, iarData, loaData, dvData]) => {
+      fetchDeliveryById(id)
+        .then(async (deliveryData) => {
           setDelivery(deliveryData);
-          setIar(iarData);
-          setLoa(loaData);
-          setDv(dvData);
           
           // Fetch PO details if delivery has po_id
           if (deliveryData?.po_id) {
@@ -67,6 +52,23 @@ export default function ViewDeliveryDocumentsModal({
               const po = await fetchPOWithItemsById(String(deliveryData.po_id));
               setPoHeader(po.header);
               setPoItems(po.items);
+              
+              // Fetch PR details from PO's pr_id
+              if (po.header?.pr_id) {
+                try {
+                  const pr = await fetchPRWithItemsById(String(po.header.pr_id));
+                  setPrHeader(pr.header);
+                  setPrItems(pr.items.map((it: any) => ({
+                    stock_no: it.stock_no,
+                    unit: it.unit,
+                    description: it.description,
+                    quantity: it.quantity,
+                    unit_price: it.unit_cost,
+                  })));
+                } catch (e) {
+                  console.error("Failed to load PR details:", e);
+                }
+              }
             } catch (e) {
               console.error("Failed to load PO details:", e);
             }
@@ -108,15 +110,35 @@ export default function ViewDeliveryDocumentsModal({
       }
     : null;
 
+  // Build PO HTML
   const poHtml = poPreviewData ? buildPOHtml(poPreviewData) : "";
   const poTemplateHtml = poPreviewData ? buildPOHtml(poPreviewData, { template: true }) : "";
+  
+  // Build PR preview data
+  const prPreviewData: PRPreviewData | null = prHeader
+    ? {
+        prNo: prHeader.pr_no ?? undefined,
+        date: prHeader.date ?? undefined,
+        officeSection: prHeader.office_section ?? undefined,
+        entityName: prHeader.entity_name ?? undefined,
+        fundCluster: prHeader.fund_cluster ?? undefined,
+        respCode: prHeader.responsibility_code ?? undefined,
+        purpose: prHeader.purpose ?? undefined,
+        reqName: prHeader.requested_by_name ?? undefined,
+        reqDesig: prHeader.requested_by_desig ?? undefined,
+        appName: prHeader.approved_by_name ?? undefined,
+        appDesig: prHeader.approved_by_desig ?? undefined,
+      }
+    : null;
+  
+  const prHtml = prPreviewData ? buildPRHtml(prPreviewData, prItems) : "";
+  const prTemplateHtml = prPreviewData ? buildPRHtml(prPreviewData, prItems, { template: true }) : "";
+  
   if (!visible) return null;
 
   const tabs = [
+    { key: "pr", label: "PR", icon: "assignment" as const },
     { key: "po", label: "PO", icon: "receipt" as const },
-    { key: "iar", label: "IAR", icon: "inventory" as const },
-    { key: "loa", label: "LOA", icon: "check-circle" as const },
-    { key: "dv", label: "DV", icon: "payment" as const },
   ];
 
   return (
@@ -177,6 +199,17 @@ export default function ViewDeliveryDocumentsModal({
           </View>
         )}
 
+        {/* PR Tab */}
+        {!loading && tab === "pr" && prPreviewData && (
+          <PRPreviewPanel html={prHtml} templateHtml={prTemplateHtml} showActions />
+        )}
+        {!loading && tab === "pr" && !prPreviewData && (
+          <View className="flex-1 items-center justify-center p-8">
+            <MaterialIcons name="assignment" size={48} color="#9ca3af" />
+            <Text className="mt-4 text-gray-500 text-center">No PR document available</Text>
+          </View>
+        )}
+
         {/* PO Tab */}
         {!loading && tab === "po" && poPreviewData && (
           <POPreviewPanel html={poHtml} templateHtml={poTemplateHtml} showActions />
@@ -186,53 +219,6 @@ export default function ViewDeliveryDocumentsModal({
             <MaterialIcons name="receipt-long" size={48} color="#9ca3af" />
             <Text className="mt-4 text-gray-500 text-center">No PO document available</Text>
           </View>
-        )}
-
-        {/* IAR Tab */}
-        {!loading && tab === "iar" && (
-          <IARPreviewPanel
-            html={buildIARHtml({
-              entityName: "DEPARTMENT OF AGRARIAN REFORM-CAM SUR 1",
-              supplier: delivery?.supplier,
-              iarNo: iar?.iar_no,
-              poNo: delivery?.po_no,
-              invoiceNo: iar?.invoice_no,
-              invoiceDate: iar?.invoice_date,
-              requisitioningOffice: delivery?.office_section,
-              dateInspected: iar?.inspected_at,
-              dateReceived: iar?.received_at,
-            })}
-          />
-        )}
-
-        {/* LOA Tab */}
-        {!loading && tab === "loa" && (
-          <LOAPreviewPanel
-            html={buildLOAHtml({
-              supplier: delivery?.supplier,
-              invoiceNo: loa?.invoice_no,
-              poNo: delivery?.po_no,
-              acceptanceDate: loa?.accepted_at,
-              signatoryName: loa?.accepted_by_name,
-              signatoryTitle: loa?.accepted_by_title,
-              provincialOffice: "DARPO-CAMARINES SUR I",
-            })}
-          />
-        )}
-
-        {/* DV Tab */}
-        {!loading && tab === "dv" && (
-          <DVPreviewPanel
-            html={buildDVHtml({
-              entityName: "DEPARTMENT OF AGRARIAN REFORM-CAM SUR 1",
-              dvNo: dv?.dv_no,
-              payee: delivery?.supplier,
-              particulars: dv?.particulars,
-              amountDue: dv?.amount_due,
-              modeOfPayment: dv?.mode_of_payment,
-              provincialOffice: "DARPO-CAMARINES SUR I",
-            })}
-          />
         )}
       </View>
     </Modal>
