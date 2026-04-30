@@ -1014,7 +1014,7 @@ export default function POModule() {
   const [viewRecord, setViewRecord] = useState<PORecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
   const [viewInitialTab, setViewInitialTab] = useState<
-    "details" | "po" | "ors"
+    "details" | "po"
   >("details");
 
   const [moreRecord, setMoreRecord] = useState<PORecord | null>(null);
@@ -1331,8 +1331,7 @@ export default function POModule() {
         }}
         onViewDocuments={(r) => {
           setViewRecord(r);
-          const isOrs = r.statusId >= 13 && r.statusId <= 15;
-          setViewInitialTab(isOrs ? "ors" : "po");
+          setViewInitialTab("po");
           setViewVisible(true);
         }}
         onDelete={(r) => {

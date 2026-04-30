@@ -1,11 +1,10 @@
 /**
- * ORSModule.tsx — ORS (Obligation Request and Status) sub-module  [REFINED]
+ * ORSModule.tsx — ORS (Obligation Request and Status) sub-module
  *
- * What changed vs the original:
- *   • OrsModal rebuilt to match CreatePOModal's field/section style:
+ * Simplified monitoring-only version:
+ *   • OrsModal — Form-only modal for adding/editing ORS entries
  *       – SectionLabel / FieldLabel / StyledInput atoms
- *       – Full-screen SafeAreaView modal with tab bar (Form ↔ Preview)
- *       – ORSPreviewPanel embedded on the Preview tab
+ *       – Full-screen SafeAreaView modal with single Form view
  *       – Divider separators between logical groups
  *       – Two-column layout for paired fields (ORS No / Date, Amount / Status…)
  *       – Monospace inputs for serial numbers and amounts
@@ -14,13 +13,13 @@
  *       – fund_cluster, particulars, mfo_pap, uacs_code
  *       – prepared_by_name / approved_by_name (display; actual IDs stay in DB)
  *       – date_created (ISO string, defaults to today)
- *   • ORSSection table gains a "Preview" icon button per row (opens read-only preview)
- *   • ORSInlinePanel inherits the same modal
+ *   • ORSSection table — edit/delete actions only (no preview)
+ *   • ORSInlinePanel — edit/delete actions only (no preview)
  *
- * Exports (unchanged surface):
+ * Exports:
  *   ORS_STATUS_META    — status → colour config
  *   OrsStatusPill      — reusable status badge
- *   OrsForm            — form state type (extended)
+ *   OrsForm            — form state type
  *   OrsModal           — add / edit modal
  *   ORSSection         — used by budget.tsx
  *   ORSInlinePanel     — used by POModule at status_id 13 / 14
@@ -53,10 +52,6 @@ import {
     type TextInputProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import ORSPreviewPanel, {
-    buildORSHtml,
-    type ORSPreviewData,
-} from "../(components)/ORSPreviewPanel";
 import CalendarPickerModal from "../(modals)/CalendarModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -302,40 +297,11 @@ export function OrsModal({
       initial?.division_id != null ? String(initial.division_id) : "",
   });
 
-  const [tab, setTab] = useState<"form" | "preview">("form");
   const [saving, setSaving] = useState(false);
   const isEdit = !!initial;
 
   const set = (k: keyof OrsForm) => (v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
-
-  // ── Preview data derived from form ───────────────────────────────────────
-
-  const previewData: ORSPreviewData = {
-    orsNo: form.ors_no,
-    prNo: form.pr_no,
-    divisionName:
-      divisions.find((d) => String(d.division_id) === form.division_id)
-        ?.division_name ?? form.division_id,
-    entityName,
-    fundCluster: form.fund_cluster,
-    responsibilityCenter: form.responsibility_center,
-    uacsCode: form.uacs_code,
-    fiscalYear,
-    amount: parseFloat(form.amount.replace(/,/g, "")) || 0,
-    status: form.status,
-    particulars: form.particulars,
-    mfoPap: form.mfo_pap,
-    preparedByName: form.prepared_by_name,
-    preparedByDesig: form.prepared_by_desig,
-    approvedByName: form.approved_by_name,
-    approvedByDesig: form.approved_by_desig,
-    dateCreated: form.date_created,
-    notes: form.notes,
-  };
-
-  const html = buildORSHtml(previewData);
-  const templateHtml = buildORSHtml(previewData, { template: true });
 
   // ── Validation + save ─────────────────────────────────────────────────────
 
@@ -407,60 +373,23 @@ export function OrsModal({
             </TouchableOpacity>
           </View>
 
-          {/* Tab bar */}
-          <View className="flex-row mt-3.5 gap-1.5">
-            {(["form", "preview"] as const).map((t) => (
-              <TouchableOpacity
-                key={t}
-                onPress={() => setTab(t)}
-                activeOpacity={0.8}
-                className={`flex-1 items-center py-2 rounded-xl ${
-                  tab === t ? "bg-white" : "bg-white/10"
-                }`}
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <MaterialIcons
-                    name={t === "form" ? "edit" : "visibility"}
-                    size={15}
-                    color={tab === t ? "#064E3B" : "rgba(255,255,255,0.7)"}
-                  />
-                  <Text
-                    className={`text-[12px] font-bold ${
-                      tab === t ? "text-[#064E3B]" : "text-white/70"
-                    }`}
-                  >
-                    {t === "form" ? "Form" : "Preview"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
-        {/* ── Preview tab ── */}
-        {tab === "preview" ? (
-          <ORSPreviewPanel
-            html={html}
-            templateHtml={templateHtml}
-            showActions
-            style={{ flex: 1 }}
-          />
-        ) : (
-          /* ── Form tab ── */
-          <KeyboardAvoidingView
+        {/* ── Form ── */}
+        <KeyboardAvoidingView
+          className="flex-1"
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
             className="flex-1"
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingTop: 20,
+              paddingBottom: 40,
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <ScrollView
-              className="flex-1"
-              contentContainerStyle={{
-                paddingHorizontal: 20,
-                paddingTop: 20,
-                paddingBottom: 40,
-              }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
               {/* ── Section: ORS Identity ── */}
               <SectionLabel>ORS Identity</SectionLabel>
               <View className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3">
@@ -808,25 +737,6 @@ export function ORSSection({
   const [editOrs, setEditOrs] = useState<OrsEntryRow | null | undefined>(
     undefined,
   );
-  // For read-only preview from the list
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-
-  const openReadOnlyPreview = (entry: OrsEntryRow) => {
-    const divisionName =
-      budgets.find((d) => d.division_id === entry.division_id)?.division_name ??
-      "";
-    const html = buildORSHtml({
-      orsNo: entry.ors_no ?? "",
-      prNo: entry.pr_no ?? "",
-      divisionName,
-      fiscalYear: year,
-      amount: entry.amount,
-      status: entry.status,
-      notes: entry.notes ?? "",
-    });
-    setPreviewHtml(html);
-  };
-
   const phaseMeta = (prNo: string | null | undefined) => {
     const key = String(prNo ?? "");
     const sid = key && prStatusByNo ? Number(prStatusByNo[key] ?? 0) : 0;
@@ -1028,16 +938,6 @@ export function ORSSection({
 
                   {/* ── Row 2: Action Buttons ── */}
                   <View className="flex-row items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
-                    <TouchableOpacity
-                      onPress={() => openReadOnlyPreview(entry)}
-                      activeOpacity={0.85}
-                      className="px-3 py-2 rounded-xl border border-gray-200 bg-white flex-row items-center gap-1.5"
-                    >
-                      <MaterialIcons name="visibility" size={14} color="#6b7280" />
-                      <Text className="text-[11px] font-bold text-gray-700">
-                        Preview
-                      </Text>
-                    </TouchableOpacity>
                     {canEdit && (
                       <>
                         <TouchableOpacity
@@ -1123,16 +1023,6 @@ export function ORSSection({
                   </View>
 
                   <View className="w-16 flex-row items-center justify-end gap-1">
-                    <TouchableOpacity
-                      onPress={() => openReadOnlyPreview(entry)}
-                      hitSlop={8}
-                    >
-                      <MaterialIcons
-                        name="visibility"
-                        size={16}
-                        color="#6b7280"
-                      />
-                    </TouchableOpacity>
                     {canEdit && (
                       <>
                         <TouchableOpacity
@@ -1188,41 +1078,6 @@ export function ORSSection({
         />
       )}
 
-      {/* Read-only preview modal */}
-      {previewHtml !== null && (
-        <Modal
-          visible
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setPreviewHtml(null)}
-        >
-          <SafeAreaView className="flex-1 bg-white">
-            <View className="bg-[#064E3B] px-5 pt-4 pb-4 flex-row items-center justify-between">
-              <View>
-                <Text className="text-[10px] font-bold tracking-widest uppercase text-white/40">
-                  ORS Preview
-                </Text>
-                <Text className="text-[16px] font-black text-white">
-                  Obligation Request and Status
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setPreviewHtml(null)}
-                hitSlop={10}
-                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
-              >
-                <MaterialIcons name="close" size={17} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <ORSPreviewPanel
-              html={previewHtml}
-              templateHtml={buildORSHtml({} as ORSPreviewData, { template: true })}
-              showActions
-              style={{ flex: 1 }}
-            />
-          </SafeAreaView>
-        </Modal>
-      )}
     </View>
   );
 }
@@ -1258,8 +1113,6 @@ export function ORSInlinePanel({
   const [editOrs, setEditOrs] = useState<OrsEntryRow | null | undefined>(
     undefined,
   );
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -1369,23 +1222,6 @@ export function ORSInlinePanel({
     );
   };
 
-  const openReadOnlyPreview = (entry: OrsEntryRow) => {
-    const divName =
-      divisions.find((d) => d.division_id === entry.division_id)
-        ?.division_name ?? "";
-    setPreviewHtml(
-      buildORSHtml({
-        orsNo: entry.ors_no ?? undefined,
-        prNo: entry.pr_no ?? prNo ?? undefined,
-        divisionName: divName,
-        fiscalYear,
-        amount: entry.amount,
-        status: entry.status,
-        notes: entry.notes ?? "",
-      }),
-    );
-  };
-
   return (
     <View
       className="mx-4 mb-3 bg-white rounded-2xl border-2 border-violet-200 overflow-hidden"
@@ -1477,14 +1313,8 @@ export function ORSInlinePanel({
               </Text>
               <OrsStatusPill status={entry.status} />
 
-              {/* Preview + edit + delete */}
+              {/* Edit + delete */}
               <View className="flex-row items-center gap-1.5 ml-2">
-                <TouchableOpacity
-                  onPress={() => openReadOnlyPreview(entry)}
-                  hitSlop={8}
-                >
-                  <MaterialIcons name="visibility" size={15} color="#6b7280" />
-                </TouchableOpacity>
                 {canEdit && (
                   <>
                     <TouchableOpacity
@@ -1538,41 +1368,6 @@ export function ORSInlinePanel({
         />
       )}
 
-      {/* Read-only ORS preview */}
-      {previewHtml !== null && (
-        <Modal
-          visible
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setPreviewHtml(null)}
-        >
-          <SafeAreaView className="flex-1 bg-white">
-            <View className="bg-violet-700 px-5 pt-4 pb-4 flex-row items-center justify-between">
-              <View>
-                <Text className="text-[10px] font-bold tracking-widest uppercase text-white/40">
-                  ORS Preview
-                </Text>
-                <Text className="text-[16px] font-black text-white">
-                  Obligation Request and Status
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setPreviewHtml(null)}
-                hitSlop={10}
-                className="w-8 h-8 rounded-xl bg-white/10 items-center justify-center"
-              >
-                <MaterialIcons name="close" size={17} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <ORSPreviewPanel
-              html={previewHtml}
-              templateHtml={buildORSHtml({} as ORSPreviewData, { template: true })}
-              showActions
-              style={{ flex: 1 }}
-            />
-          </SafeAreaView>
-        </Modal>
-      )}
     </View>
   );
 }

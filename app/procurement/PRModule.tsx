@@ -838,7 +838,7 @@ export default function PRModule({
   const [viewRecord, setViewRecord] = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
   const [viewInitialTab, setViewInitialTab] = useState<
-    "details" | "pr" | "rfqs" | "resolution" | "abstract"
+    "details" | "pr"
   >("details");
 
   // More / actions sheet state

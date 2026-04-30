@@ -2,19 +2,6 @@
  * ViewPRModal.tsx — Full-screen PR viewer with Details + PDF tabs.
  */
 
-import {
-  buildAAAPreviewHTML,
-  type AAAPreviewData,
-} from "@/app/(components)/AAAPreview";
-import {
-  buildBACResolutionHTML,
-  type BACResolutionData,
-} from "@/app/(components)/BACResolutionPreview";
-import {
-  buildCanvassHTML,
-  type CanvassPreviewData,
-} from "@/app/(components)/CanvassPreview";
-import DocumentPreviewPanel from "@/app/(components)/DocumentPreviewPanel";
 import PRPreviewPanel, { buildPRHtml } from "@/app/(components)/PRPreviewPanel";
 import React, { useEffect, useState } from "react";
 import {
@@ -78,7 +65,7 @@ const STATUS_FALLBACK = {
 interface ViewPRModalProps {
   visible: boolean;
   record: PRRecord | null;
-  initialTab?: "details" | "pr" | "rfqs" | "resolution" | "abstract";
+  initialTab?: "details" | "pr";
   onClose: () => void;
 }
 
@@ -88,7 +75,7 @@ export default function ViewPRModal({
   initialTab,
   onClose,
 }: ViewPRModalProps) {
-  const [tab, setTab] = useState<"details" | "pr" | "rfqs" | "resolution" | "abstract">("details");
+  const [tab, setTab] = useState<"details" | "pr">("details");
   const [hdr, setHdr] = useState<PRRecord | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
@@ -138,106 +125,9 @@ export default function ViewPRModal({
   if (!record) return null;
   const header = hdr ?? record;
 
-  // Build HTML for different document types
+  // Build PR HTML only
   const prHtml = buildPRHtml(header, items);
   const prTemplateHtml = buildPRHtml({}, [], { template: true });
-
-  // RFQ (Canvass) HTML
-  const canvassData: CanvassPreviewData = {
-    prNo: header.prNo,
-    quotationNo: "",
-    date: header.date,
-    deadline: "",
-    bacChairperson: "",
-    officeSection: header.officeSection,
-    purpose: header.purpose,
-    items: items.map((it, idx) => ({
-      itemNo: idx + 1,
-      description: it.description,
-      qty: it.quantity,
-      unit: it.unit,
-    })),
-    canvasserNames: [],
-  };
-  const rfqHtml = logosLoaded ? buildCanvassHTML(canvassData) : "";
-  const rfqTemplateHtml = logosLoaded
-    ? buildCanvassHTML({
-        prNo: "",
-        quotationNo: "",
-        date: "",
-        deadline: "",
-        bacChairperson: "",
-        officeSection: "",
-        purpose: "",
-        items: [],
-        canvasserNames: [],
-        supplierName: "",
-        supplierAddress: "",
-        assignedTo: "",
-        assignedDivision: "",
-      })
-    : "";
-
-  // Resolution HTML
-  const totalCost = items
-    .reduce((sum, it) => sum + it.quantity * (it.unit_price || 0), 0)
-    .toLocaleString("en-PH", { minimumFractionDigits: 2 });
-
-  const resolutionData: BACResolutionData = {
-    resolutionNo: "",
-    resolvedDate: header.date,
-    provincialOffice: "DARPO-CARAGA",
-    projectTitle: header.purpose || "",
-    procurementMode: "Small Value Procurement",
-    approvedBudget: totalCost,
-    supplier: "",
-    awardedAmount: totalCost,
-    bacMembers: [],
-  };
-  const resolutionHtml = logosLoaded ? buildBACResolutionHTML(resolutionData) : "";
-  const resolutionTemplateHtml = logosLoaded
-    ? buildBACResolutionHTML({
-        resolutionNo: "",
-        resolvedDate: "",
-        provincialOffice: "",
-        projectTitle: "",
-        procurementMode: "",
-        approvedBudget: "",
-        supplier: "",
-        awardedAmount: "",
-        bacMembers: [],
-      })
-    : "";
-
-  // Abstract (AAA) HTML
-  const aaaData: AAAPreviewData = {
-    rfqNo: "",
-    prNo: header.prNo,
-    resolutionNo: "",
-    date: header.date,
-    office: header.officeSection,
-    particulars: header.purpose,
-    suppliers: ["Supplier 1", "Supplier 2", "Supplier 3"],
-    rows: items.map((it, idx) => ({
-      itemNo: idx + 1,
-      qty: it.quantity,
-      unit: it.unit,
-      desc: it.description,
-      prices: { "Supplier 1": 0, "Supplier 2": 0, "Supplier 3": 0 },
-      winner: null,
-    })),
-  };
-  const abstractHtml = buildAAAPreviewHTML(aaaData);
-  const abstractTemplateHtml = buildAAAPreviewHTML({
-    rfqNo: "",
-    prNo: "",
-    resolutionNo: "",
-    date: "",
-    office: "",
-    particulars: "",
-    suppliers: ["Supplier 1", "Supplier 2", "Supplier 3"],
-    rows: [],
-  });
 
   const statusCfg = STATUS_CONFIG[header.statusId] ?? STATUS_FALLBACK;
   const statusLabel =
@@ -295,7 +185,7 @@ export default function ViewPRModal({
           </View>
           {/* Tab toggle */}
           <View className="flex-row bg-black/20 rounded-xl p-1 flex-wrap gap-1">
-            {(["details", "pr", "rfqs", "resolution", "abstract"] as const).map((t) => (
+            {(["details", "pr"] as const).map((t) => (
               <TouchableOpacity
                 key={t}
                 onPress={() => setTab(t)}
@@ -325,42 +215,6 @@ export default function ViewPRModal({
           <PRPreviewPanel
             html={prHtml}
             templateHtml={prTemplateHtml}
-            showActions
-          />
-        ) : tab === "rfqs" ? (
-          logosLoaded ? (
-            <DocumentPreviewPanel
-              html={rfqHtml}
-              templateHtml={rfqTemplateHtml}
-              showActions
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center gap-3">
-              <ActivityIndicator size="large" color="#064E3B" />
-              <Text className="text-[13px] text-gray-400">
-                Loading document assets…
-              </Text>
-            </View>
-          )
-        ) : tab === "resolution" ? (
-          logosLoaded ? (
-            <DocumentPreviewPanel
-              html={resolutionHtml}
-              templateHtml={resolutionTemplateHtml}
-              showActions
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center gap-3">
-              <ActivityIndicator size="large" color="#064E3B" />
-              <Text className="text-[13px] text-gray-400">
-                Loading document assets…
-              </Text>
-            </View>
-          )
-        ) : tab === "abstract" ? (
-          <DocumentPreviewPanel
-            html={abstractHtml}
-            templateHtml={abstractTemplateHtml}
             showActions
           />
         ) : null}

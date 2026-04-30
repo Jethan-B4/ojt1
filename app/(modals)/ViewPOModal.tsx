@@ -11,28 +11,24 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import ORSPreviewPanel, {
-    buildORSHtml,
-    type ORSPreviewData,
-} from "../(components)/ORSPreviewPanel";
 import POPreviewPanel, {
-    buildPOHtml,
-    type POPreviewData,
+  buildPOHtml,
+  type POPreviewData,
 } from "../(components)/POPreviewPanel";
 import {
-    fetchPOStatuses,
-    fetchPOWithItemsById,
-    type POItemRow,
-    type PORow,
+  fetchPOStatuses,
+  fetchPOWithItemsById,
+  type POItemRow,
+  type PORow,
 } from "../../lib/supabase/po";
 import type { PORecord } from "../procurement/POModule";
 
@@ -101,7 +97,7 @@ function poCfgFor(id: number | null | undefined) {
 interface ViewPOModalProps {
   visible: boolean;
   record: PORecord | null;
-  initialTab?: "details" | "po" | "ors";
+  initialTab?: "details" | "po";
   onClose: () => void;
 }
 
@@ -113,7 +109,7 @@ export default function ViewPOModal({
   initialTab,
   onClose,
 }: ViewPOModalProps) {
-  const [tab, setTab] = useState<"details" | "po" | "ors">("details");
+  const [tab, setTab] = useState<"details" | "po">("details");
   const [header, setHeader] = useState<PORow | null>(null);
   const [items, setItems] = useState<POItemRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -172,29 +168,6 @@ export default function ViewPOModal({
   const html = previewData ? buildPOHtml(previewData) : "";
   const templateHtml = previewData ? buildPOHtml(previewData, { template: true }) : "";
 
-  // Build ORS preview data from PO header
-  const orsPreviewData: ORSPreviewData | null = header
-    ? {
-        orsNo: header.ors_no ?? undefined,
-        prNo: header.pr_no ?? undefined,
-        divisionName: header.office_section ?? undefined,
-        entityName: "DAR — CARAGA Region",
-        fundCluster: header.fund_cluster ?? undefined,
-        fiscalYear: new Date().getFullYear(),
-        amount: Number(header.ors_amount) || 0,
-        particulars: `PO: ${header.po_no} — ${header.supplier}`,
-        dateCreated: header.ors_date ?? undefined,
-        preparedByName: header.accountant_name ?? undefined,
-        preparedByDesig: header.accountant_desig ?? undefined,
-        approvedByName: header.official_name ?? undefined,
-        approvedByDesig: header.official_desig ?? undefined,
-      }
-    : null;
-  const orsHtml = orsPreviewData ? buildORSHtml(orsPreviewData) : "";
-  const orsTemplateHtml = orsPreviewData
-    ? buildORSHtml(orsPreviewData, { template: true })
-    : "";
-
   if (!visible) return null;
   if (!record) return null;
 
@@ -252,7 +225,7 @@ export default function ViewPOModal({
 
           {/* Tab toggle */}
           <View className="flex-row bg-black/20 rounded-xl p-1">
-            {(["details", "po", "ors"] as const).map((t) => (
+            {(["details", "po"] as const).map((t) => (
               <TouchableOpacity
                 key={t}
                 onPress={() => setTab(t)}
@@ -279,20 +252,11 @@ export default function ViewPOModal({
 
         {/* PO Document tab */}
         {!loading && tab === "po" && (
-          <POPreviewPanel
-            html={html}
-            templateHtml={templateHtml}
-            showActions
-          />
-        )}
-
-        {/* ORS Document tab */}
-        {!loading && tab === "ors" && (
-          <ORSPreviewPanel
-            html={orsHtml}
-            templateHtml={orsTemplateHtml}
-            showActions
-          />
+            <POPreviewPanel
+                html={html}
+                templateHtml={templateHtml}
+                showActions
+            />
         )}
 
         {/* Details tab */}
