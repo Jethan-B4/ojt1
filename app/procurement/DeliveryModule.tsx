@@ -791,7 +791,12 @@ export default function DeliveryModule() {
       roleId === 1 || divisionId == null
         ? await fetchDeliveries()
         : await fetchDeliveriesByDivision(Number(divisionId));
-    const records = (rows ?? []).map(toRecord);
+    // Filter to only include Delivery phase statuses (18-24, 35) — exclude Payment phase (25-32, 36)
+    const deliveryPhaseRows = (rows ?? []).filter(
+      (r: any) =>
+        (r.status_id >= 18 && r.status_id <= 24) || r.status_id === 35,
+    );
+    const records = deliveryPhaseRows.map(toRecord);
     setRecords(records);
 
     // Fetch latest [DELIVERY] remark for each delivery record in parallel

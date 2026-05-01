@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "DAR Procurement System",
+    "name": "DAR-CS1 Procurement System",
     "slug": "ojt1",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "gov.ph.dar.procurement",
-      "name": "DAR Procurement System",
+      "name": "DAR-CS1 Procurement System",
       "icon": "./assets/images/dar.png",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

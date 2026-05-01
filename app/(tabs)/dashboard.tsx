@@ -429,16 +429,21 @@ function useAdminData(year: number) {
       ]);
       setRows(allRows);
       setStatuses(allStatuses);
-      // Count POs in payment phase (status_id 25-32: payment stages, 36: completed payment)
-      const paymentCount = poCount.filter(
-        (po: any) =>
-          (po.status_id >= 25 && po.status_id <= 32) || po.status_id === 36,
+      // Count Delivery phase: deliveries with status_id 18-24 or 35
+      const deliveryPhaseCount = deliveryCount.filter(
+        (del: any) =>
+          (del.status_id >= 18 && del.status_id <= 24) || del.status_id === 35,
+      ).length;
+      // Count Payment phase: deliveries with status_id 25-32 or 36
+      const paymentPhaseCount = deliveryCount.filter(
+        (del: any) =>
+          (del.status_id >= 25 && del.status_id <= 32) || del.status_id === 36,
       ).length;
       setPhaseCounts({
         pr: allRows.length,
         po: poCount.length,
-        delivery: deliveryCount.length,
-        payment: paymentCount,
+        delivery: deliveryPhaseCount,
+        payment: paymentPhaseCount,
       });
       setLastRefresh(new Date());
     } catch (e: any) {

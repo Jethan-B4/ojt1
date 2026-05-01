@@ -278,6 +278,7 @@ function phaseForStatusId(
   if (statusId >= 25 && statusId <= 32) return "payment";
   if (statusId >= 18 && statusId <= 24) return "delivery";
   if (statusId >= 11 && statusId <= 17) return "po";
+  if (statusId >= 1 && statusId <= 10) return "pr";
   return "pr";
 }
 

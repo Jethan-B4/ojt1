@@ -186,29 +186,68 @@ function CanvassingScreen({ navigation, route }: any) {
 function BrandHeader({ navigation }: { navigation: any }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [prCreationDates, setPrCreationDates] = useState<Date[]>([]);
+  const [poCreationDates, setPoCreationDates] = useState<Date[]>([]);
+  const [deliveryCreationDates, setDeliveryCreationDates] = useState<Date[]>([]);
+  const [paymentCreationDates, setPaymentCreationDates] = useState<Date[]>([]);
 
-  // ── Fetch PR creation dates for calendar ───────────────────────────────────────────
+  // ── Fetch all calendar dates ───────────────────────────────────────────
   useEffect(() => {
-    const fetchPRCreationDates = async () => {
+    const fetchAllDates = async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch PR dates
+        const { data: prData, error: prErr } = await supabase
           .from("purchase_requests")
           .select('created_at')
           .not('created_at', 'is', null);
         
-        if (error) {
-          console.error('Error fetching PR dates:', error);
-          return;
+        if (prErr) {
+          console.error('Error fetching PR dates:', prErr);
+        } else {
+          const prDates = prData?.map((pr: { created_at: string }) => new Date(pr.created_at)) || [];
+          setPrCreationDates(prDates);
         }
+
+        // Fetch PO dates
+        const { data: poData, error: poErr } = await supabase
+          .from("purchase_orders")
+          .select('created_at')
+          .not('created_at', 'is', null);
         
-        const dates = data?.map((pr: { created_at: string }) => new Date(pr.created_at)) || [];
-        setPrCreationDates(dates);
+        if (poErr) {
+          console.error('Error fetching PO dates:', poErr);
+        } else {
+          const poDates = poData?.map((po: { created_at: string }) => new Date(po.created_at)) || [];
+          setPoCreationDates(poDates);
+        }
+
+        // Fetch Delivery dates and derive Payment dates
+        const { data: deliveryData, error: deliveryErr } = await supabase
+          .from("deliveries")
+          .select('created_at, status_id, updated_at')
+          .not('created_at', 'is', null);
+        
+        if (deliveryErr) {
+          console.error('Error fetching delivery dates:', deliveryErr);
+        } else {
+          const delDates = deliveryData?.map((del: { created_at: string }) => new Date(del.created_at)) || [];
+          setDeliveryCreationDates(delDates);
+
+          // Derive payment dates: use updated_at for deliveries in Payment phase (status_id 25-32, 36)
+          const payDates = (deliveryData ?? [])
+            .filter((del: any) => 
+              del.status_id !== null && 
+              ((del.status_id >= 25 && del.status_id <= 32) || del.status_id === 36)
+            )
+            .map((del: any) => del.updated_at ? new Date(del.updated_at) : null)
+            .filter((date: Date | null): date is Date => date !== null);
+          setPaymentCreationDates(payDates);
+        }
       } catch (err) {
-        console.error('Error fetching PR dates:', err);
+        console.error('Error fetching calendar dates:', err);
       }
     };
     
-    fetchPRCreationDates();
+    fetchAllDates();
   }, []);
   return (
     <>
@@ -259,6 +298,9 @@ function BrandHeader({ navigation }: { navigation: any }) {
           setCalendarOpen(false);
         }}
         prCreationDates={prCreationDates}
+        poCreationDates={poCreationDates}
+        deliveryCreationDates={deliveryCreationDates}
+        paymentCreationDates={paymentCreationDates}
       />
     </>
   );

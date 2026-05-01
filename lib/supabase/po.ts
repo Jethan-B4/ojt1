@@ -97,6 +97,36 @@ export async function fetchPurchaseOrdersByDivision(
   return data as PORow[];
 }
 
+/** Fetch purchase orders for a specific fiscal year. */
+export async function fetchPurchaseOrdersByYear(
+  year: number,
+): Promise<PORow[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .gte("created_at", `${year}-01-01T00:00:00Z`)
+    .lte("created_at", `${year}-12-31T23:59:59Z`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as PORow[];
+}
+
+/** Fetch purchase orders for a specific fiscal year and division. */
+export async function fetchPurchaseOrdersByYearAndDivision(
+  year: number,
+  divisionId: number,
+): Promise<PORow[]> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("*")
+    .eq("division_id", divisionId)
+    .gte("created_at", `${year}-01-01T00:00:00Z`)
+    .lte("created_at", `${year}-12-31T23:59:59Z`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as PORow[];
+}
+
 /** Fetch a single PO with its line items. */
 export async function fetchPOWithItemsById(
   poId: string,

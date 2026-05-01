@@ -22,8 +22,8 @@
 import {
   fetchBudgets,
   fetchOrsEntries,
-  fetchPurchaseOrders,
-  fetchPurchaseOrdersByDivision,
+  fetchPurchaseOrdersByYear,
+  fetchPurchaseOrdersByYearAndDivision,
   insertDivisionBudget,
   supabase,
   updateDivisionBudget,
@@ -96,8 +96,8 @@ export default function BudgetScreen() {
         // Fetch budgets, ORS entries, and POs in parallel
         const poFetch =
           roleId === 1 || divisionId == null
-            ? fetchPurchaseOrders()
-            : fetchPurchaseOrdersByDivision(Number(divisionId));
+            ? fetchPurchaseOrdersByYear(year)
+            : fetchPurchaseOrdersByYearAndDivision(year, Number(divisionId));
         const [b, o, p] = await Promise.all([
           fetchBudgets(year),
           fetchOrsEntries(
@@ -112,14 +112,7 @@ export default function BudgetScreen() {
             : b,
         );
         setOrsEntries(o);
-        // Filter POs by fiscal year (based on created_at date)
-        const filteredPOs = (p ?? []).filter((po) => {
-          const poYear = po.created_at
-            ? new Date(po.created_at).getFullYear()
-            : year;
-          return poYear === year;
-        });
-        setPoEntries(filteredPOs);
+        setPoEntries(p);
         const prNos = [
           ...new Set(
             (o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean),

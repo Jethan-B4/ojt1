@@ -10,7 +10,7 @@
  */
 
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
     Modal, Pressable, ScrollView, Text, TouchableOpacity, View,
 } from "react-native";
@@ -24,6 +24,12 @@ export interface CalendarModalProps {
   initialDate?: Date;
   /** Array of dates when PRs were created to show indicators */
   prCreationDates?: Date[];
+  /** Array of dates when POs were created to show indicators */
+  poCreationDates?: Date[];
+  /** Array of dates when Deliveries were created to show indicators */
+  deliveryCreationDates?: Date[];
+  /** Array of dates when Payments were started (from delivery status change) to show indicators */
+  paymentCreationDates?: Date[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,7 +58,11 @@ function isSameDay(a: Date, b: Date) {
 // ─── CalendarModal ────────────────────────────────────────────────────────────
 
 export function CalendarModal({
-  visible, onClose, onSelectDate, initialDate, prCreationDates = [],
+  visible, onClose, onSelectDate, initialDate, 
+  prCreationDates = [],
+  poCreationDates = [],
+  deliveryCreationDates = [],
+  paymentCreationDates = [],
 }: CalendarModalProps) {
   const today     = useMemo(() => new Date(), []);
   const [cursor,  setCursor]   = useState(() => initialDate ?? new Date());
@@ -79,6 +89,15 @@ export function CalendarModal({
     setSelected(date);
     onSelectDate?.(date);
   };
+
+  // Helper to get counts for a specific date
+  const getCountsForDate = useCallback((date: Date) => {
+    const countPR = prCreationDates.filter(d => isSameDay(d, date)).length;
+    const countPO = poCreationDates.filter(d => isSameDay(d, date)).length;
+    const countDelivery = deliveryCreationDates.filter(d => isSameDay(d, date)).length;
+    const countPayment = paymentCreationDates.filter(d => isSameDay(d, date)).length;
+    return { countPR, countPO, countDelivery, countPayment };
+  }, [prCreationDates, poCreationDates, deliveryCreationDates, paymentCreationDates]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -127,13 +146,16 @@ export function CalendarModal({
             {Array.from({ length: cells.length / 7 }, (_, row) => (
               <View key={row} className="flex-row mb-1">
                 {cells.slice(row * 7, row * 7 + 7).map((day, col) => {
-                  if (!day) return <View key={col} className="flex-1 h-10" />;
+                  if (!day) return <View key={col} className="flex-1 h-14" />;
 
                   const thisDate  = new Date(year, month, day);
                   const isToday   = isSameDay(thisDate, today);
                   const isSel     = selected ? isSameDay(thisDate, selected) : false;
                   const isPast    = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                   const hasPR     = prCreationDates.some(date => isSameDay(date, thisDate));
+                  const hasPO     = poCreationDates.some(date => isSameDay(date, thisDate));
+                  const hasDelivery = deliveryCreationDates.some(date => isSameDay(date, thisDate));
+                  const hasPayment = paymentCreationDates.some(date => isSameDay(date, thisDate));
 
                   return (
                     <TouchableOpacity
@@ -141,13 +163,13 @@ export function CalendarModal({
                       onPress={() => handleDay(day)}
                       activeOpacity={0.7}
                       className={[
-                        "flex-1 h-10 mx-0.5 rounded-xl items-center justify-center",
+                        "flex-1 h-14 mx-0.5 rounded-xl items-center justify-center",
                         isSel   ? "bg-[#064E3B]"  :
                         isToday ? "bg-emerald-50 border border-emerald-400" :
                                   "",
                       ].join(" ")}
                     >
-                      <View className="items-center">
+                      <View className="items-center gap-0.5">
                         <Text className={[
                           "text-[14px] font-semibold",
                           isSel   ? "text-white"       :
@@ -157,9 +179,12 @@ export function CalendarModal({
                         ].join(" ")}>
                           {day}
                         </Text>
-                        {hasPR && (
-                          <View className="w-1.5 h-1.5 bg-[#064E3B] rounded-full mt-0.5" />
-                        )}
+                        <View className="flex-row gap-0.5">
+                          {hasPR && <View className="w-1.5 h-1.5 bg-[#064E3B] rounded-full" />}
+                          {hasPO && <View className="w-1.5 h-1.5 bg-[#8b5cf6] rounded-full" />}
+                          {hasDelivery && <View className="w-1.5 h-1.5 bg-[#10b981] rounded-full" />}
+                          {hasPayment && <View className="w-1.5 h-1.5 bg-[#f97316] rounded-full" />}
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -170,11 +195,72 @@ export function CalendarModal({
 
           {/* ── Selected date display + actions ── */}
           <View className="px-5 pb-5 pt-2 border-t border-gray-100">
-            <Text className="text-[12px] text-gray-400 mb-3 text-center">
+            {/* Legend */}
+            <View className="flex-row flex-wrap gap-3 mb-3 justify-center">
+              <View className="flex-row items-center gap-1.5">
+                <View className="w-2 h-2 bg-[#064E3B] rounded-full" />
+                <Text className="text-[10px] font-semibold text-gray-500">PR</Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="w-2 h-2 bg-[#8b5cf6] rounded-full" />
+                <Text className="text-[10px] font-semibold text-gray-500">PO</Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="w-2 h-2 bg-[#10b981] rounded-full" />
+                <Text className="text-[10px] font-semibold text-gray-500">Delivery</Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="w-2 h-2 bg-[#f97316] rounded-full" />
+                <Text className="text-[10px] font-semibold text-gray-500">Payment</Text>
+              </View>
+            </View>
+            <Text className="text-[12px] text-gray-400 mb-2 text-center">
               {selected
                 ? selected.toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
                 : "Tap a date to select it"}
             </Text>
+            {/* Count preview */}
+            {selected && (() => {
+              const counts = getCountsForDate(selected);
+              const hasAny = counts.countPR + counts.countPO + counts.countDelivery + counts.countPayment > 0;
+              return (
+                <View className="mb-3">
+                  {hasAny ? (
+                    <View className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+                      <Text className="text-[11px] font-bold text-gray-600 mb-2 text-center">Entries for this date</Text>
+                      <View className="flex-row justify-around">
+                        {counts.countPR > 0 && (
+                          <View className="items-center">
+                            <Text className="text-[18px] font-extrabold text-[#064E3B]">{counts.countPR}</Text>
+                            <Text className="text-[10px] text-gray-500">PR</Text>
+                          </View>
+                        )}
+                        {counts.countPO > 0 && (
+                          <View className="items-center">
+                            <Text className="text-[18px] font-extrabold text-[#8b5cf6]">{counts.countPO}</Text>
+                            <Text className="text-[10px] text-gray-500">PO</Text>
+                          </View>
+                        )}
+                        {counts.countDelivery > 0 && (
+                          <View className="items-center">
+                            <Text className="text-[18px] font-extrabold text-[#10b981]">{counts.countDelivery}</Text>
+                            <Text className="text-[10px] text-gray-500">Delivery</Text>
+                          </View>
+                        )}
+                        {counts.countPayment > 0 && (
+                          <View className="items-center">
+                            <Text className="text-[18px] font-extrabold text-[#f97316]">{counts.countPayment}</Text>
+                            <Text className="text-[10px] text-gray-500">Payment</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ) : (
+                    <Text className="text-[11px] text-gray-400 text-center">No entries for this date</Text>
+                  )}
+                </View>
+              );
+            })()}
             <View className="flex-row gap-2">
               <TouchableOpacity onPress={() => { setSelected(today); setCursor(today); }} activeOpacity={0.8}
                 className="flex-1 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 items-center">
