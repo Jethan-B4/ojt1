@@ -4,7 +4,6 @@ import {
 } from "@/app/(components)/BACResolutionPreview";
 import BACResolutionPreviewModal from "@/app/(modals)/BACResolutionPreviewModal";
 import CalendarModalSheet from "@/app/(modals)/CalendarModal";
-import { preloadLogos } from "../lib/documentAssets";
 import {
   fetchBACResolutionsByDivision,
   insertStandaloneBACResolution,
@@ -28,6 +27,7 @@ import {
   View,
 } from "react-native";
 import WebView from "react-native-webview";
+import { preloadLogos } from "../../lib/documentAssets";
 
 type PRRow = {
   key: string;

@@ -38,7 +38,7 @@ import {
   buildCanvassHTML,
   type CanvassPreviewData,
 } from "../(components)/CanvassPreview";
-import { preloadLogos } from "../lib/documentAssets";
+import { preloadLogos } from "../../lib/documentAssets";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

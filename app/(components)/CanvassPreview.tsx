@@ -14,7 +14,7 @@
  *   supplierName / supplierAddress – pre-filled if a single supplier is known
  */
 
-import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../lib/documentAssets";
+import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../../lib/documentAssets";
 
 
 export interface CanvassPreviewData {

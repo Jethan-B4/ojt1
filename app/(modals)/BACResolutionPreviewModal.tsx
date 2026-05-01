@@ -33,7 +33,7 @@ import {
   buildBACResolutionHTML,
   type BACResolutionData,
 } from "../(components)/BACResolutionPreview";
-import { preloadLogos } from "../lib/documentAssets";
+import { preloadLogos } from "../../lib/documentAssets";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

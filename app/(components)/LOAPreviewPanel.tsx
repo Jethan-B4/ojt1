@@ -1,4 +1,4 @@
-import { getDARSquare2LogoHTML } from "@/app/lib/documentAssets";
+import { getDARSquare2LogoHTML } from "@/lib/documentAssets";
 import React from "react";
 import IARPreviewPanel from "./IARPreviewPanel";
 

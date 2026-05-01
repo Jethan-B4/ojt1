@@ -11,7 +11,7 @@
 
 // ─── Import document assets ──────────────────────────────────────────────────────
 
-import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../lib/documentAssets";
+import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoHTML } from "../../lib/documentAssets";
 
 // ─── Data shape ───────────────────────────────────────────────────────────────
 

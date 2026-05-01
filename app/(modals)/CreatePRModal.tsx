@@ -1017,7 +1017,7 @@ export function CreatePRModal({
   // ── Build Supabase-ready payload on submit ────────────────────────────────
 
   const handleSubmit = useCallback(() => {
-    const prNo = `DRAFT-${Date.now().toString(36).toUpperCase()}`;
+    const prNo = `PR-DRAFT-${Date.now().toString(36).toUpperCase()}`;
 
     const pr: Omit<PRRow, "id" | "created_at"> = {
       pr_no: prNo,

@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import { preloadLogos } from "../../lib/documentAssets";
 import {
   fetchPRStatuses,
   fetchPRWithItemsById,
@@ -25,7 +26,6 @@ import {
   toLineItemDisplay,
   toPRDisplay,
 } from "../../types/model";
-import { preloadLogos } from "../lib/documentAssets";
 
 type PRRecord = PRDisplay & {
   entityName?: string;

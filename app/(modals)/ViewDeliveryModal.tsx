@@ -4,7 +4,7 @@
 
 import POPreviewPanel, { buildPOHtml, type POPreviewData } from "@/app/(components)/POPreviewPanel";
 import PRPreviewPanel, { buildPRHtml, type PRLineItem, type PRPreviewData } from "@/app/(components)/PRPreviewPanel";
-import { preloadLogos } from "@/app/lib/documentAssets";
+import { preloadLogos } from "@/lib/documentAssets";
 import { fetchDeliveryById } from "@/lib/supabase/delivery";
 import { fetchPOWithItemsById, type POItemRow, type PORow } from "@/lib/supabase/po";
 import { fetchPRWithItemsById } from "@/lib/supabase/pr";
