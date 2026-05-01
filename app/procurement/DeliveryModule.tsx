@@ -488,13 +488,13 @@ const MoreSheet: React.FC<{
                 className="text-[15px] font-extrabold text-gray-900"
                 style={{ fontFamily: MONO }}
               >
-                {record.deliveryNo}
+                PO {record.poNo}
               </Text>
               <Text
                 className="text-[12px] text-gray-500 mt-0.5"
                 numberOfLines={1}
               >
-                PO {record.poNo}
+                Delivery: {record.deliveryNo}
               </Text>
               <View
                 className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
@@ -1019,10 +1019,10 @@ export default function DeliveryModule() {
                         className="text-[14px] font-extrabold text-gray-800"
                         style={{ fontFamily: MONO }}
                       >
-                        {r.deliveryNo}
+                        PO {r.poNo}
                       </Text>
                       <Text className="text-[11.5px] text-gray-500 font-semibold mt-0.5">
-                        PO {r.poNo}
+                        Delivery: {r.deliveryNo}
                       </Text>
                     </View>
                     <StatusPill

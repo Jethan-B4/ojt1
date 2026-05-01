@@ -1095,6 +1095,14 @@ export default function BACView({
                 procMode: mode,
               },
             ],
+      projectTitle: pr.purpose || "—",
+      procurementMode: mode,
+      approvedBudget: (
+        liveItems.reduce((s, i) => s + i.qty * i.unitCost, 0) || 0
+      ).toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
       whereas1: resolutionWhereas1,
       whereas2: resolutionWhereas2,
       whereas3: resolutionWhereas3,

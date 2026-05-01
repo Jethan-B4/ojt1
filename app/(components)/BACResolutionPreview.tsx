@@ -15,6 +15,14 @@ import { getBagongPilipinasLogoHTML, getDARSquare2LogoHTML, getISOCertifiedLogoH
 
 // ─── Data shape ───────────────────────────────────────────────────────────────
 
+export interface PREntry {
+  prNo: string;
+  date: string;
+  estimatedCost: string;
+  endUser: string;
+  procMode: string;
+}
+
 export interface BACResolutionData {
   /** e.g. "2025-001" */
   resolutionNo: string;
@@ -34,6 +42,28 @@ export interface BACResolutionData {
   supplier?: string;
   /** Awarded amount */
   awardedAmount?: string;
+  /** Location where resolution was signed */
+  location?: string;
+  /** PR entries for multi-PR resolutions */
+  prEntries?: PREntry[];
+  /** Whereas clause 1 */
+  whereas1?: string;
+  /** Whereas clause 2 */
+  whereas2?: string;
+  /** Whereas clause 3 */
+  whereas3?: string;
+  /** Now Therefore text */
+  nowThereforeText?: string;
+  /** BAC Chairperson name */
+  bacChairperson?: string;
+  /** BAC Vice-Chairperson name */
+  bacViceChairperson?: string;
+  /** Approver name */
+  approvedBy?: string;
+  /** Approver designation */
+  approvedByDesig?: string;
+  /** Procurement mode title (uppercase) */
+  procurementModeTitle?: string;
 }
 
 export interface BACMember {

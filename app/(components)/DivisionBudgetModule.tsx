@@ -19,22 +19,22 @@
  */
 
 import {
-    supabase,
-    type DivisionBudgetRow,
+  supabase,
+  type DivisionBudgetRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -440,6 +440,8 @@ export interface DivisionBudgetSectionProps {
   onUpdate: (id: string, year: number, amount: number, notes: string) => Promise<void>;
   onInsert: (divId: number, year: number, amount: number, notes: string) => Promise<void>;
   orsEntries?: any[]; // ORS entries for calculating utilization
+  poEntries?: any[]; // PO entries for PO-based utilization calculation
+  calcMode?: "ors" | "po"; // Calculation mode: ORS or PO based
 }
 
 /**
@@ -454,6 +456,8 @@ export default function DivisionBudgetSection({
   onUpdate,
   onInsert,
   orsEntries = [],
+  poEntries = [],
+  calcMode = "ors",
 }: DivisionBudgetSectionProps) {
   const [editBudget,      setEditBudget]      = useState<DivisionBudgetRow | null>(null);
   const [createAllocOpen, setCreateAllocOpen] = useState(false);
@@ -505,9 +509,17 @@ export default function DivisionBudgetSection({
           </View>
         ) : (
           budgets.map((row, i) => {
-            // Calculate utilized amount from ORS entries for this division
-            const divisionOrsEntries = orsEntries.filter(entry => entry.division_id === row.division_id);
-            const utilized = divisionOrsEntries.reduce((sum, entry) => sum + entry.amount, 0);
+            // Calculate utilized amount based on calcMode
+            let utilized = 0;
+            if (calcMode === "ors") {
+              // Calculate from ORS entries for this division
+              const divisionOrsEntries = orsEntries.filter(entry => entry.division_id === row.division_id);
+              utilized = divisionOrsEntries.reduce((sum, entry) => sum + entry.amount, 0);
+            } else {
+              // Calculate from PO entries for this division
+              const divisionPOEntries = poEntries.filter(po => po.division_id === row.division_id);
+              utilized = divisionPOEntries.reduce((sum, po) => sum + (po.total_amount || 0), 0);
+            }
             
             const pct = row.allocated > 0
               ? Math.min(Math.round((utilized / row.allocated) * 100), 100) : 0;

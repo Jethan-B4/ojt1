@@ -216,6 +216,9 @@ export default function BACResolutionModule({
         })
       : new Date().toLocaleDateString("en-PH"),
     location: r.resolved_at_place || "HL Bldg. Carnation St, Triangulo Naga City",
+    projectTitle: r.project_title ?? "—",
+    procurementMode: r.mode ?? PROC_MODES[0],
+    approvedBudget: r.approved_budget ?? "0.00",
     prEntries: (r.bac_resolution_prs ?? []).map((p: any) => ({
       prNo: p.pr_no,
       date: p.pr_date ?? "",
@@ -233,7 +236,10 @@ export default function BACResolutionModule({
     provincialOffice: "DARPO-CAMARINES SUR I",
     bacChairperson: "BAC Chairperson",
     bacViceChairperson: "BAC Vice-Chairperson",
-    bacMembers: ["BAC Member", "BAC Member"],
+    bacMembers: [
+      { name: "BAC Member", title: "BAC Member" },
+      { name: "BAC Member", title: "BAC Member" },
+    ],
     approvedBy: "PARPO II",
     approvedByDesig: "HOPE",
     procurementModeTitle: String(r.mode ?? "").toUpperCase(),
@@ -248,6 +254,11 @@ export default function BACResolutionModule({
         year: "numeric",
       }),
       location: resolvedAt || "HL Bldg. Carnation St, Triangulo Naga City",
+      projectTitle: prs.length > 0 ? prs[0].endUser : "—",
+      procurementMode: mode,
+      approvedBudget: prs
+        .reduce((sum, p) => sum + (Number(p.estimatedCost) || 0), 0)
+        .toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       prEntries:
         prs.length > 0
           ? prs.map((p) => ({
@@ -276,7 +287,10 @@ export default function BACResolutionModule({
       provincialOffice: "DARPO-CAMARINES SUR I",
       bacChairperson: "BAC Chairperson",
       bacViceChairperson: "BAC Vice-Chairperson",
-      bacMembers: ["BAC Member", "BAC Member"],
+      bacMembers: [
+        { name: "BAC Member", title: "BAC Member" },
+        { name: "BAC Member", title: "BAC Member" },
+      ],
       approvedBy: "PARPO II",
       approvedByDesig: "HOPE",
       procurementModeTitle: mode.toUpperCase(),
@@ -286,9 +300,7 @@ export default function BACResolutionModule({
 
   const draftHtml = useMemo(() => {
     if (!logosLoaded) return "";
-    return buildBACResolutionHTML(draftPreview, {
-      template: previewMode === "template",
-    });
+    return buildBACResolutionHTML(draftPreview, previewMode === "template");
   }, [draftPreview, logosLoaded, previewMode]);
 
   const ensureLogos = useCallback(async () => {
@@ -304,9 +316,7 @@ export default function BACResolutionModule({
     try {
       await ensureLogos();
       await Print.printAsync({
-        html: buildBACResolutionHTML(draftPreview, {
-          template: previewMode === "template",
-        }),
+        html: buildBACResolutionHTML(draftPreview, previewMode === "template"),
       });
     } catch {}
   }, [ensureLogos, draftPreview, previewMode]);
@@ -315,9 +325,7 @@ export default function BACResolutionModule({
     try {
       await ensureLogos();
       const { uri } = await Print.printToFileAsync({
-        html: buildBACResolutionHTML(draftPreview, {
-          template: previewMode === "template",
-        }),
+        html: buildBACResolutionHTML(draftPreview, previewMode === "template"),
       });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {

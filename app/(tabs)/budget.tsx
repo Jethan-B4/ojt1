@@ -22,14 +22,17 @@
 import {
   fetchBudgets,
   fetchOrsEntries,
+  fetchPurchaseOrders,
+  fetchPurchaseOrdersByDivision,
   insertDivisionBudget,
   supabase,
   updateDivisionBudget,
   type DivisionBudgetRow,
   type OrsEntryRow,
+  type PORow
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -76,9 +79,13 @@ export default function BudgetScreen() {
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [budgets, setBudgets] = useState<DivisionBudgetRow[]>([]);
   const [orsEntries, setOrsEntries] = useState<OrsEntryRow[]>([]);
+  const [poEntries, setPoEntries] = useState<PORow[]>([]);
   const [prStatusByNo, setPrStatusByNo] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Budget calculation mode: 'ors' | 'po'
+  const [calcMode, setCalcMode] = useState<"ors" | "po">("ors");
 
   // ── Data loading ────────────────────────────────────────────────────────
 
@@ -86,12 +93,18 @@ export default function BudgetScreen() {
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const [b, o] = await Promise.all([
+        // Fetch budgets, ORS entries, and POs in parallel
+        const poFetch =
+          roleId === 1 || divisionId == null
+            ? fetchPurchaseOrders()
+            : fetchPurchaseOrdersByDivision(Number(divisionId));
+        const [b, o, p] = await Promise.all([
           fetchBudgets(year),
           fetchOrsEntries(
             year,
             isEndUser && divisionId ? divisionId : undefined,
           ),
+          poFetch,
         ]);
         setBudgets(
           isEndUser && divisionId
@@ -99,6 +112,14 @@ export default function BudgetScreen() {
             : b,
         );
         setOrsEntries(o);
+        // Filter POs by fiscal year (based on created_at date)
+        const filteredPOs = (p ?? []).filter((po) => {
+          const poYear = po.created_at
+            ? new Date(po.created_at).getFullYear()
+            : year;
+          return poYear === year;
+        });
+        setPoEntries(filteredPOs);
         const prNos = [
           ...new Set(
             (o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean),
@@ -127,7 +148,7 @@ export default function BudgetScreen() {
         setRefreshing(false);
       }
     },
-    [year, isEndUser, divisionId],
+    [year, isEndUser, divisionId, roleId],
   );
 
   useEffect(() => {
@@ -138,8 +159,17 @@ export default function BudgetScreen() {
 
   const totalAllocated = budgets.reduce((s, r) => s + r.allocated, 0);
 
-  // Calculate utilized amount from ORS entries instead of budget utilized field
-  const totalUtilized = orsEntries.reduce((s, entry) => s + entry.amount, 0);
+  // Calculate utilized amount based on selected mode:
+  // - ORS mode: sum of ORS entry amounts
+  // - PO mode: sum of PO total_amount values
+  const totalUtilized = useMemo(() => {
+    if (calcMode === "ors") {
+      return orsEntries.reduce((s, entry) => s + entry.amount, 0);
+    } else {
+      // PO mode: sum total_amount from all POs
+      return poEntries.reduce((s, po) => s + (po.total_amount || 0), 0);
+    }
+  }, [calcMode, orsEntries, poEntries]);
 
   const totalRemaining = totalAllocated - totalUtilized;
   const utilizationPct =
@@ -333,6 +363,55 @@ export default function BudgetScreen() {
           </View>
         </View>
 
+        {/* ── Utilization Calculation Mode Toggle ── */}
+        <View className="bg-white rounded-2xl p-3 mb-3 border border-gray-200">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
+              <MaterialIcons name="calculate" size={16} color="#6b7280" />
+              <Text className="text-[12px] font-semibold text-gray-600">
+                Utilization Calculation
+              </Text>
+            </View>
+            <View className="flex-row bg-gray-100 rounded-xl p-1">
+              <TouchableOpacity
+                onPress={() => setCalcMode("ors")}
+                activeOpacity={0.8}
+                className={`px-3 py-1.5 rounded-lg ${
+                  calcMode === "ors" ? "bg-white shadow-sm" : ""
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-bold ${
+                    calcMode === "ors" ? "text-[#064E3B]" : "text-gray-500"
+                  }`}
+                >
+                  ORS
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setCalcMode("po")}
+                activeOpacity={0.8}
+                className={`px-3 py-1.5 rounded-lg ${
+                  calcMode === "po" ? "bg-white shadow-sm" : ""
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-bold ${
+                    calcMode === "po" ? "text-[#064E3B]" : "text-gray-500"
+                  }`}
+                >
+                  PO
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text className="text-[10px] text-gray-400 mt-2">
+            {calcMode === "ors"
+              ? "Calculating utilization based on Obligation Request and Status (ORS) entries"
+              : "Calculating utilization based on Purchase Order (PO) total amounts"}
+          </Text>
+        </View>
+
         {/* ── Budget by Division (DivisionBudgetModule) ── */}
         <DivisionBudgetSection
           budgets={budgets}
@@ -341,6 +420,8 @@ export default function BudgetScreen() {
           onUpdate={handleUpdateAllocation}
           onInsert={handleInsertAllocation}
           orsEntries={orsEntries}
+          poEntries={poEntries}
+          calcMode={calcMode}
         />
 
         {/* ── ORS Processing (ORSModule) ── */}

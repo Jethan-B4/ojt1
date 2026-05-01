@@ -26,30 +26,30 @@
  */
 
 import {
-    deleteOrsEntry,
-    fetchOrsEntries,
-    generateOrsNumber,
-    insertOrsEntry,
-    updateOrsEntry,
-    updatePO,
-    type DivisionBudgetRow,
-    type OrsEntryRow,
+  deleteOrsEntry,
+  fetchOrsEntries,
+  generateOrsNumber,
+  insertOrsEntry,
+  updateOrsEntry,
+  updatePO,
+  type DivisionBudgetRow,
+  type OrsEntryRow,
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useWindowDimensions,
-    View,
-    type TextInputProps,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+  type TextInputProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import CalendarPickerModal from "../(modals)/CalendarModal";
@@ -701,11 +701,11 @@ export function OrsModal({
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
-        )}
-      </SafeAreaView>
-    </Modal>
-  );
-}
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
 
 // ─── ORSSection — used by budget.tsx ─────────────────────────────────────────
 
