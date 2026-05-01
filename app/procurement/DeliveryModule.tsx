@@ -490,12 +490,6 @@ const MoreSheet: React.FC<{
               >
                 PO {record.poNo}
               </Text>
-              <Text
-                className="text-[12px] text-gray-500 mt-0.5"
-                numberOfLines={1}
-              >
-                Delivery: {record.deliveryNo}
-              </Text>
               <View
                 className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
                 style={{ backgroundColor: c.bg }}
@@ -1020,9 +1014,6 @@ export default function DeliveryModule() {
                         style={{ fontFamily: MONO }}
                       >
                         PO {r.poNo}
-                      </Text>
-                      <Text className="text-[11.5px] text-gray-500 font-semibold mt-0.5">
-                        Delivery: {r.deliveryNo}
                       </Text>
                     </View>
                     <StatusPill

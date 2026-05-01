@@ -351,10 +351,10 @@ export default function PaymentModule() {
                   className="text-[15px] font-extrabold text-gray-900"
                   style={{ fontFamily: MONO }}
                 >
-                  {record.deliveryNo}
+                  PO {record.poNo}
                 </Text>
                 <Text className="text-[12px] text-gray-500 mt-0.5" numberOfLines={1}>
-                  PO {record.poNo} · {record.supplier}
+                  {record.supplier}
                 </Text>
                 <View
                   className="mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2.5 py-1"
@@ -483,9 +483,6 @@ export default function PaymentModule() {
                         className="text-[14px] font-extrabold text-gray-800"
                         style={{ fontFamily: MONO }}
                       >
-                        {r.deliveryNo}
-                      </Text>
-                      <Text className="text-[11.5px] text-gray-500 font-semibold mt-0.5">
                         PO {r.poNo}
                       </Text>
                     </View>
