@@ -1,17 +1,19 @@
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    BackHandler,
+    Dimensions,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { JSX } from 'react/jsx-runtime';
 import { useAuth } from './contexts/AuthContext';
@@ -27,6 +29,48 @@ export default function AuthScreen(): JSX.Element {
   const passwordRef = useRef<TextInput>(null);
   const { handleSignIn } = useAuth();
   const router = useRouter();
+
+  // Handle back button press - show exit confirmation instead of navigating back
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (Platform.OS === 'web') {
+          // On web, prevent navigation and show confirmation
+          if (window.confirm('Do you want to exit the app?')) {
+            // User confirmed - close the window/tab
+            window.close();
+          }
+          return true; // Prevent default back navigation
+        }
+
+        // On mobile, show native alert
+        Alert.alert(
+          'Exit App',
+          'Do you want to exit the app?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => {} },
+            {
+              text: 'Exit',
+              style: 'destructive',
+              onPress: () => {
+                // Exit the app
+                BackHandler.exitApp();
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+        return true; // Prevent default back navigation
+      };
+
+      // Add event listener for Android back button
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        subscription.remove();
+      };
+    }, [])
+  );
 
   const handleSignInPress = async (): Promise<void> => {
     setIsLoading(true);

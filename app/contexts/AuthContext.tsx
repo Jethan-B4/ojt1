@@ -1,10 +1,10 @@
 import { router } from "expo-router";
 import React, {
-  createContext,
-  JSX,
-  ReactNode,
-  useContext,
-  useState,
+    createContext,
+    JSX,
+    ReactNode,
+    useContext,
+    useState,
 } from "react";
 import { Alert, Platform } from "react-native";
 import { hasInternetConnection } from "../../lib/network";
@@ -143,6 +143,13 @@ export function AuthProvider({
     const performSignOut = () => {
       setIsAuthenticated(false);
       setCurrentUser(null);
+      // Dismiss all screens and clear navigation history before navigating to auth
+      // This prevents the user from going back to authenticated screens after logout
+      try {
+        router.dismissAll?.();
+      } catch {
+        // dismissAll may not be available in all router versions
+      }
       router.replace("/auth");
     };
 

@@ -12,30 +12,41 @@
  *   role_id 6+ (End User)   → own division's PRs only
  */
 
+import { supabase } from "@/lib/supabase/client";
 import {
-  fetchLatestRemarkByPR,
-  fetchPRStatuses,
-  fetchPurchaseRequests,
-  fetchPurchaseRequestsByDivision,
-  fetchRemarksByPR,
-  type PRRow,
-  type PRStatusRow,
-  type RemarkRow,
-  type StatusFlag,
+    fetchDeliveries,
+    fetchDeliveriesByDivision,
+    type DeliveryRow,
+} from "@/lib/supabase/delivery";
+import {
+    fetchLatestRemarkByPR,
+    fetchPRStatuses,
+    fetchPurchaseRequests,
+    fetchPurchaseRequestsByDivision,
+    fetchRemarksByPR,
+    type PRRow,
+    type PRStatusRow,
+    type RemarkRow,
+    type StatusFlag,
 } from "@/lib/supabase/index";
+import {
+    fetchPurchaseOrders,
+    fetchPurchaseOrdersByDivision,
+    type PORow,
+} from "@/lib/supabase/po";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
+    ActivityIndicator,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -325,11 +336,34 @@ function LifecycleMini({ statusId }: { statusId: number }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface LogEntry {
-  pr: PRRow;
+type PhaseType = "pr" | "po" | "delivery" | "payment";
+
+interface BaseLogEntry {
+  phase: PhaseType;
   remarks: RemarkRow[];
-  loaded: boolean; // whether remarks have been fetched
+  loaded: boolean;
+  id: string;
+  statusId: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
+
+interface PRLogEntry extends BaseLogEntry {
+  phase: "pr";
+  pr: PRRow;
+}
+
+interface POLogEntry extends BaseLogEntry {
+  phase: "po";
+  po: PORow;
+}
+
+interface DeliveryLogEntry extends BaseLogEntry {
+  phase: "delivery" | "payment";
+  delivery: DeliveryRow;
+}
+
+type LogEntry = PRLogEntry | POLogEntry | DeliveryLogEntry;
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 
@@ -458,9 +492,59 @@ function RemarkItem({
   );
 }
 
-// ─── PR log card ──────────────────────────────────────────────────────────────
+// ─── Helpers for entry display ───────────────────────────────────────────────
 
-function PRLogCard({
+function getEntryDisplay(entry: LogEntry) {
+  if (entry.phase === "pr") {
+    return {
+      number: entry.pr.pr_no,
+      description: entry.pr.purpose,
+      section: entry.pr.office_section,
+      amount: entry.pr.total_cost,
+      isHighValue: entry.pr.is_high_value,
+      createdAt: entry.pr.created_at,
+      updatedAt: entry.pr.updated_at,
+      statusId: entry.pr.status_id,
+      icon: "description" as const,
+      iconBg: "#ecfdf5",
+      iconColor: "#064E3B",
+    };
+  } else if (entry.phase === "po") {
+    return {
+      number: entry.po.po_no || `PO-${entry.po.id}`,
+      description: entry.po.supplier || "Purchase Order",
+      section: entry.po.office_section,
+      amount: entry.po.total_amount,
+      isHighValue: false,
+      createdAt: entry.po.created_at,
+      updatedAt: entry.po.updated_at,
+      statusId: entry.po.status_id,
+      icon: "receipt" as const,
+      iconBg: "#eff6ff",
+      iconColor: "#1e40af",
+    };
+  } else {
+    // delivery or payment
+    const isPayment = entry.phase === "payment";
+    return {
+      number: entry.delivery.delivery_no,
+      description: entry.delivery.supplier || (isPayment ? "Payment" : "Delivery"),
+      section: entry.delivery.office_section,
+      amount: null,
+      isHighValue: false,
+      createdAt: entry.delivery.created_at,
+      updatedAt: entry.delivery.updated_at,
+      statusId: entry.delivery.status_id,
+      icon: isPayment ? "payment" as const : "local-shipping" as const,
+      iconBg: isPayment ? "#fff7ed" : "#f0fdf4",
+      iconColor: isPayment ? "#9a3412" : "#166534",
+    };
+  }
+}
+
+// ─── Procurement Log Card ───────────────────────────────────────────────────
+
+function ProcurementLogCard({
   entry,
   expanded,
   onToggle,
@@ -475,7 +559,9 @@ function PRLogCard({
 }) {
   const { width } = useWindowDimensions();
   const compact = width < 380;
-  const { pr, remarks, loaded } = entry;
+  const { remarks, loaded } = entry;
+  const display = getEntryDisplay(entry);
+  
   const latestFlagId = loaded
     ? (remarks.find((r) => r.status_flag_id)?.status_flag_id ?? null)
     : (latestRemark?.status_flag_id ?? null);
@@ -518,12 +604,12 @@ function PRLogCard({
                   width: 36,
                   height: 36,
                   borderRadius: 10,
-                  backgroundColor: "#ecfdf5",
+                  backgroundColor: display.iconBg,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <MaterialIcons name="description" size={18} color="#064E3B" />
+                <MaterialIcons name={display.icon} size={18} color={display.iconColor} />
               </View>
 
               <View style={{ flex: 1, gap: 2 }}>
@@ -539,13 +625,13 @@ function PRLogCard({
                     style={{
                       fontSize: 12.5,
                       fontWeight: "800",
-                      color: "#064E3B",
+                      color: display.iconColor,
                       fontFamily: MONO,
                     }}
                   >
-                    {pr.pr_no}
+                    {display.number}
                   </Text>
-                  {pr.is_high_value && (
+                  {display.isHighValue && (
                     <View
                       style={{
                         backgroundColor: "#022c22",
@@ -570,7 +656,7 @@ function PRLogCard({
                   style={{ fontSize: 11.5, color: "#6b7280" }}
                   numberOfLines={2}
                 >
-                  {pr.purpose}
+                  {display.description}
                 </Text>
                 <View
                   style={{
@@ -582,11 +668,11 @@ function PRLogCard({
                   }}
                 >
                   <StatusPill
-                    statusId={pr.status_id}
+                    statusId={display.statusId}
                     statusConfig={statusConfig}
                   />
                   {latestFlag && <FlagPill flag={latestFlag} />}
-                  <LifecycleMini statusId={pr.status_id} />
+                  <LifecycleMini statusId={display.statusId} />
                 </View>
               </View>
             </View>
@@ -605,9 +691,9 @@ function PRLogCard({
             >
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 10, color: "#9ca3af" }}>
-                  Created: {fmtDate(pr.created_at)}
+                  Created: {fmtDate(display.createdAt)}
                 </Text>
-                {pr.updated_at && pr.updated_at !== pr.created_at && (
+                {display.updatedAt && display.updatedAt !== display.createdAt && (
                   <Text
                     style={{
                       fontSize: 10,
@@ -615,23 +701,25 @@ function PRLogCard({
                       fontStyle: "italic",
                     }}
                   >
-                    Updated: {fmtDate(pr.updated_at)}
+                    Updated: {fmtDate(display.updatedAt)}
                   </Text>
                 )}
               </View>
               <View style={{ alignItems: "flex-end", gap: 4 }}>
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: "800",
-                    color: "#374151",
-                  }}
-                >
-                  <Text>₱</Text>
-                  <Text style={{ fontFamily: MONO }}>
-                    {Number(pr.total_cost).toLocaleString("en-PH")}
+                {display.amount !== null && display.amount !== undefined && (
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: "800",
+                      color: "#374151",
+                    }}
+                  >
+                    <Text>₱</Text>
+                    <Text style={{ fontFamily: MONO }}>
+                      {Number(display.amount).toLocaleString("en-PH")}
+                    </Text>
                   </Text>
-                </Text>
+                )}
                 <MaterialIcons
                   name={expanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
                   size={18}
@@ -649,12 +737,12 @@ function PRLogCard({
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                backgroundColor: "#ecfdf5",
+                backgroundColor: display.iconBg,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <MaterialIcons name="description" size={18} color="#064E3B" />
+              <MaterialIcons name={display.icon} size={18} color={display.iconColor} />
             </View>
 
             <View style={{ flex: 1, gap: 2 }}>
@@ -665,13 +753,13 @@ function PRLogCard({
                   style={{
                     fontSize: 12.5,
                     fontWeight: "800",
-                    color: "#064E3B",
+                    color: display.iconColor,
                     fontFamily: MONO,
                   }}
                 >
-                  {pr.pr_no}
+                  {display.number}
                 </Text>
-                {pr.is_high_value && (
+                {display.isHighValue && (
                   <View
                     style={{
                       backgroundColor: "#022c22",
@@ -696,7 +784,7 @@ function PRLogCard({
                 style={{ fontSize: 11.5, color: "#6b7280" }}
                 numberOfLines={1}
               >
-                {pr.purpose}
+                {display.description}
               </Text>
               <View
                 style={{
@@ -708,27 +796,29 @@ function PRLogCard({
                 }}
               >
                 <StatusPill
-                  statusId={pr.status_id}
+                  statusId={display.statusId}
                   statusConfig={statusConfig}
                 />
                 {latestFlag && <FlagPill flag={latestFlag} />}
-                <LifecycleMini statusId={pr.status_id} />
+                <LifecycleMini statusId={display.statusId} />
               </View>
             </View>
 
             <View style={{ alignItems: "flex-end", gap: 4 }}>
-              <Text
-                style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}
-              >
-                <Text>₱</Text>
-                <Text style={{ fontFamily: MONO }}>
-                  {Number(pr.total_cost).toLocaleString("en-PH")}
+              {display.amount !== null && display.amount !== undefined && (
+                <Text
+                  style={{ fontSize: 12.5, fontWeight: "700", color: "#374151" }}
+                >
+                  <Text>₱</Text>
+                  <Text style={{ fontFamily: MONO }}>
+                    {Number(display.amount).toLocaleString("en-PH")}
+                  </Text>
                 </Text>
-              </Text>
+              )}
               <Text style={{ fontSize: 10, color: "#9ca3af" }}>
-                Created: {fmtDate(pr.created_at)}
+                Created: {fmtDate(display.createdAt)}
               </Text>
-              {pr.updated_at && pr.updated_at !== pr.created_at && (
+              {display.updatedAt && display.updatedAt !== display.createdAt && (
                 <Text
                   style={{
                     fontSize: 10,
@@ -736,7 +826,7 @@ function PRLogCard({
                     fontStyle: "italic",
                   }}
                 >
-                  Updated: {fmtDate(pr.updated_at)}
+                  Updated: {fmtDate(display.updatedAt)}
                 </Text>
               )}
               <MaterialIcons
@@ -843,7 +933,7 @@ function PRLogCard({
             <View style={{ alignItems: "center", paddingVertical: 12, gap: 6 }}>
               <MaterialIcons name="history" size={28} color="#d1d5db" />
               <Text style={{ fontSize: 12, color: "#9ca3af" }}>
-                No remarks recorded for this PR.
+                No remarks recorded.
               </Text>
             </View>
           ) : (
@@ -908,9 +998,9 @@ export default function ProcurementLog({ navigation }: any) {
   const isEndUser = roleId >= ENDUSER_ROLE;
 
   // ── Data state ──────────────────────────────────────────────────────────────
-  const [allPRs, setAllPRs] = useState<PRRow[]>([]);
+  const [allEntries, setAllEntries] = useState<LogEntry[]>([]);
   const [statuses, setStatuses] = useState<PRStatusRow[]>([]);
-  const [entries, setEntries] = useState<Record<string, LogEntry>>({});
+  const [entriesMap, setEntriesMap] = useState<Record<string, LogEntry>>({});
   const [latestRemarks, setLatestRemarks] = useState<
     Record<string, RemarkRow | null>
   >({});
@@ -939,111 +1029,233 @@ export default function ProcurementLog({ navigation }: any) {
   // ── Build dynamic status config ──────────────────────────────────────────────
   const statusConfig = buildStatusConfig(statuses);
 
-  // ── Load PRs ──────────────────────────────────────────────────────────────────
-  const loadPRs = useCallback(
+  // ── Helper to determine phase from delivery status ───────────────────────────
+  const getDeliveryPhase = (statusId: number): "delivery" | "payment" => {
+    if (statusId >= 25 && statusId <= 32) return "payment";
+    if (statusId === 35 || statusId === 36) return "payment";
+    return "delivery";
+  };
+
+  // ── Load all procurement entries (PR, PO, Delivery, Payment) ─────────────────
+  const loadAllEntries = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const [rows, statRows] = await Promise.all([
-          isEndUser && divisionId
-            ? fetchPurchaseRequestsByDivision(divisionId)
-            : fetchPurchaseRequests(),
-          fetchPRStatuses(),
-        ]);
-        setAllPRs(rows);
+        const [statRows] = await Promise.all([fetchPRStatuses()]);
         setStatuses(statRows);
 
-        // Fetch all remarks for each PR in parallel (for immediate count display)
-        const entriesWithRemarks = await Promise.all(
-          rows.map(async (r) => {
-            const key = String(r.id);
-            const [latest, allRemarks] = await Promise.all([
-              fetchLatestRemarkByPR(r.id).catch(() => null),
-              fetchRemarksByPR(r.id).catch(() => []),
-            ]);
-            return {
-              key,
-              latest,
-              entry: { pr: r, remarks: allRemarks, loaded: true },
-            };
-          }),
-        );
+        // Fetch all data types based on user role
+        const canSeeAll = roleId === 1 || roleId === 8;
 
-        // Update latest remarks for badges
-        setLatestRemarks(
-          Object.fromEntries(entriesWithRemarks.map((e) => [e.key, e.latest])),
-        );
+        const [prRows, poRows, deliveryRows] = await Promise.all([
+          canSeeAll || !divisionId
+            ? fetchPurchaseRequests()
+            : fetchPurchaseRequestsByDivision(divisionId),
+          canSeeAll || !divisionId
+            ? fetchPurchaseOrders()
+            : fetchPurchaseOrdersByDivision(divisionId),
+          canSeeAll || !divisionId
+            ? fetchDeliveries()
+            : fetchDeliveriesByDivision(divisionId),
+        ]);
 
-        // Set entries with pre-loaded remarks
-        setEntries((prev) => {
-          const next: Record<string, LogEntry> = {};
-          for (const { key, entry } of entriesWithRemarks) {
-            next[key] = entry;
+        // Build unified entries
+        const unifiedEntries: LogEntry[] = [];
+
+        // Add PR entries
+        for (const pr of prRows) {
+          const key = `pr-${pr.id}`;
+          const remarks = await fetchRemarksByPR(pr.id).catch(() => []);
+          const latest = await fetchLatestRemarkByPR(pr.id).catch(() => null);
+          
+          unifiedEntries.push({
+            phase: "pr",
+            id: key,
+            statusId: pr.status_id || 0,
+            createdAt: pr.created_at,
+            updatedAt: pr.updated_at,
+            pr,
+            remarks,
+            loaded: true,
+          });
+          
+          setLatestRemarks((prev) => ({ ...prev, [key]: latest }));
+        }
+
+        // Add PO entries
+        for (const po of poRows) {
+          const key = `po-${po.id}`;
+          // Fetch remarks linked to this PO
+          const { data: remarksData } = await supabase
+            .from("remarks")
+            .select("id, pr_id, po_id, remark, status_flag_id, created_at, users(fullname)")
+            .eq("po_id", po.id)
+            .order("created_at", { ascending: false });
+          
+          const remarks = (remarksData ?? []).map((r: any) => ({
+            ...r,
+            username: r.users?.fullname ?? null,
+          }));
+          
+          unifiedEntries.push({
+            phase: "po",
+            id: key,
+            statusId: po.status_id || 0,
+            createdAt: po.created_at,
+            updatedAt: po.updated_at,
+            po,
+            remarks,
+            loaded: true,
+          });
+        }
+
+        // Add Delivery/Payment entries
+        for (const delivery of deliveryRows) {
+          const phase = getDeliveryPhase(delivery.status_id);
+          const key = `del-${delivery.id}`;
+          
+          // Fetch remarks linked to this delivery via PO
+          let remarks: RemarkRow[] = [];
+          if (delivery.po_id) {
+            const { data: remarksData } = await supabase
+              .from("remarks")
+              .select("id, pr_id, po_id, remark, status_flag_id, created_at, users(fullname)")
+              .eq("po_id", delivery.po_id)
+              .order("created_at", { ascending: false });
+            
+            remarks = (remarksData ?? []).map((r: any) => ({
+              ...r,
+              username: r.users?.fullname ?? null,
+            }));
           }
-          return next;
+          
+          unifiedEntries.push({
+            phase,
+            id: key,
+            statusId: delivery.status_id,
+            createdAt: delivery.created_at,
+            updatedAt: delivery.updated_at,
+            delivery,
+            remarks,
+            loaded: true,
+          });
+        }
+
+        // Sort by updated_at desc
+        unifiedEntries.sort((a, b) => {
+          const aDate = new Date(a.updatedAt || a.createdAt || "").getTime();
+          const bDate = new Date(b.updatedAt || b.createdAt || "").getTime();
+          return bDate - aDate;
         });
+
+        setAllEntries(unifiedEntries);
+        
+        // Build entries map for quick lookup
+        const map: Record<string, LogEntry> = {};
+        for (const entry of unifiedEntries) {
+          map[entry.id] = entry;
+        }
+        setEntriesMap(map);
+      } catch (err) {
+        console.error("Error loading procurement entries:", err);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [isEndUser, divisionId],
+    [isEndUser, divisionId, roleId],
   );
 
   useEffect(() => {
-    loadPRs();
-  }, [loadPRs]);
+    loadAllEntries();
+  }, [loadAllEntries]);
 
   // ── Lazy-load remarks on expand ───────────────────────────────────────────────
   const handleToggle = useCallback(
-    async (prId: string) => {
-      const isOpen = expanded.has(prId);
+    async (entryId: string) => {
+      const isOpen = expanded.has(entryId);
       if (isOpen) {
         setExpanded((prev) => {
           const s = new Set(prev);
-          s.delete(prId);
+          s.delete(entryId);
           return s;
         });
         return;
       }
-      // Open — mark expanded immediately, then fetch if not yet loaded
-      setExpanded((prev) => new Set([...prev, prId]));
-      if (!entries[prId]?.loaded) {
-        const remarks = await fetchRemarksByPR(prId);
-        setEntries((prev) => ({
-          ...prev,
-          [prId]: { ...prev[prId], remarks, loaded: true },
-        }));
-      }
+      // Open — mark expanded immediately
+      setExpanded((prev) => new Set([...prev, entryId]));
     },
-    [expanded, entries],
+    [expanded],
   );
 
+  // ── Helper to get display info from any entry type ──────────────────────────
+  const getEntryDisplayInfo = (entry: LogEntry) => {
+    if (entry.phase === "pr") {
+      return {
+        number: entry.pr.pr_no,
+        description: entry.pr.purpose,
+        section: entry.pr.office_section,
+        amount: entry.pr.total_cost,
+        isHighValue: entry.pr.is_high_value,
+        prId: String(entry.pr.id),
+      };
+    } else if (entry.phase === "po") {
+      return {
+        number: entry.po.po_no || "PO-" + entry.po.id,
+        description: entry.po.office_section || "Purchase Order",
+        section: entry.po.office_section,
+        amount: entry.po.total_amount,
+        isHighValue: false,
+        prId: entry.po.pr_id || null,
+      };
+    } else {
+      // delivery or payment
+      return {
+        number: entry.delivery.delivery_no,
+        description: entry.delivery.supplier || "Delivery",
+        section: entry.delivery.office_section,
+        amount: null,
+        isHighValue: false,
+        prId: null,
+      };
+    }
+  };
+
   // ── Filtered & sorted list ──────────────────────────────────────────────────
-  const filteredPRs = allPRs
-    .filter((pr) => {
+  const filteredEntries = allEntries
+    .filter((entry) => {
       // Fiscal year filter
-      if (!pr.created_at) return false;
-      const createdYear = new Date(pr.created_at).getFullYear();
+      const createdAt = entry.createdAt;
+      if (!createdAt) return false;
+      const createdYear = new Date(createdAt).getFullYear();
       if (createdYear !== year) return false;
 
-      const sid = Number(pr.status_id) || 0;
+      const sid = entry.statusId;
+
+      // Phase filter
       if (phaseFilter !== "all") {
         if (phaseFilter === "completed") {
           if (![33, 34, 35, 36].includes(sid)) return false;
+        } else if (phaseFilter === "payment") {
+          if (entry.phase !== "payment" && 
+              !(entry.phase === "delivery" && (sid >= 25 && sid <= 32 || sid === 35 || sid === 36))) return false;
+        } else if (phaseFilter === "delivery") {
+          if (entry.phase !== "delivery" || (sid >= 25 && sid <= 32 || sid === 35 || sid === 36)) return false;
         } else {
-          if (phaseForStatusId(sid) !== phaseFilter) return false;
+          if (entry.phase !== phaseFilter) return false;
         }
       }
-      if (statusFilter !== null && pr.status_id !== statusFilter) return false;
+
+      // Status filter
+      if (statusFilter !== null && sid !== statusFilter) return false;
+
+      // Flag filter
       if (flagFilter !== null) {
-        const prId = String(pr.id);
-        const entry = entries[prId];
-        const latest = latestRemarks[prId];
+        const latest = latestRemarks[entry.id];
 
         // Check if any loaded remark matches the flag
         const loadedMatch =
-          entry?.loaded &&
+          entry.loaded &&
           entry.remarks.some(
             (r) => getFlagFromId(r.status_flag_id) === flagFilter,
           );
@@ -1054,12 +1266,16 @@ export default function ProcurementLog({ navigation }: any) {
 
         if (!loadedMatch && !latestMatch) return false;
       }
+
+      // Search filter
       if (search.trim()) {
         const q = search.toLowerCase();
+        const display = getEntryDisplayInfo(entry);
         return (
-          pr.pr_no.toLowerCase().includes(q) ||
-          pr.purpose.toLowerCase().includes(q) ||
-          pr.office_section?.toLowerCase().includes(q)
+          display.number?.toLowerCase().includes(q) ||
+          display.description?.toLowerCase().includes(q) ||
+          display.section?.toLowerCase().includes(q) ||
+          false
         );
       }
       return true;
@@ -1067,34 +1283,32 @@ export default function ProcurementLog({ navigation }: any) {
     .sort((a, b) => {
       if (sortBy === "date_created") {
         return (
-          new Date(b.created_at || "").getTime() -
-          new Date(a.created_at || "").getTime()
+          new Date(b.createdAt || "").getTime() -
+          new Date(a.createdAt || "").getTime()
         );
       } else if (sortBy === "last_updated") {
         return (
-          new Date(b.updated_at || b.created_at || "").getTime() -
-          new Date(a.updated_at || a.created_at || "").getTime()
+          new Date(b.updatedAt || b.createdAt || "").getTime() -
+          new Date(a.updatedAt || a.createdAt || "").getTime()
         );
       } else if (sortBy === "has_flag") {
         // Sort by presence of flags (flagged first), then by creation date
         const aFlags =
-          entries[String(a.id)]?.remarks?.some((r) => r.status_flag_id) ??
-          false;
+          a.remarks?.some((r) => r.status_flag_id) ?? false;
         const bFlags =
-          entries[String(b.id)]?.remarks?.some((r) => r.status_flag_id) ??
-          false;
+          b.remarks?.some((r) => r.status_flag_id) ?? false;
         if (aFlags !== bFlags) return aFlags ? -1 : 1;
         return (
-          new Date(b.created_at || "").getTime() -
-          new Date(a.created_at || "").getTime()
+          new Date(b.createdAt || "").getTime() -
+          new Date(a.createdAt || "").getTime()
         );
       }
       return 0;
     });
 
   // ── Pagination ─────────────────────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filteredPRs.length / PAGE_SIZE));
-  const pagedPRs = filteredPRs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  const pagedEntries = filteredEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -1360,10 +1574,10 @@ export default function ProcurementLog({ navigation }: any) {
       <View className="flex-row items-center justify-between px-4 pb-1.5 pt-0.5">
         <Text className="text-[11px] text-gray-400">
           <Text className="font-semibold text-gray-500">
-            {filteredPRs.length}
+            {filteredEntries.length}
           </Text>
           {" of "}
-          {allPRs.length} records
+          {allEntries.length} records
           {statusFilter !== null || flagFilter !== null || search
             ? " (filtered)"
             : ""}
@@ -1384,7 +1598,7 @@ export default function ProcurementLog({ navigation }: any) {
         </View>
       </View>
 
-      {/* ── PR log list ── */}
+      {/* ── Procurement log list ── */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 16, paddingTop: 2 }}
@@ -1394,13 +1608,13 @@ export default function ProcurementLog({ navigation }: any) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              loadPRs(true);
+              loadAllEntries(true);
             }}
             tintColor="#064E3B"
           />
         }
       >
-        {pagedPRs.length === 0 ? (
+        {pagedEntries.length === 0 ? (
           <View style={{ alignItems: "center", paddingTop: 48, gap: 10 }}>
             <MaterialIcons name="history" size={44} color="#d1d5db" />
             <Text style={{ fontSize: 14, fontWeight: "700", color: "#374151" }}>
@@ -1410,22 +1624,20 @@ export default function ProcurementLog({ navigation }: any) {
               style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}
             >
               {search
-                ? `No PRs match "${search}"`
+                ? `No entries match "${search}"`
                 : "Try adjusting your filters."}
             </Text>
           </View>
         ) : (
-          pagedPRs.map((pr) => {
-            const key = String(pr.id);
-            const entry = entries[key] ?? { pr, remarks: [], loaded: false };
+          pagedEntries.map((entry) => {
             return (
-              <PRLogCard
-                key={key}
+              <ProcurementLogCard
+                key={entry.id}
                 entry={entry}
-                expanded={expanded.has(key)}
-                onToggle={() => handleToggle(key)}
+                expanded={expanded.has(entry.id)}
+                onToggle={() => handleToggle(entry.id)}
                 statusConfig={statusConfig}
-                latestRemark={latestRemarks[key] ?? null}
+                latestRemark={latestRemarks[entry.id] ?? null}
               />
             );
           })
@@ -1436,7 +1648,7 @@ export default function ProcurementLog({ navigation }: any) {
       <Pagination
         page={page}
         totalPages={totalPages}
-        total={filteredPRs.length}
+        total={filteredEntries.length}
         onPage={setPage}
       />
 
