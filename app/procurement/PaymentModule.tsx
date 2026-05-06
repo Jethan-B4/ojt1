@@ -144,7 +144,15 @@ const SubTabRow: React.FC<{
   active: SubTab;
   onSelect: (s: SubTab) => void;
 }> = ({ active, onSelect }) => (
-  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    className="bg-white border-b border-gray-200"
+    style={{ flexGrow: 0 }}
+    contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8, alignItems: "center" }}
+    scrollEnabled={true}
+    bounces={true}
+  >
     {(
       [
         { key: "all" as const, label: "All" },
@@ -161,14 +169,14 @@ const SubTabRow: React.FC<{
           className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
         >
           <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+            className={`text-[12px] font-semibold whitespace-nowrap ${on ? "text-white" : "text-gray-400"}`}
           >
             {sub.label}
           </Text>
         </TouchableOpacity>
       );
     })}
-  </View>
+  </ScrollView>
 );
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";

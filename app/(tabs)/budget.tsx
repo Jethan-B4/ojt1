@@ -22,14 +22,10 @@
 import {
   fetchBudgets,
   fetchOrsEntries,
-  fetchPurchaseOrdersByYear,
-  fetchPurchaseOrdersByYearAndDivision,
   insertDivisionBudget,
-  supabase,
   updateDivisionBudget,
   type DivisionBudgetRow,
   type OrsEntryRow,
-  type PORow
 } from "@/lib/supabase";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -79,13 +75,8 @@ export default function BudgetScreen() {
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [budgets, setBudgets] = useState<DivisionBudgetRow[]>([]);
   const [orsEntries, setOrsEntries] = useState<OrsEntryRow[]>([]);
-  const [poEntries, setPoEntries] = useState<PORow[]>([]);
-  const [prStatusByNo, setPrStatusByNo] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Budget calculation mode: 'ors' | 'po'
-  const [calcMode, setCalcMode] = useState<"ors" | "po">("ors");
 
   // ── Data loading ────────────────────────────────────────────────────────
 
@@ -93,18 +84,13 @@ export default function BudgetScreen() {
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        // Fetch budgets, ORS entries, and POs in parallel
-        const poFetch =
-          roleId === 1 || divisionId == null
-            ? fetchPurchaseOrdersByYear(year)
-            : fetchPurchaseOrdersByYearAndDivision(year, Number(divisionId));
-        const [b, o, p] = await Promise.all([
+        // Fetch budgets and ORS entries
+        const [b, o] = await Promise.all([
           fetchBudgets(year),
           fetchOrsEntries(
             year,
             isEndUser && divisionId ? divisionId : undefined,
           ),
-          poFetch,
         ]);
         setBudgets(
           isEndUser && divisionId
@@ -112,28 +98,6 @@ export default function BudgetScreen() {
             : b,
         );
         setOrsEntries(o);
-        setPoEntries(p);
-        const prNos = [
-          ...new Set(
-            (o ?? []).map((x) => String(x.pr_no ?? "")).filter(Boolean),
-          ),
-        ];
-        if (prNos.length === 0) {
-          setPrStatusByNo({});
-        } else {
-          const { data: prRows, error: prErr } = await supabase
-            .from("purchase_requests")
-            .select("pr_no, status_id")
-            .in("pr_no", prNos);
-          if (prErr) throw prErr;
-          const map: Record<string, number> = {};
-          for (const r of prRows ?? []) {
-            const k = String((r as any).pr_no ?? "");
-            if (!k) continue;
-            map[k] = Number((r as any).status_id) || 0;
-          }
-          setPrStatusByNo(map);
-        }
       } catch (e: any) {
         Alert.alert("Load error", e?.message ?? "Could not fetch budget data");
       } finally {
@@ -152,17 +116,10 @@ export default function BudgetScreen() {
 
   const totalAllocated = budgets.reduce((s, r) => s + r.allocated, 0);
 
-  // Calculate utilized amount based on selected mode:
-  // - ORS mode: sum of ORS entry amounts
-  // - PO mode: sum of PO total_amount values
+  // Calculate total utilized amount from ORS entries using obligated_amount
   const totalUtilized = useMemo(() => {
-    if (calcMode === "ors") {
-      return orsEntries.reduce((s, entry) => s + entry.amount, 0);
-    } else {
-      // PO mode: sum total_amount from all POs
-      return poEntries.reduce((s, po) => s + (po.total_amount || 0), 0);
-    }
-  }, [calcMode, orsEntries, poEntries]);
+    return orsEntries.reduce((s, entry) => s + (entry.obligated_amount ?? entry.amount ?? 0), 0);
+  }, [orsEntries]);
 
   const totalRemaining = totalAllocated - totalUtilized;
   const utilizationPct =
@@ -356,55 +313,6 @@ export default function BudgetScreen() {
           </View>
         </View>
 
-        {/* ── Utilization Calculation Mode Toggle ── */}
-        <View className="bg-white rounded-2xl p-3 mb-3 border border-gray-200">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2">
-              <MaterialIcons name="calculate" size={16} color="#6b7280" />
-              <Text className="text-[12px] font-semibold text-gray-600">
-                Utilization Calculation
-              </Text>
-            </View>
-            <View className="flex-row bg-gray-100 rounded-xl p-1">
-              <TouchableOpacity
-                onPress={() => setCalcMode("ors")}
-                activeOpacity={0.8}
-                className={`px-3 py-1.5 rounded-lg ${
-                  calcMode === "ors" ? "bg-white shadow-sm" : ""
-                }`}
-              >
-                <Text
-                  className={`text-[11px] font-bold ${
-                    calcMode === "ors" ? "text-[#064E3B]" : "text-gray-500"
-                  }`}
-                >
-                  ORS
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setCalcMode("po")}
-                activeOpacity={0.8}
-                className={`px-3 py-1.5 rounded-lg ${
-                  calcMode === "po" ? "bg-white shadow-sm" : ""
-                }`}
-              >
-                <Text
-                  className={`text-[11px] font-bold ${
-                    calcMode === "po" ? "text-[#064E3B]" : "text-gray-500"
-                  }`}
-                >
-                  PO
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <Text className="text-[10px] text-gray-400 mt-2">
-            {calcMode === "ors"
-              ? "Calculating utilization based on Obligation Request and Status (ORS) entries"
-              : "Calculating utilization based on Purchase Order (PO) total amounts"}
-          </Text>
-        </View>
-
         {/* ── Budget by Division (DivisionBudgetModule) ── */}
         <DivisionBudgetSection
           budgets={budgets}
@@ -413,8 +321,6 @@ export default function BudgetScreen() {
           onUpdate={handleUpdateAllocation}
           onInsert={handleInsertAllocation}
           orsEntries={orsEntries}
-          poEntries={poEntries}
-          calcMode={calcMode}
         />
 
         {/* ── ORS Processing (ORSModule) ── */}

@@ -29,7 +29,7 @@ import { useEntityChanges } from "../contexts/RealtimeContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SubTab = "all" | "pr" | "canvass" | "abstract_of_awards";
+type SubTab = "all" | "pr" | "canvass" | "abstract_of_awards" | "completed";
 
 type PRRecord = ReturnType<typeof toPRDisplay> & {
   itemDescription: string;
@@ -138,6 +138,7 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "pr", label: "Purchase Request" },
   { key: "canvass", label: "Canvass" },
   { key: "abstract_of_awards", label: "Abstract of Awards" },
+  { key: "completed", label: "Completed" },
 ];
 
 const MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
@@ -256,7 +257,19 @@ const SubTabRow: React.FC<{
   active: SubTab;
   onSelect: (s: SubTab) => void;
 }> = ({ active, onSelect }) => (
-  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    className="bg-white border-b border-gray-200 "
+    style={{ flexGrow: 0 }}
+    contentContainerStyle={{
+      paddingHorizontal: 16,
+      gap: 8,
+      paddingVertical: 8,
+      alignItems: "center",
+    }}
+    scrollEnabled={true}
+    bounces={true}>
     {SUB_TABS.map((sub) => {
       const on = sub.key === active;
       return (
@@ -264,17 +277,15 @@ const SubTabRow: React.FC<{
           key={sub.key}
           onPress={() => onSelect(sub.key)}
           activeOpacity={0.8}
-          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
-        >
+          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}>
           <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
-          >
+            className={`text-[12px] font-semibold whitespace-nowrap ${on ? "text-white" : "text-gray-400"}`}>
             {sub.label}
           </Text>
         </TouchableOpacity>
       );
     })}
-  </View>
+  </ScrollView>
 );
 
 const SearchBar: React.FC<{
@@ -308,8 +319,7 @@ const SearchBar: React.FC<{
         filterActive
           ? "bg-[#064E3B] border-[#064E3B]"
           : "bg-white border-gray-200"
-      }`}
-    >
+      }`}>
       <MaterialIcons
         name="filter-list"
         size={18}
@@ -334,12 +344,10 @@ const FilterChip: React.FC<{
       backgroundColor: active ? (color ?? "#064E3B") : "#ffffff",
       borderWidth: 1.5,
       borderColor: active ? (color ?? "#064E3B") : "#e5e7eb",
-    }}
-  >
+    }}>
     <Text
       className="text-[11.5px] font-bold"
-      style={{ color: active ? "#ffffff" : "#6b7280" }}
-    >
+      style={{ color: active ? "#ffffff" : "#6b7280" }}>
       {label}
     </Text>
   </TouchableOpacity>
@@ -391,8 +399,7 @@ const FilterPanel: React.FC<{
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
-      >
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
         <FilterChip
           label="All"
           active={statusFilter === null}
@@ -419,8 +426,7 @@ const FilterPanel: React.FC<{
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ flexDirection: "row", gap: 6 }}
-      >
+        contentContainerStyle={{ flexDirection: "row", gap: 6 }}>
         {presentSections.map((s) => (
           <FilterChip
             key={s}
@@ -464,16 +470,14 @@ const FilterPanel: React.FC<{
                 active
                   ? "bg-[#064E3B] border-[#064E3B]"
                   : "bg-white border-gray-200"
-              }`}
-            >
+              }`}>
               <MaterialIcons
                 name={opt.icon}
                 size={13}
                 color={active ? "#fff" : "#6b7280"}
               />
               <Text
-                className={`text-[11.5px] font-bold ${active ? "text-white" : "text-gray-500"}`}
-              >
+                className={`text-[11.5px] font-bold ${active ? "text-white" : "text-gray-500"}`}>
                 {opt.label}
               </Text>
             </TouchableOpacity>
@@ -502,8 +506,7 @@ const StatusPill: React.FC<{
   return (
     <View
       className="flex-row items-center self-start rounded-full px-2.5 py-1 gap-1.5"
-      style={{ backgroundColor: cfg.bg }}
-    >
+      style={{ backgroundColor: cfg.bg }}>
       <View
         className="w-1.5 h-1.5 rounded-full"
         style={{ backgroundColor: cfg.dot }}
@@ -517,8 +520,7 @@ const StatusPill: React.FC<{
       />
       <Text
         className="text-[10px] font-semibold opacity-70"
-        style={{ color: cfg.text }}
-      >
+        style={{ color: cfg.text }}>
         {elapsed}
       </Text>
     </View>
@@ -545,20 +547,17 @@ const RecordCard: React.FC<{
   return (
     <View
       className={`mx-4 mb-3 rounded-3xl border border-gray-200 overflow-hidden shadow-sm ${isEven ? "bg-white" : "bg-gray-50"}`}
-      style={{ elevation: 3 }}
-    >
+      style={{ elevation: 3 }}>
       <View className="flex-row items-start justify-between px-4 pt-3.5 pb-2">
         <View className="flex-1 pr-3">
           <Text
             className="text-[13px] font-bold text-[#1a4d2e] mb-0.5"
-            style={{ fontFamily: MONO }}
-          >
+            style={{ fontFamily: MONO }}>
             {record.prNo}
           </Text>
           <Text
             className="text-[12.5px] text-gray-700 leading-5"
-            numberOfLines={2}
-          >
+            numberOfLines={2}>
             {record.itemDescription}
           </Text>
         </View>
@@ -578,8 +577,7 @@ const RecordCard: React.FC<{
         <View className="w-px h-3.5 bg-gray-200" />
         <Text
           className="text-[11px] text-gray-400"
-          style={{ fontFamily: MONO }}
-        >
+          style={{ fontFamily: MONO }}>
           {record.date}
         </Text>
         <View className="flex-1" />
@@ -598,13 +596,11 @@ const RecordCard: React.FC<{
               style={{
                 backgroundColor: flag.bg,
                 borderColor: flag.dot + "40",
-              }}
-            >
+              }}>
               <MaterialIcons name={flag.icon} size={11} color={flag.dot} />
               <Text
                 className="text-[10.5px] font-bold"
-                style={{ color: flag.text }}
-              >
+                style={{ color: flag.text }}>
                 {flag.label}
               </Text>
             </View>
@@ -616,8 +612,7 @@ const RecordCard: React.FC<{
             {latestFlag?.remark && (
               <Text
                 className="flex-1 text-[10.5px] text-gray-500"
-                numberOfLines={1}
-              >
+                numberOfLines={1}>
                 · {latestFlag.remark}
               </Text>
             )}
@@ -629,15 +624,13 @@ const RecordCard: React.FC<{
         <TouchableOpacity
           onPress={() => onView(record)}
           activeOpacity={0.8}
-          className="flex-1 bg-blue-600 rounded-xl py-2 items-center"
-        >
+          className="flex-1 bg-blue-600 rounded-xl py-2 items-center">
           <Text className="text-white text-[12px] font-bold">View</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onMore(record)}
           activeOpacity={0.8}
-          className="flex-1 bg-emerald-700 rounded-xl py-2 items-center"
-        >
+          className="flex-1 bg-emerald-700 rounded-xl py-2 items-center">
           <Text className="text-white text-[12px] font-bold">More</Text>
         </TouchableOpacity>
       </View>
@@ -718,32 +711,27 @@ const MoreSheet: React.FC<{
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
-    >
+      onRequestClose={onClose}>
       <TouchableOpacity
         className="flex-1 bg-black/40 justify-end"
         activeOpacity={1}
-        onPress={onClose}
-      >
+        onPress={onClose}>
         <TouchableOpacity activeOpacity={1}>
           <View
             className="bg-white rounded-t-3xl overflow-hidden"
-            style={{ paddingBottom: 32 }}
-          >
+            style={{ paddingBottom: 32 }}>
             <View className="items-center pt-3 pb-1">
               <View className="w-10 h-1 rounded-full bg-gray-200" />
             </View>
             <View className="px-5 pt-2 pb-4 border-b border-gray-100">
               <Text
                 className="text-[15px] font-extrabold text-gray-900"
-                style={{ fontFamily: MONO }}
-              >
+                style={{ fontFamily: MONO }}>
                 {record.prNo}
               </Text>
               <Text
                 className="text-[12px] text-gray-500 mt-0.5"
-                numberOfLines={1}
-              >
+                numberOfLines={1}>
                 {record.officeSection}
               </Text>
             </View>
@@ -754,19 +742,19 @@ const MoreSheet: React.FC<{
                   activeOpacity={0.85}
                   onPress={a.onPress}
                   className="flex-row items-center gap-3 rounded-2xl p-3 mb-2 border"
-                  style={{ backgroundColor: a.bg, borderColor: a.color + "30" }}
-                >
+                  style={{
+                    backgroundColor: a.bg,
+                    borderColor: a.color + "30",
+                  }}>
                   <View
                     className="w-10 h-10 rounded-2xl items-center justify-center"
-                    style={{ backgroundColor: a.color + "15" }}
-                  >
+                    style={{ backgroundColor: a.color + "15" }}>
                     <MaterialIcons name={a.icon} size={20} color={a.color} />
                   </View>
                   <View className="flex-1">
                     <Text
                       className="text-[13px] font-extrabold"
-                      style={{ color: a.color }}
-                    >
+                      style={{ color: a.color }}>
                       {a.label}
                     </Text>
                     <Text className="text-[11px] text-gray-500 mt-0.5">
@@ -783,8 +771,7 @@ const MoreSheet: React.FC<{
               <TouchableOpacity
                 onPress={onClose}
                 activeOpacity={0.85}
-                className="mt-2 px-4 py-3 rounded-2xl bg-gray-100"
-              >
+                className="mt-2 px-4 py-3 rounded-2xl bg-gray-100">
                 <Text className="text-[12px] font-bold text-gray-700 text-center">
                   Close
                 </Text>
@@ -837,9 +824,9 @@ export default function PRModule({
   // View PR modal state
   const [viewRecord, setViewRecord] = useState<PRRecord | null>(null);
   const [viewVisible, setViewVisible] = useState(false);
-  const [viewInitialTab, setViewInitialTab] = useState<
-    "details" | "pr"
-  >("details");
+  const [viewInitialTab, setViewInitialTab] = useState<"details" | "pr">(
+    "details",
+  );
 
   // More / actions sheet state
   const [moreRecord, setMoreRecord] = useState<PRRecord | null>(null);
@@ -880,6 +867,8 @@ export default function PRModule({
         rows = allRows.filter((r) => r.status_id >= 6 && r.status_id <= 9);
       } else if (activeSubTab === "abstract_of_awards") {
         rows = allRows.filter((r) => r.status_id === 10);
+      } else if (activeSubTab === "completed") {
+        rows = allRows.filter((r) => r.status_id === 33);
       } else {
         rows = [];
       }
@@ -1053,8 +1042,7 @@ export default function PRModule({
             tintColor="#064E3B"
             colors={["#064E3B"]}
           />
-        }
-      >
+        }>
         {paged.length === 0 ? (
           <EmptyState label="No records found" />
         ) : (
@@ -1150,8 +1138,7 @@ export default function PRModule({
                     : btn.disabled
                       ? "bg-gray-50 border-gray-100"
                       : "bg-white border-gray-200"
-                }`}
-              >
+                }`}>
                 <Text
                   className={`text-[12px] font-bold ${
                     btn.kind === "page" && btn.active
@@ -1159,8 +1146,7 @@ export default function PRModule({
                       : btn.disabled
                         ? "text-gray-300"
                         : "text-gray-500"
-                  }`}
-                >
+                  }`}>
                   {btn.label}
                 </Text>
               </TouchableOpacity>
@@ -1227,7 +1213,6 @@ export default function PRModule({
           setRecords((prev) => prev.filter((r) => r.id !== id));
         }}
       />
-
     </View>
   );
 }

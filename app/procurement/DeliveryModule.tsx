@@ -26,7 +26,7 @@ import { useFiscalYear } from "../contexts/FiscalYearContext";
 import { useRealtime } from "../contexts/RealtimeContext";
 import { DeliveryRemarkSheet, DeliveryRemarkSheetRecord } from "./DeliveryRemarkSheet";
 
-type SubTab = "all" | "deliveries" | "inspection" | "acceptance";
+type SubTab = "all" | "deliveries" | "inspection" | "acceptance" | "completed";
 type SortBy = "date_created" | "date_modified";
 
 type DeliveryRecord = {
@@ -114,12 +114,14 @@ const SUB_TAB_STATUS_MAP: Record<SubTab, number[]> = {
   deliveries: [18, 19],
   inspection: [20, 21],
   acceptance: [22, 23, 24],
+  completed: [35],
 };
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "all", label: "All" },
   { key: "deliveries", label: "Deliveries" },
   { key: "inspection", label: "Inspection (IAR)" },
   { key: "acceptance", label: "Acceptance (LOA/DV)" },
+  { key: "completed", label: "Completed" },
 ];
 const PAGE_SIZE = 7;
 
@@ -127,7 +129,15 @@ const SubTabRow: React.FC<{
   active: SubTab;
   onSelect: (s: SubTab) => void;
 }> = ({ active, onSelect }) => (
-  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    className="bg-white border-b border-gray-200"
+    style={{ flexGrow: 0 }}
+    contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8, alignItems: "center" }}
+    scrollEnabled={true}
+    bounces={true}
+  >
     {SUB_TABS.map((sub) => {
       const on = sub.key === active;
       return (
@@ -138,14 +148,14 @@ const SubTabRow: React.FC<{
           className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
         >
           <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+            className={`text-[12px] font-semibold whitespace-nowrap ${on ? "text-white" : "text-gray-400"}`}
           >
             {sub.label}
           </Text>
         </TouchableOpacity>
       );
     })}
-  </View>
+  </ScrollView>
 );
 
 const SearchBar: React.FC<{

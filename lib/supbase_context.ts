@@ -1,407 +1,396 @@
-export const SUPABASE_SCHEMA_SQL = String.raw`-- WARNING: This schema is for context only and is not meant to be run.
--- Table order and constraints may not be valid for execution.
---
--- BAC resolution refinement context:
--- - bac_resolution now supports standalone creation and richer narrative fields.
--- - bac_resolution_prs links one BAC resolution to many PR rows
---   (expected to be same-division in application logic).
---
--- Possible next schema hardening:
--- - unique (resolution_id, pr_no) on bac_resolution_prs
--- - check constraints for non-empty whereas_1/2/3 and now_therefore_text
+// ============================================================
+// tables.ts — TypeScript types for all public schema tables
+// ============================================================
 
-CREATE TABLE public.aaa_documents (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  session_id bigint,
-  aaa_no text,
-  prepared_by bigint,
-  prepared_at timestamp with time zone,
-  file_url text,
-  particulars text,
-  CONSTRAINT aaa_documents_pkey PRIMARY KEY (id),
-  CONSTRAINT aaa_documents_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.canvass_sessions(id),
-  CONSTRAINT aaa_documents_prepared_by_fkey FOREIGN KEY (prepared_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.bac_resolution (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  session_id bigint,
-  resolution_no text,
-  division_id bigint,
-  prepared_by bigint,
-  resolved_at timestamp with time zone,
-  resolved_at_place text,
-  whereas_1 text,
-  whereas_2 text,
-  whereas_3 text,
-  now_therefore_text text,
-  notes text,
-  mode text,
-  CONSTRAINT bac_resolution_pkey PRIMARY KEY (id),
-  CONSTRAINT bac_resolution_prepared_by_fkey FOREIGN KEY (prepared_by) REFERENCES public.users(id),
-  CONSTRAINT bac_resolution_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.canvass_sessions(id),
-  CONSTRAINT bac_resolution_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id)
-);
-CREATE TABLE public.bac_resolution_prs (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  resolution_id bigint NOT NULL,
-  pr_id bigint,
-  pr_no text NOT NULL,
-  pr_date text,
-  estimated_cost double precision DEFAULT '0'::double precision,
-  end_user text,
-  recommended_mode text,
-  CONSTRAINT bac_resolution_prs_pkey PRIMARY KEY (id),
-  CONSTRAINT bac_resolution_prs_resolution_id_fkey FOREIGN KEY (resolution_id) REFERENCES public.bac_resolution(id),
-  CONSTRAINT bac_resolution_prs_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id)
-);
-CREATE TABLE public.canvass_entries (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  session_id bigint,
-  item_no bigint,
-  description text,
-  unit text,
-  quantity bigint,
-  supplier_name text,
-  supplier_address text,
-  unit_price double precision,
-  total_price double precision,
-  is_winning boolean,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  tin_no text,
-  delivery_days text,
-  assignment_id bigint,
-  CONSTRAINT canvass_entries_pkey PRIMARY KEY (id),
-  CONSTRAINT canvass_entries_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.canvass_sessions(id),
-  CONSTRAINT canvass_entries_assignment_id_fkey FOREIGN KEY (assignment_id) REFERENCES public.canvasser_assignments(id)
-);
-CREATE TABLE public.canvass_sessions (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  pr_id bigint,
-  stage text,
-  released_by bigint,
-  deadline timestamp with time zone,
-  status text,
-  bac_no text UNIQUE,
-  CONSTRAINT canvass_sessions_pkey PRIMARY KEY (id),
-  CONSTRAINT canvass_sessions_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id),
-  CONSTRAINT canvass_sessions_released_by_fkey FOREIGN KEY (released_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.canvasser_assignments (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  session_id bigint,
-  division_id bigint,
-  canvasser_id bigint,
-  quotation_no text,
-  rfq_index bigint,
-  released_at timestamp with time zone,
-  returned_at timestamp with time zone,
-  status text,
-  CONSTRAINT canvasser_assignments_pkey PRIMARY KEY (id),
-  CONSTRAINT canvasser_assignments_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.canvass_sessions(id),
-  CONSTRAINT canvasser_assignments_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT canvasser_assignments_canvasser_id_fkey FOREIGN KEY (canvasser_id) REFERENCES public.users(id)
-);
-CREATE TABLE public.division_budgets (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  division_id bigint NOT NULL,
-  fiscal_year bigint NOT NULL,
-  allocated double precision DEFAULT '0'::double precision,
-  utilized double precision DEFAULT '0'::double precision,
-  notes text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  CONSTRAINT division_budgets_pkey PRIMARY KEY (id),
-  CONSTRAINT divison_budgets_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id)
-);
-CREATE TABLE public.divisions (
-  division_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  division_name text,
-  CONSTRAINT divisions_pkey PRIMARY KEY (division_id)
-);
-CREATE TABLE public.ors_entries (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  ors_no text UNIQUE,
-  pr_id bigint,
-  pr_no text,
-  division_id bigint,
-  fiscal_year bigint,
-  amount double precision DEFAULT '0'::double precision,
-  status text,
-  prepared_by bigint,
-  approved_by bigint,
-  notes text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  fund_cluster text,
-  responsibility_center text,
-  particulars text,
-  mfo_pap text,
-  uacs_code text,
-  prepared_by_name text,
-  prepared_by_desig text,
-  approved_by_name text,
-  approved_by_desig text,
-  date_created text,
-  CONSTRAINT ors_entries_pkey PRIMARY KEY (id),
-  CONSTRAINT ors_entries_prepared_by_fkey FOREIGN KEY (prepared_by) REFERENCES public.users(id),
-  CONSTRAINT ors_entries_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id),
-  CONSTRAINT ors_entries_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT ors_entries_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id)
-);
-CREATE TABLE public.pr_form (
-  pr_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL UNIQUE,
-  entity_name text,
-  fund_cluster text,
-  office_section text,
-  pr_num text NOT NULL DEFAULT ''::text UNIQUE,
-  responsibility_code text,
-  created_at timestamp with time zone NOT NULL DEFAULT (now() AT TIME ZONE 'utc'::text),
-  purpose text,
-  req_by text,
-  req_designation text,
-  app_by text,
-  app_designation text,
-  status_id bigint,
-  division bigint,
-  CONSTRAINT pr_form_pkey PRIMARY KEY (pr_id),
-  CONSTRAINT pr_form_status_id_fkey FOREIGN KEY (status_id) REFERENCES public.status(id),
-  CONSTRAINT pr_form_division_fkey FOREIGN KEY (division) REFERENCES public.divisions(division_id)
-);
-CREATE TABLE public.pr_item (
-  prItem_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  stock_num text,
-  unit text,
-  description text,
-  quantity text,
-  unit_cost text,
-  total_cost text,
-  pr_id bigint,
-  CONSTRAINT pr_item_pkey PRIMARY KEY (prItem_id),
-  CONSTRAINT pr_item_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.pr_form(pr_id)
-);
-CREATE TABLE public.proposals (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  proposal_no bigint,
-  division_id bigint,
-  pr_id bigint,
-  CONSTRAINT proposals_pkey PRIMARY KEY (id),
-  CONSTRAINT proposals_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT proposals_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id)
-);
-CREATE TABLE public.purchase_order_items (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  po_id bigint,
-  stock_no text,
-  unit text,
-  description text,
-  quantity bigint,
-  unit_price double precision,
-  subtotal double precision,
-  CONSTRAINT purchase_order_items_pkey PRIMARY KEY (id),
-  CONSTRAINT purchase_order_items_po_id_fkey FOREIGN KEY (po_id) REFERENCES public.purchase_orders(id)
-);
-CREATE TABLE public.purchase_orders (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  po_no text,
-  pr_no text,
-  pr_id bigint,
-  supplier text,
-  address text,
-  tin text,
-  procurement_mode text,
-  delivery_place text,
-  delivery_term text,
-  delivery_date text,
-  payment_term text,
-  date text,
-  office_section text,
-  fund_cluster text,
-  ors_no text,
-  ors_date text,
-  funds_available text,
-  ors_amount double precision,
-  total_amount double precision,
-  status_id bigint,
-  division_id bigint,
-  official_name text,
-  official_desig text,
-  accountant_name text,
-  accountant_desig text,
-  CONSTRAINT purchase_orders_pkey PRIMARY KEY (id),
-  CONSTRAINT purchase_orders_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT purchase_orders_status_id_fkey FOREIGN KEY (status_id) REFERENCES public.status(id),
-  CONSTRAINT purchase_orders_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id)
-);
-CREATE TABLE public.purchase_request_items (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  pr_id bigint NOT NULL,
-  description text NOT NULL,
-  stock_no text,
-  unit text,
-  quantity bigint NOT NULL,
-  unit_price bigint NOT NULL,
-  subtotal bigint NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT purchase_request_items_pkey PRIMARY KEY (id),
-  CONSTRAINT purchase_request_items_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id)
-);
-CREATE TABLE public.purchase_requests (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  pr_no text NOT NULL DEFAULT ''::text UNIQUE,
-  office_section text NOT NULL,
-  resp_code text,
-  purpose text NOT NULL,
-  total_cost bigint NOT NULL,
-  is_high_value boolean NOT NULL DEFAULT false,
-  status text NOT NULL DEFAULT 'pending'::text,
-  budget_number text,
-  pap_code text,
-  proposal_file text,
-  created_at timestamp with time zone DEFAULT now(),
-  entity_name text,
-  fund_cluster text,
-  req_name text,
-  req_desig text,
-  app_name text,
-  app_desig text,
-  app_no text,
-  status_id bigint DEFAULT '1'::bigint,
-  proposal_no text,
-  division_id bigint,
-  updated_at timestamp with time zone,
-  CONSTRAINT purchase_requests_pkey PRIMARY KEY (id),
-  CONSTRAINT purchase_requests_status_id_fkey FOREIGN KEY (status_id) REFERENCES public.status(id),
-  CONSTRAINT purchase_requests_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id)
-);
-CREATE TABLE public.deliveries (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  po_id bigint,
-  po_no text NOT NULL,
-  supplier text,
-  office_section text,
-  division_id bigint,
-  status_id bigint DEFAULT '16'::bigint,
-  delivery_no text NOT NULL UNIQUE,
-  dr_no text,
-  soa_no text,
-  notes text,
-  created_by bigint,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  CONSTRAINT deliveries_pkey PRIMARY KEY (id),
-  CONSTRAINT deliveries_po_id_fkey FOREIGN KEY (po_id) REFERENCES public.purchase_orders(id),
-  CONSTRAINT deliveries_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT deliveries_status_id_fkey FOREIGN KEY (status_id) REFERENCES public.status(id),
-  CONSTRAINT deliveries_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.iar_documents (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  delivery_id bigint NOT NULL,
-  iar_no text,
-  po_no text,
-  invoice_no text,
-  invoice_date text,
-  requisitioning_office text,
-  responsibility_center text,
-  inspected_at text,
-  received_at text,
-  inspector_name text,
-  supply_officer_name text,
-  created_by bigint,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  CONSTRAINT iar_documents_pkey PRIMARY KEY (id),
-  CONSTRAINT iar_documents_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id),
-  CONSTRAINT iar_documents_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.loa_documents (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  delivery_id bigint NOT NULL,
-  loa_no text,
-  po_no text,
-  invoice_no text,
-  invoice_date text,
-  accepted_at text,
-  accepted_by_name text,
-  accepted_by_title text,
-  created_by bigint,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  CONSTRAINT loa_documents_pkey PRIMARY KEY (id),
-  CONSTRAINT loa_documents_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id),
-  CONSTRAINT loa_documents_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.dv_documents (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  delivery_id bigint NOT NULL,
-  dv_no text,
-  fund_cluster text,
-  ors_no text,
-  payee text,
-  payee_tin text,
-  address text,
-  particulars text,
-  responsibility_center text,
-  mfo_pap text,
-  amount_due text,
-  mode_of_payment text,
-  certified_by text,
-  approved_by text,
-  created_by bigint,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone,
-  CONSTRAINT dv_documents_pkey PRIMARY KEY (id),
-  CONSTRAINT dv_documents_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id),
-  CONSTRAINT dv_documents_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
-);
-CREATE TABLE public.remarks (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  remark text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  user_id bigint,
-  pr_id bigint,
-  status_flag_id bigint,
-  prform_id bigint,
-  po_id bigint,
-  CONSTRAINT remarks_pkey PRIMARY KEY (id),
-  CONSTRAINT remarks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
-  CONSTRAINT remarks_pr_id_fkey FOREIGN KEY (pr_id) REFERENCES public.purchase_requests(id),
-  CONSTRAINT remarks_status_flag_id_fkey FOREIGN KEY (status_flag_id) REFERENCES public.status_flag(id),
-  CONSTRAINT remarks_prform_id_fkey FOREIGN KEY (prform_id) REFERENCES public.pr_form(pr_id),
-  CONSTRAINT remarks_po_id_fkey FOREIGN KEY (po_id) REFERENCES public.purchase_orders(id)
-);
-CREATE TABLE public.roles (
-  role_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  role_name text,
-  CONSTRAINT roles_pkey PRIMARY KEY (role_id)
-);
-CREATE TABLE public.status (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  status_name text NOT NULL,
-  CONSTRAINT status_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.status_flag (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  flag_name text,
-  CONSTRAINT status_flag_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.users (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  fullname character varying DEFAULT 'admin'::character varying,
-  password character varying DEFAULT 'admin123'::character varying,
-  username text,
-  division_id bigint,
-  role_id bigint,
-  last_login timestamp with time zone,
-  CONSTRAINT users_pkey PRIMARY KEY (id),
-  CONSTRAINT users_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.divisions(division_id),
-  CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(role_id)
-);
-`;
+export type AaaDocument = {
+  id: number;
+  session_id: number | null;
+  aaa_no: string | null;
+  prepared_by: number | null;
+  prepared_at: string | null; // ISO timestamp
+  file_url: string | null;
+  particulars: string | null;
+};
+
+export type BacResolution = {
+  id: number;
+  session_id: number | null;
+  resolution_no: string | null;
+  prepared_by: number | null;
+  division_id: number | null;
+  pr_request_id: number | null;
+};
+
+export type BacResolutionPr = {
+  id: number;
+  resolution_id: number;
+  pr_id: number | null;
+  pr_no: string;
+  pr_date: string | null;
+  estimated_cost: number; // default 0
+  end_user: string | null;
+  recommended_mode: string | null;
+};
+
+export type CanvassEntry = {
+  id: number;
+  session_id: number | null;
+  unit: string | null;
+  quantity: number | null;
+  supplier_name: string | null;
+  unit_price: number | null;
+  total_price: number | null;
+  is_winning: boolean | null;
+  created_at: string; // ISO timestamp, default now()
+  tin_no: string | null;
+  delivery_days: string | null;
+  assignment_id: number | null;
+  supplier_address: string | null;
+  quotation_no: number | null;
+  pr_no: string | null;
+  pr_items: number | null;
+};
+
+export type CanvassSession = {
+  id: number;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+  pr_id: number | null;
+  stage: string | null;
+  released_by: number | null;
+  deadline: string | null; // ISO timestamp
+  status: string | null;
+  bac_no: string | null; // UNIQUE
+};
+
+export type CanvasserAssignment = {
+  id: number;
+  session_id: number | null;
+  division_id: number | null;
+  canvasser_id: number | null;
+  released_at: string | null; // ISO timestamp
+  returned_at: string | null; // ISO timestamp
+  status: string | null;
+  quotation_no: string | null;
+  rfq_index: number | null;
+  received_at: string | null; // ISO timestamp
+  name_of_canvasser: string | null;
+  pr_no: string | null;
+};
+
+export type Delivery = {
+  id: number;
+  po_id: number | null;
+  po_no: string;
+  supplier: string | null;
+  office_section: string | null;
+  division_id: number | null;
+  status_id: number; // default 16
+  delivery_no: string; // UNIQUE
+  dr_no: string | null;
+  soa_no: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+  expected_delivery_date: string | null; // date (YYYY-MM-DD)
+  // Payment completion timestamps
+  voucher_completed_at: string | null; // ISO timestamp
+  accounting_completed_at: string | null; // ISO timestamp
+  parpo_approval_completed_at: string | null; // ISO timestamp
+  cash_processing_completed_at: string | null; // ISO timestamp
+  parpo_signature_completed_at: string | null; // ISO timestamp
+  tax_processing_completed_at: string | null; // ISO timestamp
+  payment_completed_at: string | null; // ISO timestamp
+};
+
+export type DivisionBudget = {
+  id: number;
+  division_id: number;
+  fiscal_year: number;
+  allocated: number; // default 0
+  utilized: number; // default 0
+  notes: string | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+};
+
+export type Division = {
+  division_id: number;
+  division_name: string | null;
+};
+
+export type DvDocument = {
+  id: number;
+  delivery_id: number;
+  dv_no: string | null;
+  fund_cluster: string | null;
+  ors_no: string | null;
+  payee: string | null;
+  payee_tin: string | null;
+  address: string | null;
+  particulars: string | null;
+  responsibility_center: string | null;
+  mfo_pap: string | null;
+  amount_due: string | null;
+  mode_of_payment: string | null;
+  certified_by: string | null;
+  approved_by: string | null;
+  created_by: number | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+};
+
+export type IarDocument = {
+  id: number;
+  delivery_id: number;
+  iar_no: string | null;
+  po_no: string | null;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  requisitioning_office: string | null;
+  responsibility_center: string | null;
+  inspected_at: string | null;
+  received_at: string | null;
+  inspector_name: string | null;
+  supply_officer_name: string | null;
+  created_by: number | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+  missing_units_items: string | null;
+};
+
+export type LoaDocument = {
+  id: number;
+  delivery_id: number;
+  loa_no: string | null;
+  po_no: string | null;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  accepted_at: string | null;
+  accepted_by_name: string | null;
+  accepted_by_title: string | null;
+  created_by: number | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+};
+
+export type OrsEntry = {
+  id: number;
+  ors_no: string | null; // UNIQUE
+  pr_id: number | null;
+  pr_no: string | null;
+  division_id: number | null;
+  fiscal_year: number | null;
+  amount: number; // default 0
+  status: string | null;
+  prepared_by: number | null;
+  approved_by: number | null;
+  notes: string | null;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+  fund_cluster: string | null;
+  responsibility_center: string | null;
+  particulars: string | null;
+  mfo_pap: string | null;
+  uacs_code: string | null;
+  prepared_by_name: string | null;
+  prepared_by_desig: string | null;
+  approved_by_name: string | null;
+  approved_by_desig: string | null;
+  date_created: string | null;
+};
+
+export type PrForm = {
+  pr_id: number; // UNIQUE
+ entity_name: string | null;
+  fund_cluster: string | null;
+  office_section: string | null;
+  pr_num: string; // UNIQUE, default ''
+  responsibility_code: string | null;
+  created_at: string; // ISO timestamp
+  purpose: string | null;
+  req_by: string | null;
+  req_designation: string | null;
+  app_by: string | null;
+  app_designation: string | null;
+  status_id: number | null;
+  division: number | null;
+};
+
+export type PrItem = {
+  prItem_id: number;
+  created_at: string; // ISO timestamp
+  stock_num: string | null;
+  unit: string | null;
+  description: string | null;
+  quantity: string | null;
+  unit_cost: string | null;
+  total_cost: string | null;
+  pr_id: number | null;
+};
+
+export type Proposal = {
+  id: number;
+  created_at: string; // ISO timestamp
+  proposal_no: number | null;
+  division_id: number | null;
+  pr_id: number | null;
+};
+
+export type PurchaseOrderItem = {
+  id: number;
+  po_id: number | null;
+  stock_no: string | null;
+  unit: string | null;
+  description: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  subtotal: number | null;
+};
+
+export type PurchaseOrder = {
+  id: number;
+  created_at: string; // ISO timestamp
+  updated_at: string | null;
+  po_no: string | null;
+  pr_no: string | null;
+  pr_id: number | null;
+  supplier: string | null;
+  address: string | null;
+  tin: string | null;
+  procurement_mode: string | null;
+  delivery_place: string | null;
+  delivery_term: string | null;
+  delivery_date: string | null;
+  payment_term: string | null;
+  date: string | null;
+  office_section: string | null;
+  fund_cluster: string | null;
+  ors_no: string | null;
+  ors_date: string | null;
+  funds_available: string | null;
+  ors_amount: number | null;
+  total_amount: number | null;
+  status_id: number | null;
+  division_id: number | null;
+  official_name: string | null;
+  official_desig: string | null;
+  accountant_name: string | null;
+  accountant_desig: string | null;
+};
+
+export type PurchaseRequestItem = {
+  id: number;
+  pr_id: number;
+  description: string;
+  stock_no: string | null;
+  unit: string | null;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  created_at: string; // ISO timestamp
+};
+
+export type PurchaseRequest = {
+  id: number;
+  pr_no: string; // UNIQUE, default ''
+  office_section: string;
+  resp_code: string | null;
+  purpose: string;
+  total_cost: number;
+  is_high_value: boolean; // default false
+  status: string; // default 'pending'
+  budget_number: string | null;
+  pap_code: string | null;
+  proposal_file: string | null;
+  created_at: string | null; // ISO timestamp
+  entity_name: string | null;
+  fund_cluster: string | null;
+  req_name: string | null;
+  req_desig: string | null;
+  app_name: string | null;
+  app_desig: string | null;
+  app_no: string | null;
+  status_id: number | null; // default 1
+  proposal_no: string | null;
+  division_id: number | null;
+  updated_at: string | null;
+};
+
+export type RemarkPhase = 'pr' | 'po' | 'delivery' | 'payment' | 'system';
+
+export type Remark = {
+  id: number;
+  remark: string | null;
+  created_at: string; // ISO timestamp
+  user_id: number | null;
+  pr_id: number | null;
+  status_flag_id: number | null;
+  prform_id: number | null;
+  po_id: number | null;
+  delivery_id: number | null;
+  phase: RemarkPhase | null;
+};
+
+export type Role = {
+  role_id: number;
+  role_name: string | null;
+};
+
+export type Status = {
+  id: number;
+  status_name: string;
+};
+
+export type StatusFlag = {
+  id: number;
+  flag_name: string | null;
+};
+
+export type User = {
+  id: number;
+  created_at: string; // ISO timestamp
+  fullname: string | null; // default 'admin'
+  password: string | null; // default 'admin123'
+  username: string | null;
+  division_id: number | null;
+  role_id: number | null;
+  last_login: string | null; // ISO timestamp
+};
+
+// ============================================================
+// Database table map — useful for generic helpers / Supabase
+// ============================================================
+
+export type Database = {
+  public: {
+    Tables: {
+      aaa_documents: { Row: AaaDocument };
+      bac_resolution: { Row: BacResolution };
+      bac_resolution_prs: { Row: BacResolutionPr };
+      canvass_entries: { Row: CanvassEntry };
+      canvass_sessions: { Row: CanvassSession };
+      canvasser_assignments: { Row: CanvasserAssignment };
+      deliveries: { Row: Delivery };
+      division_budgets: { Row: DivisionBudget };
+      divisions: { Row: Division };
+      dv_documents: { Row: DvDocument };
+      iar_documents: { Row: IarDocument };
+      loa_documents: { Row: LoaDocument };
+      ors_entries: { Row: OrsEntry };
+      pr_form: { Row: PrForm };
+      pr_item: { Row: PrItem };
+      proposals: { Row: Proposal };
+      purchase_order_items: { Row: PurchaseOrderItem };
+      purchase_orders: { Row: PurchaseOrder };
+      purchase_request_items: { Row: PurchaseRequestItem };
+      purchase_requests: { Row: PurchaseRequest };
+      remarks: { Row: Remark };
+      roles: { Row: Role };
+      status: { Row: Status };
+      status_flag: { Row: StatusFlag };
+      users: { Row: User };
+    };
+  };
+};

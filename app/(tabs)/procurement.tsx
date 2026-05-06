@@ -43,6 +43,7 @@ function TabStrip({
       horizontal
       showsHorizontalScrollIndicator={false}
       className="bg-white border-b border-gray-200 max-h-12"
+      style={{ flexGrow: 0 }}
       contentContainerStyle={{
         paddingHorizontal: 16,
         paddingTop: 8,

@@ -151,22 +151,41 @@ const ENDUSER_ROLE = 6;
 
 // ─── SubTabRow (matches PRModule/POModule pattern) ─────────────────────────────
 
-type PhaseFilter = "all" | "pr" | "po" | "delivery" | "payment" | "completed";
+type PhaseFilter =
+  | "all"
+  | "pr"
+  | "pr_completed"
+  | "po"
+  | "po_completed"
+  | "delivery"
+  | "delivery_completed"
+  | "payment"
+  | "payment_completed"
+  | "completed";
 
 const PHASE_TABS: { key: PhaseFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "pr", label: "PR" },
+  { key: "pr_completed", label: "PR ✓" },
   { key: "po", label: "PO" },
+  { key: "po_completed", label: "PO ✓" },
   { key: "delivery", label: "Delivery" },
+  { key: "delivery_completed", label: "Del ✓" },
   { key: "payment", label: "Payment" },
-  { key: "completed", label: "Completed" },
+  { key: "payment_completed", label: "Pay ✓" },
+  { key: "completed", label: "All ✓" },
 ];
 
 const SubTabRow: React.FC<{
   active: PhaseFilter;
   onSelect: (s: PhaseFilter) => void;
 }> = ({ active, onSelect }) => (
-  <View className="flex-row bg-white border-b border-gray-200 px-4 gap-2 py-2.5">
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+    className="bg-white border-b border-gray-200 py-2.5"
+  >
     {PHASE_TABS.map((tab) => {
       const on = tab.key === active;
       return (
@@ -174,17 +193,18 @@ const SubTabRow: React.FC<{
           key={tab.key}
           onPress={() => onSelect(tab.key)}
           activeOpacity={0.8}
-          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-transparent"}`}
+          className={`px-3 py-1.5 rounded-lg ${on ? "bg-[#064E3B]" : "bg-gray-100"}`}
+          style={{ minWidth: 40 }}
         >
           <Text
-            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-400"}`}
+            className={`text-[12px] font-semibold ${on ? "text-white" : "text-gray-500"}`}
           >
             {tab.label}
           </Text>
         </TouchableOpacity>
       );
     })}
-  </View>
+  </ScrollView>
 );
 
 // ─── SearchBar (matches PRModule/POModule pattern) ────────────────────────────
@@ -1232,17 +1252,49 @@ export default function ProcurementLog({ navigation }: any) {
 
       const sid = entry.statusId;
 
-      // Phase filter
+      // Phase filter with phase-specific completed statuses
+      // Status IDs: 33=Completed(PR), 34=Completed(PO), 35=Completed(Delivery), 36=Completed(Payment)
       if (phaseFilter !== "all") {
-        if (phaseFilter === "completed") {
-          if (![33, 34, 35, 36].includes(sid)) return false;
-        } else if (phaseFilter === "payment") {
-          if (entry.phase !== "payment" && 
-              !(entry.phase === "delivery" && (sid >= 25 && sid <= 32 || sid === 35 || sid === 36))) return false;
-        } else if (phaseFilter === "delivery") {
-          if (entry.phase !== "delivery" || (sid >= 25 && sid <= 32 || sid === 35 || sid === 36)) return false;
-        } else {
-          if (entry.phase !== phaseFilter) return false;
+        switch (phaseFilter) {
+          case "completed":
+            // All completed statuses
+            if (![33, 34, 35, 36].includes(sid)) return false;
+            break;
+          case "pr_completed":
+            // PR phase completed only (status 33)
+            if (sid !== 33) return false;
+            break;
+          case "po_completed":
+            // PO phase completed only (status 34)
+            if (sid !== 34) return false;
+            break;
+          case "delivery_completed":
+            // Delivery phase completed only (status 35)
+            if (sid !== 35) return false;
+            break;
+          case "payment_completed":
+            // Payment phase completed only (status 36)
+            if (sid !== 36) return false;
+            break;
+          case "pr":
+            // PR phase active (not completed) - status 1-11, 16, 17
+            if (entry.phase !== "pr" || sid === 33) return false;
+            break;
+          case "po":
+            // PO phase active (not completed) - status 12-15, 16, 17, 18
+            if (entry.phase !== "po" || sid === 34) return false;
+            break;
+          case "delivery":
+            // Delivery phase active (not in payment yet) - status 18-24
+            if (entry.phase !== "delivery" || sid >= 25 || sid === 35 || sid === 36) return false;
+            break;
+          case "payment":
+            // Payment phase - status 25-32, or completed (35, 36)
+            if (!(entry.phase === "payment" || 
+                  (entry.phase === "delivery" && (sid >= 25 && sid <= 32)))) return false;
+            break;
+          default:
+            if (entry.phase !== phaseFilter) return false;
         }
       }
 

@@ -56,6 +56,7 @@ export interface OrsEntryRow {
   division_id: number | null;
   fiscal_year: number;
   amount: number;
+  obligated_amount?: number | null;
   status: "Pending" | "Processing" | "Approved" | "Rejected";
   prepared_by: string | number | null;
   approved_by: string | number | null;
